@@ -21,6 +21,7 @@ class ConvHardwareConfig:
     lif_curr: float = 6.0
     lif_lat: float = 2.0
     lif_area: float = 86.79
+    temporal_map: bool = False
 
     @property
     def DA_pow(self) -> float:
@@ -51,6 +52,7 @@ class C3HardwareConfig:
     lif_curr: float = 6.0
     lif_lat: float = 2.0
     lif_area: float = 86.79
+    temporal_map: bool = False
 
     @property
     def xbar_area(self) -> float:
@@ -202,7 +204,7 @@ def map_weights(
 
 
 def xbar_partition(
-    weight_shape: tuple, output_size: int, row_size: int, col_size: int
+    weight_shape: tuple, output_size: int, row_size: int, col_size: int, temporal_map: bool
 ) -> tuple:
     """Calculate hardware partitioning metrics based on shapes."""
     # Assuming weight_shape: [Out_channel, In_channel, Kernel, Kernel]
@@ -214,9 +216,12 @@ def xbar_partition(
         time_steps = 1
     else:
         vector_size = weight_shape[1] * weight_shape[2] * weight_shape[3]
-        out_total = (output_size**2) * weight_shape[0]
-        time_steps = 1  # The original logic sets it to 1 if fc=True for conv. Assuming standard conv here.
-        # Wait, the original code had a weird fc flag in xbar_partition. We assume standard conv mode where time_steps=1 and out_total includes spatial dims.
+        if temporal_map:
+            out_total = weight_shape[0]
+            time_steps = output_size**2
+        else:
+            out_total = (output_size**2) * weight_shape[0]
+            time_steps = 1
 
     nxbar_rowside = math.ceil(vector_size / row_size)
     nxbar_colside = math.ceil(out_total / col_size)
@@ -238,6 +243,7 @@ def _prepare_inputs(
     is_conv: bool,
     xbar_row: int,
     xbar_col: int,
+    temporal_map: bool,
 ):
     # Map weights
     qweights = map_weights(weights, levels, min_res, max_res, is_conv=is_conv)
@@ -253,7 +259,7 @@ def _prepare_inputs(
     out_size = conv_out_size(x.shape[3], weights.shape[3], padding)
 
     vector_size, out_total, time_steps, nxbar_rowside, nxbar_colside = xbar_partition(
-        weights.shape, out_size, xbar_row, xbar_col
+        weights.shape, out_size, xbar_row, xbar_col, temporal_map
     )
 
     xbar_total = nxbar_rowside * nxbar_colside
@@ -304,6 +310,7 @@ def calculate_conv_metrics(
         True,
         config.xbar_row,
         config.xbar_col,
+        config.temporal_map,
     )
 
     # Run convolution to get spikes (Compute crossbar current then multiply by VDD for power)
@@ -366,6 +373,7 @@ def calculate_c3_metrics(
         False,
         config.xbar_row,
         config.xbar_col,
+        config.temporal_map,
     )
 
     # Calculate power metrics per image

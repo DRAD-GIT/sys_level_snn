@@ -67,6 +67,9 @@ def parse_args():
     parser.add_argument(
         "--batches", default=-1, type=int, help="Max no. of batches to run (-1 for all)"
     )
+    parser.add_argument(
+        "--temporal-map", action="store_true", help="Enable temporal convolution mapping instead of fully spatially unrolled."
+    )
     return parser.parse_args()
 
 
@@ -126,8 +129,8 @@ def main():
     logger = setup_logger(model_name, args.b, batches, args.n)
 
     # We define standard configs using dataclasses for hardware logic
-    conv_config = ConvHardwareConfig()
-    c3_config = C3HardwareConfig()
+    conv_config = ConvHardwareConfig(temporal_map=args.temporal_map)
+    c3_config = C3HardwareConfig(temporal_map=args.temporal_map)
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
