@@ -102,7 +102,12 @@ class HardwareMetrics:
 
     @property
     def topsmm2(self) -> float:
-        return (self.ops / self.area_mm2) * 1e-12 if self.area_mm2 > 0 else 0.0
+        if self.area_mm2 > 0 and self.latency_us > 0:
+            # OPS / (latency_us * 1e-6) = OPS/sec. TOPS = OPS/sec * 1e-12.
+            # So TOPS = (ops / latency_us) * 1e-6
+            tops = (self.ops / self.latency_us) * 1e-6
+            return tops / self.area_mm2
+        return 0.0
 
     def normalize(self) -> "HardwareMetrics":
         if self.images_processed == 0:
@@ -301,11 +306,12 @@ def calculate_conv_metrics(
         config.xbar_col,
     )
 
-    # Run convolution to get spikes
-    xbar_pow = (
+    # Run convolution to get spikes (Compute crossbar current then multiply by VDD for power)
+    xbar_curr = (
         torch.sum(F.conv2d(x_mod, qweights, padding=padding, stride=1), dim=(1, 2, 3))
         * config.vread
     )
+    xbar_pow = xbar_curr * config.vdd
 
     da_pow_w = (config.DA_pow * col_total) * 1e-6  # in W
 
