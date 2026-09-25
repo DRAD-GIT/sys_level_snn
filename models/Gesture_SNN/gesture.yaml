@@ -1,0 +1,23 @@
+simulation:
+    Ts: 1.0
+    tSample: 1450
+neuron:
+    type:     SRMALPHA
+    theta:    10
+    tauSr:    5.0
+    tauRef:   1.0
+    scaleRef: 2     # relative to theta
+    tauRho:   1     # relative to theta #0.43429448190325176
+    scaleRho: 1
+training:
+    error:
+        type: NumSpikes #ProbSpikes #NumSpikes
+        tgtSpikeRegion: {start: 0, stop: 1450}    # only valid for NumSpikes and ProbSpikes
+        tgtSpikeCount: {true: 180, false: 30}    # only valid for NumSpikes
+    path:
+        # IBM DVS-Gesture Dataset
+        # Relative paths are resolved from refactored/, not this YAML's folder.
+        dir_train:  ../DVS_Gesture/DvsGestureNpy/
+        dir_test:   ../DVS_Gesture/DvsGestureNpy/
+        list_train: ../DVS_Gesture/DvsGesture/trials_to_train.txt
+        list_test:  ../DVS_Gesture/DvsGesture/trials_to_test.txt

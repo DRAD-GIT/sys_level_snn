@@ -1,0 +1,20 @@
+{
+  "min_res": 2000,
+  "max_res": 200000,
+  "vdd": 1.1,
+  "vread": 0.1,
+  "xbar_row": 64,
+  "xbar_col": 64,
+  "active_rows": 8,
+  "xbar_lat": 4.5,
+  "xbar_area": 136.67,
+  "DA_curr": 6.1,
+  "DA_area": 30.22,
+  "lif_curr": 6.0,
+  "lif_lat": 2.0,
+  "lif_area": 86.79,
+  "reference_array": true,
+  "ref_sub_curr": 0.0,
+  "ref_sub_area": 0.0,
+  "ref_sub_lat": 0.0
+}

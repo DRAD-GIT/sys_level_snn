@@ -1,9 +1,11 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+from hardware_components import EvaluationContext, evaluate_components, validate_config, resolve_components
 
 
 @dataclass
@@ -13,6 +15,7 @@ class ConvHardwareConfig:
     vdd: float = 1.1
     xbar_row: int = 64
     xbar_col: int = 64
+    active_rows: int | None = None  # None: read all physical rows simultaneously.
     vread: float = 0.1
     xbar_lat: float = 4.5
     xbar_area: float = 136.67
@@ -22,6 +25,16 @@ class ConvHardwareConfig:
     lif_lat: float = 2.0
     lif_area: float = 86.79
     temporal_map: bool = False
+    reference_array: bool = True  # Physical array for offset subtraction.
+    ref_sub_curr: float = 0.0  # Subtraction circuit per output column (uA).
+    ref_sub_area: float = 0.0  # Subtraction circuit per output column (um^2).
+    ref_sub_lat: float = 0.0  # Subtraction latency (ns).
+
+    components: list[dict] = field(default_factory=list)
+    schedule: list[dict] | None = None
+
+    def __post_init__(self):
+        validate_config(self)
 
     @property
     def DA_pow(self) -> float:
@@ -29,7 +42,7 @@ class ConvHardwareConfig:
 
     @property
     def tot_lat(self) -> float:
-        return self.xbar_lat + self.lif_lat
+        return self.xbar_lat + self.lif_lat + (self.ref_sub_lat if self.reference_array else 0.0)
 
 
 @dataclass
@@ -39,6 +52,7 @@ class C3HardwareConfig:
     vdd: float = 1.1
     xbar_row: int = 64
     xbar_col: int = 64
+    active_rows: int | None = None
     col_curr: float = 0.1
     col_lat: float = 50.0
     col_area: float = 4.27
@@ -53,6 +67,12 @@ class C3HardwareConfig:
     lif_lat: float = 2.0
     lif_area: float = 86.79
     temporal_map: bool = False
+
+    components: list[dict] = field(default_factory=list)
+    schedule: list[dict] | None = None
+
+    def __post_init__(self):
+        validate_config(self)
 
     @property
     def xbar_area(self) -> float:
@@ -79,19 +99,74 @@ class C3HardwareConfig:
 
 
 @dataclass
+class ComponentMetrics:
+    """Contribution of one physical component; latency is critical-path time.
+
+    Components that operate alongside another component have zero incremental
+    latency, but still contribute energy and area. Installed counts/area do not
+    grow with the number of images processed.
+    """
+    energy_nj: float = 0.0
+    latency_us: float = 0.0
+    area_mm2: float = 0.0
+    count: int = 0
+    group: str = "crossbar"
+    model: str = ""
+
+    def add(self, other: "ComponentMetrics", *, distinct_layer: bool = False):
+        self.group = other.group
+        self.model = other.model
+        self.energy_nj += other.energy_nj
+        self.latency_us += other.latency_us
+        if distinct_layer:
+            self.area_mm2 += other.area_mm2
+            self.count += other.count
+        else:
+            self.area_mm2 = max(self.area_mm2, other.area_mm2)
+            self.count = max(self.count, other.count)
+
+    def normalize(self, images: int) -> "ComponentMetrics":
+        return ComponentMetrics(self.energy_nj / images, self.latency_us / images,
+                                self.area_mm2, self.count, self.group, self.model)
+
+
+@dataclass
 class HardwareMetrics:
     latency_us: float = 0.0
     energy_nj: float = 0.0
     area_mm2: float = 0.0
     ops: float = 0.0
+    read_current_ua: float = 0.0  # Total physical read current, averaged across row phases.
     images_processed: int = 0
+    row_phases: int = 0
+    components: dict[str, ComponentMetrics] = field(default_factory=dict)
 
-    def add(self, other: "HardwareMetrics"):
+    def add(self, other: "HardwareMetrics", *, distinct_layer: bool = False):
         self.latency_us += other.latency_us
         self.energy_nj += other.energy_nj
-        self.area_mm2 += other.area_mm2
+        # Images reuse installed tiles; distinct layers own separate tiles.
+        self.area_mm2 = (self.area_mm2 + other.area_mm2) if distinct_layer else max(
+            self.area_mm2, other.area_mm2
+        )
         self.ops += other.ops
-        self.images_processed += other.images_processed
+        self.read_current_ua += other.read_current_ua
+        self.images_processed = (max(self.images_processed, other.images_processed)
+                                 if distinct_layer else self.images_processed + other.images_processed)
+        if not distinct_layer:
+            self.row_phases = max(self.row_phases, other.row_phases)
+        for name, contribution in other.components.items():
+            self.components.setdefault(name, ComponentMetrics()).add(
+                contribution, distinct_layer=distinct_layer
+            )
+
+    @property
+    def groups(self) -> dict[str, ComponentMetrics]:
+        from hardware_components import GROUPS
+        result = {name: ComponentMetrics(group=name) for name in GROUPS}
+        for c in self.components.values():
+            result[c.group].add(c, distinct_layer=True)
+            result[c.group].model = ""
+        return result
 
     @property
     def power_mw(self) -> float:
@@ -117,9 +192,13 @@ class HardwareMetrics:
         return HardwareMetrics(
             latency_us=self.latency_us / self.images_processed,
             energy_nj=self.energy_nj / self.images_processed,
-            area_mm2=self.area_mm2 / self.images_processed,
+            area_mm2=self.area_mm2,
             ops=self.ops / self.images_processed,
+            read_current_ua=self.read_current_ua / self.images_processed,
             images_processed=1,
+            row_phases=self.row_phases,
+            components={name: component.normalize(self.images_processed)
+                        for name, component in self.components.items()},
         )
 
     def format_summary(self) -> str:
@@ -128,11 +207,55 @@ class HardwareMetrics:
             f"Energy = {np.round(self.energy_nj, 1)} nJ",
             f"Area = {np.round(self.area_mm2, 2)} mm^2",
             f"Throughput = {np.round((self.ops * 1e-9), 2)} GOP",
+            f"Mean read current (all columns) = {np.round(self.read_current_ua, 2)} uA",
             f"Power = {np.round(self.power_mw, 2)} mW",
             f"TOPS/W = {np.round(self.topsw, 2)}",
             f"GOPS/mm^2 = {np.round(self.topsmm2 * 1e3, 2)}\n",
         ]
+        if self.row_phases:
+            lines.insert(0, f"Row-read phases = {self.row_phases}")
+        if self.components:
+            lines.append("Component breakdown (count, area mm^2, energy nJ, critical-path us):")
+            for name, c in self.components.items():
+                lines.append(f"  {name} [{c.group}; {c.model}]: {c.count}, {c.area_mm2:.6g}, {c.energy_nj:.6g}, {c.latency_us:.6g}")
+            lines.append("Group totals (count, area mm^2, energy nJ, critical-path us):")
+            for name, c in self.groups.items():
+                lines.append(f"  {name}: {c.count}, {c.area_mm2:.6g}, {c.energy_nj:.6g}, {c.latency_us:.6g}")
         return "\n".join(lines)
+
+
+def row_tile_phases(vector_size: int, row_size: int,
+                    active_rows: int | None) -> list[int]:
+    """Read phases per physical row tile (last tile can be partly occupied)."""
+    return [math.ceil(min(row_size, vector_size - start) / (active_rows or row_size))
+            for start in range(0, vector_size, row_size)]
+
+
+def row_read_phases(vector_size: int, row_size: int, active_rows: int | None) -> int:
+    """Parallel tiles share phases; the fullest physical tile sets read latency."""
+    return max(row_tile_phases(vector_size, row_size, active_rows))
+
+
+def metrics_from_components(
+    components: dict[str, ComponentMetrics], images: int, ops: float,
+    read_current_ua: float, phases: int,
+) -> HardwareMetrics:
+    return HardwareMetrics(
+        latency_us=sum(c.latency_us for c in components.values()),
+        energy_nj=sum(c.energy_nj for c in components.values()),
+        area_mm2=sum(c.area_mm2 for c in components.values()),
+        ops=ops,
+        read_current_ua=read_current_ua,
+        images_processed=images,
+        row_phases=phases,
+        components=components,
+    )
+
+
+def component(count: int, area_um2: float, energy_nj: float,
+              latency_ns: float = 0.0) -> ComponentMetrics:
+    return ComponentMetrics(float(energy_nj), latency_ns * 1e-3,
+                            area_um2 * 1e-6, count)
 
 
 def quantize_weights(
@@ -141,11 +264,11 @@ def quantize_weights(
     """Quantize weights and return the quantized tensor and levels."""
     device = matrix.device
     mean = torch.mean(matrix)
-    variance = torch.var(matrix)
+    std_dev = torch.std(matrix)
 
     if model_name == "nmnist":
-        min_val = mean - k * variance
-        max_val = mean + k * variance
+        min_val = mean - k * std_dev
+        max_val = mean + k * std_dev
     elif model_name == "gesture":
         min_val = torch.min(matrix)
         max_val = torch.max(matrix)
@@ -153,7 +276,7 @@ def quantize_weights(
         min_val = torch.min(matrix)
         max_val = torch.max(matrix)
 
-    ndeci = 10**0
+    ndeci = 10**d_levels
     min_val = torch.round(min_val * ndeci) / ndeci
     max_val = torch.round(max_val * ndeci) / ndeci
 
@@ -161,7 +284,6 @@ def quantize_weights(
     matrix_flat = matrix.view(-1)
 
     levels = torch.linspace(min_val, max_val, num_levels).to(device)
-    ndeci = 10**d_levels
     levels = torch.round(levels * ndeci) / ndeci
 
     diff_matrix = torch.abs(matrix_flat.unsqueeze(1) - levels.unsqueeze(0))
@@ -186,14 +308,16 @@ def map_weights(
     if is_conv:
         g_min = 1 / max_res
         g_max = 1 / min_res
-        slope = (g_max - g_min) / (max_level - min_level)
-        offset = g_min - slope * min_level
-
-        cond_matrix = slope * weights + offset
-        ndeci = 10**6
-        cond_matrix = torch.round(cond_matrix * ndeci) / ndeci
-        return cond_matrix
+        # Include zero so G(0) is a physically representable reference.
+        lo = min(min_level.item(), 0.0)
+        hi = max(max_level.item(), 0.0)
+        if hi == lo:
+            return torch.full_like(weights, g_min)
+        slope = (g_max - g_min) / (hi - lo)
+        return (slope * weights + g_min - slope * lo).clamp(g_min, g_max)
     else:
+        if max_level == min_level:
+            return torch.full_like(weights, min_res)
         slope = (max_res - min_res) / (max_level - min_level)
         offset = min_res - slope * min_level
 
@@ -245,16 +369,16 @@ def _prepare_inputs(
     xbar_col: int,
     temporal_map: bool,
 ):
-    # Map weights
-    qweights = map_weights(weights, levels, min_res, max_res, is_conv=is_conv)
-
-    # Process Input
-    # original x shape from SlayerSNN is usually [Batch, Channels, Height, Width, Time]
-    # We reshape to [Batch*Time, Channels, Height, Width] for F.conv2d
+    # Conventional read current uses the mapped weights and spike tensors.
+    # C3 uses configured fixed macro currents, so avoid materializing both.
     batch_size = x.shape[0]
     num_steps = x.shape[4]
-
-    x_mod = x.permute(0, 4, 1, 2, 3).reshape(-1, *x.shape[1:4]).float()
+    if is_conv:
+        qweights = map_weights(weights, levels, min_res, max_res, is_conv=True)
+        x_mod = x.permute(0, 4, 1, 2, 3).reshape(-1, *x.shape[1:4]).float()
+    else:
+        qweights = None
+        x_mod = None
 
     out_size = conv_out_size(x.shape[3], weights.shape[3], padding)
 
@@ -288,6 +412,7 @@ def calculate_conv_metrics(
     padding: int,
 ) -> HardwareMetrics:
     """Calculate Conv hardware metrics for a single batch."""
+    validate_config(config)
     (
         qweights,
         x_mod,
@@ -313,33 +438,36 @@ def calculate_conv_metrics(
         config.temporal_map,
     )
 
-    # Run convolution to get spikes (Compute crossbar current then multiply by VDD for power)
-    xbar_curr = (
-        torch.sum(F.conv2d(x_mod, qweights, padding=padding, stride=1), dim=(1, 2, 3))
-        * config.vread
-    )
-    xbar_pow = xbar_curr * config.vdd
+    if not config.reference_array and torch.any(weights < 0):
+        raise ValueError("Signed weights require a reference array for offset subtraction")
 
-    da_pow_w = (config.DA_pow * col_total) * 1e-6  # in W
+    tile_phases = row_tile_phases(vector_size, config.xbar_row, config.active_rows)
+    phases = max(tile_phases)
+    # These spatially replicated tiles execute row phases concurrently.
+    data_curr = torch.sum(
+        F.conv2d(x_mod, qweights, padding=padding, stride=1)
+    ) * config.vread
+    # G(w) = G(0) + alpha*w. Reference array is read in the same phases,
+    # with no extra read latency; its physical current is charged separately.
+    ref_curr = torch.zeros_like(data_curr)
+    if config.reference_array:
+        g_zero = map_weights(torch.zeros_like(weights), levels, config.min_res,
+                             config.max_res)[0, 0, 0, 0]
+        ref_curr = torch.sum(
+            F.conv2d(x_mod, torch.ones_like(qweights), padding=padding)
+        ) * g_zero * config.vread
 
-    # Calculate metrics over the batch
-    mac_latency = ((config.tot_lat * time_steps) * num_steps) * batch_size
-    mac_energy = (
-        (torch.sum(xbar_pow) / batch_size + da_pow_w * num_steps)
-        * (config.tot_lat * time_steps)
-    ) * batch_size
-    mac_area = (
-        (config.xbar_area + config.DA_area * config.xbar_col) * xbar_total
-        + config.lif_area * config.xbar_col * nxbar_colside
-    ) * batch_size
-    mac_ops = ((vector_size + 1) * (out_total * time_steps) * num_steps) * batch_size
+    # The summed physical current already includes every active row once;
+    # specialized read evaluators do not multiply it by row phases again.
+    components = evaluate_components(config, EvaluationContext(
+        config, batch_size, time_steps * num_steps, tile_phases, nxbar_colside,
+        out_total, [], data_curr.item(), ref_curr.item(),
+    ))
 
-    return HardwareMetrics(
-        latency_us=mac_latency * 1e-3,
-        energy_nj=mac_energy.item(),
-        area_mm2=mac_area * 1e-6,
-        ops=mac_ops,
-        images_processed=batch_size,
+    return metrics_from_components(
+        components, batch_size,
+        2 * vector_size * out_total * time_steps * num_steps * batch_size,
+        ((data_curr + ref_curr) * 1e6 / (num_steps * phases)).item(), phases,
     )
 
 
@@ -350,7 +478,8 @@ def calculate_c3_metrics(
     levels: torch.Tensor,
     padding: int,
 ) -> HardwareMetrics:
-    """Calculate C3CIM hardware metrics for a single batch."""
+    """Calculate C3CIM hardware metrics for a single batch (FIXED macro model)."""
+    validate_config(config)
     (
         qweights,
         x_mod,
@@ -376,32 +505,23 @@ def calculate_c3_metrics(
         config.temporal_map,
     )
 
-    # Calculate power metrics per image
-    xbar_pow_w = (
-        col_total * config.col_pow
-        + math.ceil(col_total / config.driver_part) * config.driver_pow
-    ) * 1e-6
-    vi_pow_w = (col_total * config.VI_pow) * 1e-6
-
-    # Calculate metrics over the batch
-    mac_latency = ((config.tot_lat * time_steps) * num_steps) * batch_size
-    mac_energy = (
-        (
-            (xbar_pow_w * config.tot_lat + vi_pow_w * (config.VI_lat + config.lif_lat))
-            * time_steps
-        )
-        * num_steps
-    ) * batch_size
-    mac_area = (
-        (config.xbar_area + config.VI_area * config.xbar_col) * xbar_total
-        + config.lif_area * config.xbar_col * nxbar_colside
-    ) * batch_size
-    mac_ops = ((vector_size + 1) * (out_total * time_steps) * num_steps) * batch_size
-
-    return HardwareMetrics(
-        latency_us=mac_latency * 1e-3,
-        energy_nj=mac_energy,
-        area_mm2=mac_area * 1e-6,
-        ops=mac_ops,
-        images_processed=batch_size,
+    tile_phases = row_tile_phases(vector_size, config.xbar_row, config.active_rows)
+    phases = max(tile_phases)
+    # C3 remains a FIXED macro estimate, independent of input/G. Per-column
+    # current and constant-current-driver overhead are separate components.
+    context = EvaluationContext(
+        config, batch_size, time_steps * num_steps, tile_phases, nxbar_colside,
+        out_total, [],
+    )
+    components = evaluate_components(config, context)
+    # Read-current diagnostic includes configured C3 column models only, not
+    # peripheral overhead. Report batch-summed, phase-averaged current.
+    read_current = sum(
+        context.instances(spec["activity"], phased=True) * spec["params"]["current_ua"]
+        for spec in resolve_components(config)[0] if spec["model"] == "c3_column"
+    ) * batch_size / phases
+    return metrics_from_components(
+        components, batch_size,
+        2 * vector_size * out_total * time_steps * num_steps * batch_size,
+        read_current, phases,
     )

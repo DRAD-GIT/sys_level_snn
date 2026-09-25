@@ -1,0 +1,20 @@
+{
+  "active_rows": 8,
+  "components": [
+    {
+      "name": "input_buffer",
+      "model": "fixed_current",
+      "group": "input_periphery",
+      "count": {"rule": "tiles"},
+      "activity": {"rule": "tiles", "frequency": "stage"},
+      "timing": ["buffer"],
+      "params": {"supply_v": 1.1, "current_ua": 2.0, "area_um2": 5.0}
+    }
+  ],
+  "schedule": [
+    {"name": "buffer", "duration_ns": 5.0, "repeat": "bin", "owner": "input_buffer"},
+    {"name": "read", "duration_ns": 50.0, "repeat": "row_phase", "owner": "column"},
+    {"name": "VI", "duration_ns": 10.0, "repeat": "row_phase", "owner": "VI"},
+    {"name": "lif", "duration_ns": 2.0, "repeat": "bin", "owner": "LIF"}
+  ]
+}

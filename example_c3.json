@@ -1,0 +1,21 @@
+{
+  "min_res": 2000,
+  "max_res": 20000,
+  "vdd": 1.1,
+  "xbar_row": 64,
+  "xbar_col": 64,
+  "active_rows": 8,
+  "col_curr": 0.1,
+  "col_lat": 50.0,
+  "col_area": 4.27,
+  "driver_part": 32,
+  "driver_curr": 11.87,
+  "driver_area": 86.36,
+  "VI_supp": 1.0,
+  "VI_curr": 24.3,
+  "VI_lat": 10.0,
+  "VI_area": 29.79,
+  "lif_curr": 6.0,
+  "lif_lat": 2.0,
+  "lif_area": 86.79
+}

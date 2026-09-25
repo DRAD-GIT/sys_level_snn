@@ -1,0 +1,11 @@
+{
+  "active_rows": 8,
+  "components": [
+    {
+      "name": "column_driver",
+      "count": {"columns_per_group": 16},
+      "activity": {"columns_per_group": 16},
+      "params": {"current_ua": 11.87, "area_um2": 86.36}
+    }
+  ]
+}
