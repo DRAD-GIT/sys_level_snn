@@ -1,6 +1,6 @@
 import torch
 import slayerSNN as snn # type: ignore
-from .neuromorphic import NDataset, NNetwork
+from .base import ModelSpec, NDataset, NNetwork
 
 class NMNISTDataset(NDataset):
     def __getitem__(self, index):
@@ -84,3 +84,15 @@ class LeNetNetwork(NNetwork):
         s_out = self.slayer.spike(self.slayer.psp(self.SF2(s_out)))  # 10
 
         return s_out
+
+
+# Pretrained checkpoint pickles LeNetNetwork; see models/__init__.py.
+SPEC = ModelSpec(
+    name="nmnist",
+    display_name="NMNIST",
+    dataset_class=NMNISTDataset,
+    checkpoint="pretrained/nmnist_lenet.pt",
+    params_yaml="models/nmnist.yaml",
+    layers=(("SC1", 0), ("SC2", 0), ("SC3", 0), ("SF1", 0), ("SF2", 0)),
+    std_quantization=True,
+)

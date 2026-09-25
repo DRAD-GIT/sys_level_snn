@@ -2,32 +2,56 @@
 
 This directory evaluates trained **N-MNIST LeNet** and **IBM DVS-Gesture** SNNs on conventional current-mode CIM and C3CIM macro-cost models. It runs software inference, observes the inputs of weighted layers, and estimates hardware metrics for those layers. Hardware estimation does **not** replace the software forward pass or simulate analog classification accuracy.
 
-## 1. Quick start
+## 1. Repository layout
 
-Use the existing environment with Python, PyTorch, NumPy, and `slayerSNN` (including its required compiled backend). From `refactored/`:
-
-```bash
-# One-image smoke checks, using the example architecture parameters:
-python combined_infer.py --model nmnist -b 1 --batches 1 \
-  --conv-config example_conv.json --c3-config example_c3.json
-python combined_infer.py --model gesture -b 1 --batches 1 \
-  --conv-config example_conv.json --c3-config example_c3.json
-
-# Full test sets: omit --batches. These runs can be expensive.
-python combined_infer.py --model nmnist -b 12 \
-  --conv-config example_conv.json --c3-config example_c3.json
-python combined_infer.py --model gesture -b 1 \
-  --conv-config example_conv.json --c3-config example_c3.json
-
-# Regression tests:
-python -m unittest discover -s tests -v
+```text
+run.py                 <- MAIN SCRIPT: define both hardware configs here and run
+models/                SNN network + dataset classes, and their SLAYER parameter YAMLs
+  base.py              shared base classes and ModelSpec (checkpoint, YAML, layers to profile)
+  nmnist.py            N-MNIST LeNet + dataset loader, SPEC
+  gesture.py           DVS-Gesture network + dataset loader, SPEC
+  nmnist.yaml, gesture.yaml
+pretrained/            trained checkpoints (nmnist_lenet.pt, gesture.pt)
+datasets/              place the datasets here (see each folder's README)
+  N-MNIST/
+  DVS_Gesture/
+hardware/              CIM hardware cost models
+  configs.py           ConvHardwareConfig / C3HardwareConfig defaults, JSON loader
+  components.py        component registry, counting/activity rules, stage schedule
+  mapping.py           quantization, weight->conductance mapping, tile geometry
+  estimators.py        per-layer energy/latency/area for each architecture
+  metrics.py           result containers and text summaries
+  examples/            JSON override examples (see section 9)
+evaluation/            pipeline used by run.py
+  runner.py            load model, run inference, hook layers, accumulate metrics
+  report.py            text log, JSON and CSV export, final metrics table
+tests/                 hand-calculation and regression tests
 ```
 
-Both hardware architectures are evaluated during each model run. `-n 0` (default) preserves trained weights; `-n 4` quantizes the software weights before inference. `-k` controls the N-MNIST standard-deviation range and `-d` controls decimal rounding of quantization levels. Quantization can change accuracy and layer activity; it is not merely an energy scaling factor. Gesture batch size is currently capped at two. `--temporal-map` is not supported by the CLI; mapping is spatially parallel.
+## 2. Quick start
 
-The model definitions and dataset classes are local in `demo/nets/`, preserving the import paths stored in the pickle checkpoints. Checkpoints and YAMLs are local under `models/NMNIST_SNN/` and `models/Gesture_SNN/`; no legacy script directory is required. Dataset paths in the YAMLs are resolved relative to `refactored/`, independently of your working directory. Defaults point to the sibling `../N-MNIST/` and `../DVS_Gesture/` datasets. Edit these local YAMLs to use another dataset location (absolute paths are also supported; retain the trailing slash on directory paths). The third-party `slayerSNN` installation remains an external dependency. Only load trusted checkpoints because inference uses `torch.load(weights_only=False)`.
+Install Python, PyTorch, NumPy, PyYAML (`requirements.txt`) and `slayerSNN`, including its compiled backend. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then:
 
-## 2. End-to-end flow
+1. Open `run.py`. Choose `MODEL`, `BATCH_SIZE`, `MAX_BATCHES` and `WEIGHT_BITS` in **RUN SETTINGS**. Edit the numbers in `CONVENTIONAL` and `C3CIM`. Every field has its unit in a comment.
+2. Run it:
+
+```bash
+python run.py                                   # uses the settings in run.py
+python run.py --model gesture                   # override a run setting once
+python run.py --model nmnist -b 12 --batches -1 # full N-MNIST test set (slow)
+python run.py -n 4                              # quantize weights to 4 bits first
+python run.py --c3-config hardware/examples/c3_driver_override.json   # C3 config from JSON
+
+python -m unittest discover -s tests -v         # regression tests
+```
+
+The console, `logs/<model>_B<batch>_N<batches>_b<bits>.txt`, a JSON per architecture and `logs/comparison_summary.csv` all receive the results. The run ends with a **FINAL METRICS** table: energy and latency per inference, power, TOPS/W, area and GOPS/mm² for each architecture.
+
+Remove an entry from `ARCHITECTURES` in `run.py` to skip that architecture. `-n 0` (default) keeps the trained weights; `-n 4` quantizes the software weights before inference. `-k` controls the N-MNIST standard-deviation range and `-d` controls decimal rounding of quantization levels. Quantization can change accuracy and layer activity; it is not merely an energy scaling factor. Gesture batch size is capped at two. Mapping is spatially parallel; temporal mapping is not supported.
+
+The checkpoints are full pickled modules that were saved when the model classes lived in `demo/nets/`. `models.load_pretrained` maps those old import paths to `models/`, so the checkpoints load unchanged. Only load trusted checkpoints, because loading uses `torch.load(weights_only=False)`. Dataset paths in the YAMLs are resolved from the repository root, whatever your working directory. Edit the YAMLs to point elsewhere (absolute paths work; keep the trailing slash on directories). To add a model, write its classes and a `SPEC` in a new `models/<name>.py` and register it in `models/__init__.py`.
+
+## 3. End-to-end flow
 
 ```text
 Checkpoint + dataset + quantization options
@@ -60,7 +84,7 @@ spikes + conductances         fixed column-source current
 
 Only weighted convolution and dense modules are profiled as VMM layers. Pooling/dropout and the rest of the software network are not separately charged as hardware blocks. LIF hardware is accounted for explicitly. Hardware activity currently interprets any nonzero hooked input as a binary spike. No activation cache is persisted: changing hardware parameters reruns inference.
 
-## 3. Physical mapping: installed resources are not activity
+## 4. Physical mapping: installed resources are not activity
 
 Let:
 
@@ -92,7 +116,7 @@ This example has two physical data tiles. Each has 64 physical column slots, but
 
 Area counts installed hardware, including unused capacity where specified. Energy uses the separately configured activity rule. Thus a component can have 128 installed column instances but only `O × S = 24` active column-phase events per time bin. This distinction is essential for partially occupied tiles.
 
-## 4. Conventional versus C3CIM electrical behavior
+## 5. Conventional versus C3CIM electrical behavior
 
 ### Conventional current-mode CIM
 
@@ -133,7 +157,7 @@ Input-controlled programmed resistance network
 
 The reported power assumes these two currents describe non-overlapping contributions. If a measured macro current already includes column-source current or VI power, do not add the same contribution again as another component.
 
-## 5. Units and aggregation
+## 6. Units and aggregation
 
 | Quantity | Configuration/internal unit | Reported unit |
 |---|---|---|
@@ -150,7 +174,7 @@ Image energy, latency, and operations are accumulated then divided by the number
 
 Mean conventional read current is summed across physical read paths and averaged over row phases and simulation bins. C3 read current is the configured column-source current weighted by active column phases. Neither should be confused with signed output current or total supply current of every peripheral. The network current field sums layer means; it is not a simultaneous network-current measurement.
 
-## 6. Worked C3 example derived from the existing classes
+## 7. Worked C3 example derived from the existing classes
 
 Use `K=96`, `O=2`, `R=C=64`, `A=8`, and one image with one simulation bin. The scalar defaults originate in the existing hardware classes:
 
@@ -192,25 +216,31 @@ For the same `K=96`, `O=2`, tile geometry and one bin, assume all input spikes a
 
 Latency is `8×4.5+2=38 ns`; area is `(4×136.67 + 128×30.22 + 64×86.79) um² = 0.0099694 mm²`. The explicit mapping range is important: the inference path normally derives the range from each layer's weights/quantization levels, so a synthetic all-positive layer need not use [-1,+1] automatically.
 
-## 7. Results and comparison tables
+## 8. Results and comparison tables
 
 Text logs under `logs/` show layer/network totals and component breakdowns. JSON exports preserve numeric precision and configuration identity; the CSV `logs/comparison_summary.csv` stores comparison-ready rows keyed by model, architecture, quantization, configuration and evaluated sample count. Both architectures are added per model run, so running both models creates their four comparison rows. Repeating the same configuration/sample count replaces that row. Separate runs can update the CSV safely using its lock.
 
 Use the CSV's energy per inference, latency per inference, average power, TOPS/W, and inferences/J for comparisons, while preserving sample count and configuration identity. One-image smoke tests validate execution only; they are **not** dataset-average benchmark results. Existing text log names can be overwritten by another run with the same model/batch/precision settings. JSON/CSV configuration IDs distinguish hardware configurations.
 
-## 8. Component configuration: edit numbers without editing inference
+## 9. Component configuration: edit numbers without editing inference
 
 ### File responsibilities
 
 | File | Responsibility |
 |---|---|
-| `combined_infer.py` | Load configs/models/data, run inference, hooks, averaging, export |
-| `clean_hardware.py` | Hardware scalar defaults, weight mapping, tile geometry, architecture electrical inputs, metrics |
-| `hardware_components.py` | Component registry, counting/activity rules, default architecture composition, schedule validation/evaluation |
-| `example_conv.json`, `example_c3.json` | Original scalar defaults with eight active rows |
-| `example_component_override.json` | C3 shared-driver count override |
-| `example_added_component.json` | C3 input buffer plus a new serial stage |
+| `run.py` | Hardware definitions and run settings; calls the pipeline |
+| `evaluation/runner.py` | Load model/data, run inference, hooks, averaging |
+| `evaluation/report.py` | Text log, JSON/CSV export, final table |
+| `hardware/configs.py` | Hardware scalar defaults and JSON loading |
+| `hardware/mapping.py` | Weight quantization/mapping, tile geometry |
+| `hardware/estimators.py` | Architecture electrical inputs per layer |
+| `hardware/metrics.py` | Metric containers, aggregation, summaries |
+| `hardware/components.py` | Component registry, counting/activity rules, default architecture composition, schedule validation/evaluation |
+| `hardware/examples/c3_driver_override.json` | C3 shared-driver count override |
+| `hardware/examples/c3_added_stage.json` | C3 input buffer plus a new serial stage |
 | `tests/` | Hand calculations, configuration validation, plugins, batching, stages, export regression tests |
+
+You can put `components` and `schedule` directly into the configs in `run.py`, or keep them in a JSON file passed with `--conv-config`/`--c3-config`. A JSON file **replaces** that architecture's `run.py` config: omitted fields fall back to the class defaults, not to the values in `run.py`.
 
 Each hardware config accepts scalar legacy parameters plus optional `components` and `schedule`. Omitted values use the dataclass defaults. Components are named entries, organized into **four reporting groups**: `input_periphery`, `crossbar`, `output_periphery`, `lif`. Changing a group label only changes reporting: it does not change placement, replication, activity, or timing.
 
@@ -288,7 +318,7 @@ Selecting two timing stages charges energy for both. `frequency` overrides affec
 
 ### Example A: change the shared C3 driver count
 
-`example_component_override.json` contains:
+`hardware/examples/c3_driver_override.json` contains:
 
 ```json
 {
@@ -303,15 +333,14 @@ Selecting two timing stages charges energy for both. `frequency` overrides affec
 ```
 
 ```bash
-python combined_infer.py --model nmnist -b 1 --batches 1 \
-  --c3-config example_component_override.json
+python run.py --c3-config hardware/examples/c3_driver_override.json
 ```
 
 For the worked 96-input example, this doubles installed drivers from four to eight, and doubles driver area/energy. It leaves column-source current, VI/LIF costs, and read latency unchanged. An equivalent simple configuration is `{"active_rows":8,"driver_part":16}`; the explicit component form also lets you replace the evaluator or independently tune driver electrical parameters.
 
 ### Example B: add circuitry without increasing latency
 
-Save this as `extra_bias.json` and pass it using **either** `--conv-config` or `--c3-config`:
+Add this entry to `components=[...]` of either config in `run.py` (the C3 config has it as a commented example), or save it as `extra_bias.json` and pass it with `--conv-config` or `--c3-config`:
 
 ```json
 {
@@ -332,7 +361,7 @@ It runs concurrently with the existing read stage. For the C3 hand example it ad
 
 ### Example C: add a component that adds a serial stage
 
-`example_added_component.json` adds an input buffer and replaces the default schedule:
+`hardware/examples/c3_added_stage.json` adds an input buffer and replaces the default schedule:
 
 ```json
 {
@@ -356,8 +385,7 @@ It runs concurrently with the existing read stage. For the C3 hand example it ad
 ```
 
 ```bash
-python combined_infer.py --model gesture -b 1 --batches 1 \
-  --c3-config example_added_component.json
+python run.py --model gesture --c3-config hardware/examples/c3_added_stage.json
 ```
 
 For the hand example, the buffer adds 5 ns per bin and 10 um². The LIF remains powered during the buffer stage because its timing is `through_lif`, so there is also extra LIF energy. No inference or reporting code needs changing.
@@ -372,13 +400,13 @@ The final stage must be `lif`, repeated per bin. The default membrane is active 
 
 Unknown component fields, models, groups, stage references, invalid counts, and nonfinite/negative electrical costs are rejected. Configuration does not evaluate strings as Python expressions.
 
-## 9. Adding a new electrical evaluator in Python
+## 10. Adding a new electrical evaluator in Python
 
 Fixed current is not appropriate for every block. Register a custom evaluator when energy depends on a measured lookup, signal or custom equation. Example: a characterized energy per powered nanosecond:
 
 ```python
-from hardware_components import register_model, number
-from clean_hardware import C3HardwareConfig
+from hardware.components import register_model, number
+from hardware import C3HardwareConfig
 
 
 def validate_characterized(params):
@@ -405,17 +433,17 @@ config = C3HardwareConfig(components=[{
 }])
 ```
 
-The evaluator returns finite, nonnegative **batch-total energy in nJ**. Common logic calculates area from installed count and `area_um2`, and attributes latency from the schedule. `powered_ns` already includes powered-instance count, repetitions, and batch size; do not multiply those again. Evaluators should be additive over batches and not retain global inference state. Duplicate model registration is rejected. To use the CLI, import/register your plugin in a small launcher before calling `combined_infer.main()`; JSON does not automatically import arbitrary Python modules.
+The evaluator returns finite, nonnegative **batch-total energy in nJ**. Common logic calculates area from installed count and `area_um2`, and attributes latency from the schedule. `powered_ns` already includes powered-instance count, repetitions, and batch size; do not multiply those again. Evaluators should be additive over batches and not retain global inference state. Duplicate model registration is rejected. To use it from `run.py`, put the registration near the top of `run.py`, before `CONVENTIONAL`/`C3CIM` are constructed. JSON does not automatically import arbitrary Python modules.
 
 The context exposes configuration, image/bin counts, row-tile phases, column-tile count, logical-output count, resolved schedule, and conventional summed data/reference currents. **It does not currently expose raw per-row spike/resistance tensors, calculate C3 voltage, or propagate output signals between arbitrary plugins.** A future voltage-domain C3 evaluator needs an extension of the architecture/context signal preparation as well as a registered cost model. This interface is extensible accounting, not a circuit simulator.
 
-To add an entirely new architecture, provide its config/default component composition and electrical context preparation, then wire it into the inference dispatch. Reuse the component evaluator, counting, schedule and reporting framework. The current two default architectures are selected by their configuration type/fields; supplying a new architecture is a Python extension, not just changing an architecture name in JSON.
+To add an entirely new architecture, provide its config/default component composition and electrical context preparation, then add its config type to `ESTIMATORS` in `evaluation/runner.py`. Reuse the component evaluator, counting, schedule and reporting framework. The current two default architectures are selected by their configuration type/fields; supplying a new architecture is a Python extension, not just changing an architecture name in JSON.
 
-## 10. Scope and caveats
+## 11. Scope and caveats
 
 - Ideal cross-tile current combination; no routed-wire losses, compliance/settling checks, routing or communication costs unless explicitly modeled.
 - No analog accuracy simulation, ADC quantization/nonidealities, noise, or signed C3 signal correction.
 - No automatic scaling of per-tile area when tile geometry changes: provide measurements for the actual macro.
 - LIF is modeled powered during integration and a final emission stage; substitute measured activity/power if the circuit gates differently.
 - Voltage/current/conductance and full-waveform circuit behavior are architecture-specific, not consequences of grouping a component.
-- The CLI supports the two existing model topologies, including their known kernel/padding assumptions; it is not a general arbitrary-PyTorch graph mapper.
+- The pipeline supports the two existing model topologies, including their known kernel/padding assumptions; it is not a general arbitrary-PyTorch graph mapper.

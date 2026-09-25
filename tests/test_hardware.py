@@ -4,22 +4,20 @@ import logging
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
 
 import torch
-import combined_infer
 
-from clean_hardware import (
+from evaluation.report import export_results
+from hardware import (
     C3HardwareConfig,
     ConvHardwareConfig,
     HardwareMetrics,
     calculate_c3_metrics,
     calculate_conv_metrics,
-    map_weights,
-    component,
-    metrics_from_components,
+    load_config,
 )
-from combined_infer import load_config
+from hardware.mapping import map_weights
+from hardware.metrics import component, metrics_from_components
 
 
 class HardwareTests(unittest.TestCase):
@@ -125,18 +123,14 @@ class HardwareTests(unittest.TestCase):
     def test_component_json_and_table_upsert(self):
         x = self.spikes
         w = self.weights
-        per_layer = {1: calculate_conv_metrics(ConvHardwareConfig(), x, w, self.levels, 0)}
-        total = per_layer[1].normalize()
-        with tempfile.TemporaryDirectory() as folder:
-            os.mkdir(os.path.join(folder, "logs"))
-            with patch.object(combined_infer, "__file__", os.path.join(folder, "combined_infer.py")):
-                for _ in range(2):
-                    combined_infer.export_results(
-                        "nmnist", "NMNIST", "conventional", ConvHardwareConfig(),
-                        0, 2, 1, {1: "SC1.weight"}, per_layer, total,
-                        logging.getLogger("test_export"),
-                    )
-            log_dir = os.path.join(folder, "logs")
+        per_layer = {"SC1": calculate_conv_metrics(ConvHardwareConfig(), x, w, self.levels, 0)}
+        total = per_layer["SC1"].normalize()
+        with tempfile.TemporaryDirectory() as log_dir:
+            for _ in range(2):
+                export_results(
+                    log_dir, "nmnist", "NMNIST", "conventional", ConvHardwareConfig(),
+                    0, 2, 1, per_layer, total, logging.getLogger("test_export"),
+                )
             with open(os.path.join(log_dir, "comparison_summary.csv"), newline="") as file:
                 rows = list(csv.DictReader(file))
             self.assertEqual(len(rows), 1)

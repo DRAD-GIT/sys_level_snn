@@ -18,9 +18,9 @@ training:
         tgtSpikeCount: {true: 60, false: 10}    # only valid for NumSpikes
     path:
         # out:     OutFiles/
-        # Relative paths are resolved from refactored/, not this YAML's folder.
-        dir_train:  ../N-MNIST/Train/
-        dir_test:   ../N-MNIST/Test/
-        list_train: ../N-MNIST/Train.txt
-        list_test:  ../N-MNIST/Test.txt
+        # Relative paths are resolved from the repository root, not this YAML's folder.
+        dir_train:  datasets/N-MNIST/Train/
+        dir_test:   datasets/N-MNIST/Test/
+        list_train: datasets/N-MNIST/Train.txt
+        list_test:  datasets/N-MNIST/Test.txt
 
