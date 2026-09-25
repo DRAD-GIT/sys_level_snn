@@ -1,0 +1,5 @@
+numpy
+pyyaml
+torch
+# slayerSNN (SLAYER PyTorch) is not on PyPI and needs its compiled CUDA
+# backend; install it from https://github.com/bamsumit/slayerPytorch.

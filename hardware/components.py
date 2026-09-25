@@ -289,8 +289,8 @@ def validate_config(c):
 
 
 def evaluate_components(c, context):
-    # Local import avoids coupling the registry to inference or tensor libraries.
-    from clean_hardware import ComponentMetrics
+    # Local import avoids a cycle: metrics imports GROUPS from this module.
+    from hardware.metrics import ComponentMetrics
     specs, schedule = validate_config(c)
     context.schedule = schedule
     result = {}

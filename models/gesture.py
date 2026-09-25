@@ -1,9 +1,12 @@
 import torch
 import slayerSNN as snn # type: ignore
-from .neuromorphic_g import NDataset, NNetwork
+from .base import ModelSpec, NDataset, NNetwork
 import numpy as np
 
 class GestureDataset(NDataset):
+    def __len__(self):  # each trial file holds all 11 gesture classes
+        return self.samples.shape[0]*11
+
     def __getitem__(self, index):# modifying it to manually pick data
         #input_index = int(self.samples[index, 0])
         input_index = index + 1
@@ -56,3 +59,14 @@ class GestureNetwork(NNetwork):
         s_out = self.slayer.spike(self.slayer.psp(self.SF2(s_out)))  # 11
 
         return s_out
+
+
+SPEC = ModelSpec(
+    name="gesture",
+    display_name="IBM-Gesture",
+    dataset_class=GestureDataset,
+    checkpoint="pretrained/gesture.pt",
+    params_yaml="models/gesture.yaml",
+    layers=(("SC1", 2), ("SC2", 1), ("SF1", 0), ("SF2", 0)),
+    max_batch_size=2,
+)

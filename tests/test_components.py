@@ -5,13 +5,13 @@ import os
 import tempfile
 import unittest
 from dataclasses import asdict
-from unittest.mock import patch
 
 import torch
-import combined_infer
-from clean_hardware import (C3HardwareConfig, ConvHardwareConfig, HardwareMetrics,
-                            calculate_c3_metrics, calculate_conv_metrics)
-from hardware_components import (GROUPS, EvaluationContext, default_specs, register_model,
+
+from evaluation.report import export_results
+from hardware import (C3HardwareConfig, ConvHardwareConfig, HardwareMetrics,
+                      calculate_c3_metrics, calculate_conv_metrics, load_config)
+from hardware.components import (GROUPS, EvaluationContext, default_specs, register_model,
                                  resolve_components, number)
 
 
@@ -151,9 +151,10 @@ class RegistryTests(unittest.TestCase):
             self.assertAlmostEqual(sum(g.area_mm2 for g in layers.groups.values()), layers.area_mm2)
 
     def test_examples_and_once_per_image_stage(self):
-        root = os.path.dirname(os.path.dirname(__file__))
-        for filename in ('example_component_override.json', 'example_added_component.json'):
-            config = combined_infer.load_config(C3HardwareConfig, os.path.join(root, filename))
+        examples = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'hardware', 'examples')
+        for filename in ('c3_driver_override.json', 'c3_added_stage.json'):
+            config = load_config(C3HardwareConfig, os.path.join(examples, filename))
             self.assertGreater(self.calc(config).energy_nj, 0)
         c = C3HardwareConfig(active_rows=8)
         _, schedule = default_specs(c)
@@ -186,7 +187,7 @@ class RegistryTests(unittest.TestCase):
             json.dump(dict(components=[extra(model='missing')]), f)
             f.flush()
             with self.assertRaises(ValueError):
-                combined_infer.load_config(C3HardwareConfig, f.name)
+                load_config(C3HardwareConfig, f.name)
 
     def test_python_evaluator_registration(self):
         name = 'test_charge_model'
@@ -206,11 +207,9 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(c, C3HardwareConfig(**json.loads(json.dumps(asdict(c)))))
         m = self.calc(c, batch=2)
         with tempfile.TemporaryDirectory() as folder:
-            os.mkdir(os.path.join(folder, 'logs'))
-            with patch.object(combined_infer, '__file__', os.path.join(folder, 'combined_infer.py')):
-                combined_infer.export_results('test', 'test', 'c3cim', c, 0, 2, 1,
-                    {1: 'layer'}, {1: m}, m.normalize(), logging.getLogger('test'))
-            with open(os.path.join(folder, 'logs', 'comparison_summary.csv')) as f:
+            export_results(folder, 'test', 'test', 'c3cim', c, 0, 2, 1,
+                           {'layer': m}, m.normalize(), logging.getLogger('test'))
+            with open(os.path.join(folder, 'comparison_summary.csv')) as f:
                 row = next(csv.DictReader(f))
             with open(row['result_json']) as f:
                 report = json.load(f)
