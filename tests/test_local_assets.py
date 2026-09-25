@@ -12,29 +12,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class LocalAssetTests(unittest.TestCase):
     def test_load_pretrained_from_any_working_directory(self):
-        # Run in a fresh interpreter from /tmp so the legacy pickle aliases
-        # and repo-relative paths are exercised without test-process state.
+        # Fresh interpreter in /tmp: repo-relative paths must not depend on
+        # the working directory, and nothing may need slayerSNN.
         code = r'''
 import os
 import sys
 root = sys.argv[1]
 sys.path.insert(0, root)
 import models
-import slayerSNN as snn
 for name in ("nmnist", "gesture"):
     spec = models.get_spec(name)
     for relative in (spec.checkpoint, spec.params_yaml):
         assert os.path.isfile(spec.path(relative)), relative
     model = models.load_pretrained(spec)
-    module = sys.modules[type(model).__module__]
-    assert module.__name__ == "models." + name, module.__name__
-    assert os.path.commonpath([root, module.__file__]) == root
     for layer, _ in spec.layers:
         assert getattr(model, layer).weight is not None
-    params = snn.params(spec.path(spec.params_yaml))
+    params = models.load_params(spec.path(spec.params_yaml))
     for field in ("dir_test", "list_test"):
         path = params["training"]["path"][field]
         assert not os.path.isabs(path) and path.startswith("datasets/"), path
+assert "slayerSNN" not in sys.modules
 '''
         result = subprocess.run([sys.executable, '-c', code, str(ROOT)],
                                 cwd='/tmp', capture_output=True, text=True)

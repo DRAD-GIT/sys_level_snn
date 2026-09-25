@@ -6,12 +6,14 @@ This directory evaluates trained **N-MNIST LeNet** and **IBM DVS-Gesture** SNNs 
 
 ```text
 run.py                 <- MAIN SCRIPT: define both hardware configs here and run
-models/                SNN network + dataset classes, and their SLAYER parameter YAMLs
+models/                SNN network + dataset classes, and their neuron/simulation YAMLs
+  srm.py               plain-PyTorch SRM spiking layers (replaces the slayerSNN framework)
+  events.py            N-MNIST .bin / .npy event readers and spike binning
   base.py              shared base classes and ModelSpec (checkpoint, YAML, layers to profile)
   nmnist.py            N-MNIST LeNet + dataset loader, SPEC
   gesture.py           DVS-Gesture network + dataset loader, SPEC
   nmnist.yaml, gesture.yaml
-pretrained/            trained checkpoints (nmnist_lenet.pt, gesture.pt)
+pretrained/            trained weights (nmnist_lenet.pth, gesture.pth)
 datasets/              place the datasets here (see each folder's README)
   N-MNIST/
   DVS_Gesture/
@@ -25,12 +27,13 @@ hardware/              CIM hardware cost models
 evaluation/            pipeline used by run.py
   runner.py            load model, run inference, hook layers, accumulate metrics
   report.py            text log, JSON and CSV export, final metrics table
+tools/                 checkpoint conversion and slayerSNN verification scripts
 tests/                 hand-calculation and regression tests
 ```
 
 ## 2. Quick start
 
-Install Python, PyTorch, NumPy, PyYAML (`requirements.txt`) and `slayerSNN`, including its compiled backend. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then:
+Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`). Nothing needs compiling, and it runs on CPU or GPU. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then:
 
 1. Open `run.py`. Choose `MODEL`, `BATCH_SIZE`, `MAX_BATCHES` and `WEIGHT_BITS` in **RUN SETTINGS**. Edit the numbers in `CONVENTIONAL` and `C3CIM`. Every field has its unit in a comment.
 2. Run it:
@@ -49,7 +52,30 @@ The console, `logs/<model>_B<batch>_N<batches>_b<bits>.txt`, a JSON per architec
 
 Remove an entry from `ARCHITECTURES` in `run.py` to skip that architecture. `-n 0` (default) keeps the trained weights; `-n 4` quantizes the software weights before inference. `-k` controls the N-MNIST standard-deviation range and `-d` controls decimal rounding of quantization levels. Quantization can change accuracy and layer activity; it is not merely an energy scaling factor. Gesture batch size is capped at two. Mapping is spatially parallel; temporal mapping is not supported.
 
-The checkpoints are full pickled modules that were saved when the model classes lived in `demo/nets/`. `models.load_pretrained` maps those old import paths to `models/`, so the checkpoints load unchanged. Only load trusted checkpoints, because loading uses `torch.load(weights_only=False)`. Dataset paths in the YAMLs are resolved from the repository root, whatever your working directory. Edit the YAMLs to point elsewhere (absolute paths work; keep the trailing slash on directories). To add a model, write its classes and a `SPEC` in a new `models/<name>.py` and register it in `models/__init__.py`.
+The weight files are plain tensors, loaded with `torch.load(weights_only=True)`. `models.load_pretrained` builds the network from its YAML and checks that the YAML's neuron parameters still reproduce the neuron kernels stored with the weights. Dataset paths in the YAMLs are resolved from the repository root, whatever your working directory. Edit the YAMLs to point elsewhere (absolute paths work; keep the trailing slash on directories). To add a model, write its classes and a `SPEC` in a new `models/<name>.py` and register it in `models/__init__.py`.
+
+### Spiking-neuron implementation (no slayerSNN)
+
+The networks were trained with the slayerSNN (SLAYER PyTorch) framework, which is no longer maintained and needs a compiled CUDA extension. `models/srm.py` reimplements the parts inference needs in plain PyTorch, following slayerSNN's computations exactly:
+
+- `psp`: causal filtering with the SRM alpha kernel, times `Ts`.
+- `spike`: fire when the membrane reaches `theta`, then add the refractory kernel from the spike step onwards. Spikes have amplitude `1/Ts`.
+- `conv` and `dense`: `Conv3d` layers applied per time step.
+- `pool`: a per-channel window sum scaled by `1.1 × theta`, including SLAYER's padding of odd sizes.
+- Event reading and binning (`models/events.py`): polarity shifted to start at 0, round-half-to-even time bins, and a bin holding any event set to `1/Ts`.
+
+The kernels generated from the YAMLs match the kernels stored in the trained weights bit for bit. `tests/test_srm.py` checks the layers against literal transcriptions of slayerSNN's CUDA loops. This is an inference implementation only: it has no surrogate gradients, so it cannot train.
+
+**Verification against the original framework.** Two steps are still to do on a machine that has slayerSNN and the datasets:
+
+```bash
+python tools/export_slayer_reference.py --model nmnist --samples 20 --full
+python tools/export_slayer_reference.py --model gesture --samples 22
+```
+
+Copy the resulting `reference/*_slayer.pt` files into this repository. `python tools/compare_slayer_reference.py reference/*.pt` then reports, for every profiled layer, how many spike entries differ and from which time step. It also compares predicted classes, full-test-set accuracy (with `--full`) and the effect on the hardware energy. `tests/test_slayer_reference.py` runs automatically once reference files exist. Expect identical spikes almost everywhere: slayerSNN's CUDA kernels round float32 sums in a different order from PyTorch, so a membrane potential within rounding of the threshold can occasionally flip a spike.
+
+The original pickled checkpoints (commit `7f020a7`, `pretrained/*.pt`) needed slayerSNN to load. `tools/convert_checkpoints.py` produced the current `.pth` files from them without slayerSNN.
 
 ## 3. End-to-end flow
 

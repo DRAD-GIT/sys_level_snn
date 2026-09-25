@@ -15,6 +15,7 @@ from hardware import (C3HardwareConfig, ConvHardwareConfig, HardwareMetrics,
                       calculate_c3_metrics, calculate_conv_metrics)
 from hardware.mapping import quantize_weights
 from evaluation.report import export_results, format_final_table, setup_logger
+from evaluation.software import TestStats, num_spikes_loss, predict_class
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_LOG_DIR = os.path.join(REPO_ROOT, "logs")
@@ -57,8 +58,6 @@ def evaluate(model, architectures, *, batch_size=1, max_batches=None,
 
     Returns (accuracy_percent, {name: network HardwareMetrics per inference}).
     """
-    import slayerSNN as snn  # type: ignore  # imported here so hardware-only use needs no slayer
-
     if batch_size <= 0 or (max_batches is not None and max_batches <= 0):
         raise ValueError("batch_size and max_batches must be positive")
     if not architectures:
@@ -76,8 +75,8 @@ def evaluate(model, architectures, *, batch_size=1, max_batches=None,
                           "all" if max_batches is None else max_batches, weight_bits)
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    net = models.load_pretrained(spec, device).to(device)
-    net_params = snn.params(spec.path(spec.params_yaml))
+    net = models.load_pretrained(spec, device)
+    net_params = models.load_params(spec.path(spec.params_yaml))
     net.eval()
 
     layer_names = [name for name, _ in spec.layers]
@@ -104,18 +103,11 @@ def evaluate(model, architectures, *, batch_size=1, max_batches=None,
             if weight_bits == 0:
                 levels[name] = torch.tensor([torch.min(w_hw), torch.max(w_hw)]).to(device)
 
-    paths = net_params["training"]["path"]
-    test_set = spec.dataset_class(
-        data_path=os.path.join(REPO_ROOT, paths["dir_test"]),
-        samples_file=os.path.join(REPO_ROOT, paths["list_test"]),
-        sampling_time=net_params["simulation"]["Ts"],
-        sample_length=net_params["simulation"]["tSample"],
-    )
+    test_set = models.test_dataset(spec, net_params)
     test_loader = DataLoader(dataset=test_set, batch_size=batch_size,
                              shuffle=False, num_workers=num_workers)
 
-    error = snn.loss(net_params).to(device)
-    stats = snn.learningStats.learningStats()
+    stats = TestStats()
     per_layer = {arch: {name: HardwareMetrics() for name in layer_names}
                  for arch in architectures}
 
@@ -132,12 +124,11 @@ def evaluate(model, architectures, *, batch_size=1, max_batches=None,
             output = net(x_in)
 
         # Software metrics
-        stats.testing.correctSamples += torch.sum(snn.predict.getClass(output) == label).item()
-        stats.testing.numSamples += len(label)
-        stats.testing.lossSum += error.numSpikes(output, target).cpu().item()
-        test_acc = round(100 * stats.testing.correctSamples / stats.testing.numSamples, 2)
+        loss = num_spikes_loss(output, target, net_params, net.slayer.psp).item()
+        stats.update(predict_class(output), label, loss)
+        test_acc = round(stats.accuracy, 2)
         if (b_idx + 1) % 10 == 0 or b_idx == 0:
-            logger.info(f"Batch: {b_idx + 1}; Loss: {round(stats.testing.loss(), 2)}; "
+            logger.info(f"Batch: {b_idx + 1}; Loss: {round(stats.loss, 2)}; "
                         f"Accuracy: {test_acc}%")
 
         # Hardware metrics: any nonzero layer input counts as a binary spike.
