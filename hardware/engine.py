@@ -6,7 +6,9 @@ charges every component:
   static   supply_v * static_ua * (powered time per read or time bin)
            * powered instances, summed over all reads or time bins
   events   event_pj * (powered instances per read or time bin, or output spikes)
-  array    supply_v * (cell current from spikes and conductances) * read time
+  data     supply_v * (current computed from spikes and conductances) * read time,
+           for the array ("crossbar_read", "reference_read") and the
+           weight-slice current mirrors ("slice_mirror")
 Powered instances follow the component's `on` rule: all valid instances, or
 ("gated") only those whose tile/window/layer receives a spike.
 """
@@ -14,7 +16,8 @@ import math
 from dataclasses import dataclass
 
 from hardware.architecture import TILE_RULES, rule_of
-from hardware.mapping import Geometry, conductance_slices, layer_geometry, spike_activity
+from hardware.mapping import (Geometry, conductance_slices, default_slice_gains, layer_geometry,
+                              spike_activity)
 from hardware.timeline import Timeline, build_timeline
 
 
@@ -141,11 +144,11 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
     tl = build_timeline(arch, g.reads_per_timestep, spikes.shape[4])
     sequential = arch.conv_mapping == "sequential"
 
-    # Cell current (A) summed over all reads: each spike on row k drives the
-    # conductances of row k in every column slice.
+    # Current (A) of each column slice summed over all reads: each spike on
+    # row k drives the conductances of row k in every column.
     slices, g_reference = conductance_slices(arch, weights)
     v_read = arch.crossbar.v_read
-    data_a = v_read * sum(float(s.sum(0) @ act.row_drive) for s in slices)
+    slice_a = [(v_read * float(g_slice.sum(0) @ act.row_drive), s) for g_slice, s in slices]
     reference_a = v_read * g_reference * g.out_channels * act.spikes_on_rows \
         if arch.crossbar.reference_columns else 0.0
 
@@ -168,9 +171,15 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
             per_bin = tl.timestep_on_time(c.during)
             energy += c.supply_v * c.static_ua * 1e-6 * per_bin * powered_per_bin(on, g, act, sequential)
             active = per_bin * tl.timesteps
-        if c.model != "static":  # cell current drawn from supply_v for the read stage
+        if c.model != "static":  # data-driven current drawn from supply_v for the stage
             start, end = tl.read[c.during[0]]
-            current = data_a if c.model == "crossbar_read" else reference_a
+            if c.model == "crossbar_read":
+                current = sum(a for a, _ in slice_a)
+            elif c.model == "reference_read":
+                current = reference_a
+            else:
+                gains = c.slice_gains or default_slice_gains(arch)
+                current = sum(gains[s] * a for a, s in slice_a)
             energy += c.supply_v * current * (end - start)  # A * V * ns = nJ
         if c.event_pj:
             if c.events == "read":

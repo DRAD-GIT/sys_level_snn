@@ -11,9 +11,12 @@ import unittest
 import numpy as np
 import torch
 
-from architectures import c3cim, conventional, rram_1bit
-from hardware import (Architecture, Component, Crossbar, Precision, Stage, evaluate_layer,
+from architectures import c3cim, conventional, memories, ota_cim
+from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, evaluate_layer,
                       quantize_weights)
+
+LINEAR_1BIT = Memory("linear_1bit", cell_bits=1, r_on=1e3, r_off=1e6)
+NONUNIFORM_2BIT = Memory("nonuniform_2bit", cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
 from hardware.architecture import TILE_RULES, rule_of
 
 
@@ -40,16 +43,20 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
         return [int(xp[b, c, y * stride + i, x * stride + j, t])
                 for c in range(channels) for i in range(kh) for j in range(kw)]
 
-    # Physical columns: conductance of each cell, built from the codes bit by bit.
-    g_on, g_off = 1 / xb.r_on, 1 / xb.r_off
+    # Physical columns: (conductance of each cell, slice index), built from the
+    # codes bit by bit and the memory's level conductances.
+    levels = xb.memory.conductances()
+    g_min, g_max = levels[0], levels[-1]
+    g_mid = (g_min + g_max) / 2
     flat = weights.reshape(out, -1)
     columns = []
     if pr.weight_encoding == "analog":
         peak = float(flat.abs().max())
+        n_slices = 1
         for o in range(out):
-            columns.append([(g_on + g_off) / 2 + float(v) / peak * (g_on - g_off) / 2 for v in flat[o]])
+            columns.append(([g_mid + float(v) / peak * (g_max - g_min) / 2 for v in flat[o]], 0))
     else:
-        bits, cell = pr.weight_bits, xb.cell_bits
+        bits, cell = pr.weight_bits, xb.memory.cell_bits
         top = 2 ** cell - 1
         for o in range(out):
             codes = [int(v) for v in flat[o]]
@@ -59,11 +66,12 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
                 planes, n = [[c + 2 ** (bits - 1) for c in codes]], bits
             else:
                 planes, n = [[max(c, 0) for c in codes], [max(-c, 0) for c in codes]], bits - 1
+            n_slices = math.ceil(n / cell)
             for plane in planes:
-                for s in range(math.ceil(n / cell)):
-                    columns.append([g_off + ((v >> (s * cell)) & top) / top * (g_on - g_off)
-                                    for v in plane])
+                for s in range(n_slices):
+                    columns.append(([levels[(v >> (s * cell)) & top] for v in plane], s))
     used = len(columns)
+    slice_current = [0.0] * n_slices
     column_tiles = math.ceil(used / xb.cols)
     tiles = [range(r, min(r + rows, k_rows)) for r in range(0, k_rows, rows)]
     tile_phases = [[t[p:p + active_rows] for p in range(0, len(t), active_rows)] for t in tiles]
@@ -83,15 +91,16 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
 
     read_powered = {c.name: 0.0 for c in arch.components}
     bin_powered = {c.name: 0.0 for c in arch.components}
-    data_current = reference_current = 0.0
+    reference_current = 0.0
     reads_per_bin = max_phases * (len(positions) if sequential else 1)
     for b in range(batch):
         for t in range(bins):
             patches = {w: patch(b, t, *w) for w in positions}
             for w, p_in in patches.items():
                 for k, s in enumerate(p_in):
-                    data_current += s * sum(col[k] for col in columns) * xb.v_read
-                    reference_current += s * out * (g_on + g_off) / 2 * xb.v_read
+                    for cells, index in columns:
+                        slice_current[index] += s * cells[k] * xb.v_read
+                    reference_current += s * out * g_mid * xb.v_read
             groups = [[w] for w in positions] if sequential else [positions]
             for group in groups:
                 for p in range(max_phases):
@@ -147,19 +156,27 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
             events = output_spikes
         e += c.event_pj * 1e-3 * events
         if c.model == "crossbar_read":
-            e += c.supply_v * data_current * durations[c.during[0]]
+            e += c.supply_v * sum(slice_current) * durations[c.during[0]]
         elif c.model == "reference_read":
             e += c.supply_v * reference_current * durations[c.during[0]]
+        elif c.model == "slice_mirror":  # binary: MSB x1, each lower slice / 2^cell_bits
+            cell = xb.memory.cell_bits
+            gains = c.slice_gains or [2.0 ** (cell * (s - n_slices + 1)) for s in range(n_slices)]
+            e += c.supply_v * sum(gains[s] * slice_current[s] for s in range(n_slices)) \
+                * durations[c.during[0]]
         energy[c.name] = e / batch
     return energy, bins * bin_span
 
 
-def test_arch(mapping, precision, crossbar):
+def test_arch(mapping, precision, crossbar, custom_gains=None):
     gated = lambda rule, **kw: dict(rule=rule, gated=True, **kw)
     return Architecture(
         "test", crossbar, precision,
         [Stage("drive", 2.0), Stage("sense", 3.0), Stage("fire", 1.0, level="timestep")],
         [Component("cells", model="crossbar_read", during=["sense"], supply_v=1.0),
+         Component("mirrors", model="slice_mirror", during=["sense"], supply_v=1.2),
+         Component("mirrors_custom", model="slice_mirror", during=["drive"], supply_v=0.9,
+                   slice_gains=custom_gains),
          Component("ota", count="physical_columns", on=gated("used_columns"), during=["sense"],
                    static_ua=10.0, event_pj=0.5),
          Component("bias", count="physical_columns", during=["drive", "sense"], static_ua=1.0),
@@ -194,61 +211,73 @@ class ReferenceModelTests(unittest.TestCase):
         conv_weights = torch.randint(-7, 8, (5, 3, 3, 3), generator=g)
         dense_spikes = (torch.rand(2, 40, 1, 1, 2, generator=g) > 0.7).float()
         dense_weights = torch.randint(-7, 8, (7, 40, 1, 1), generator=g)
-        crossbar = Crossbar(rows=16, cols=8, cell_bits=2, active_rows=6)   # partial tiles, 3 phases
-        precisions = [Precision(4, "twos_complement"), Precision(4, "offset"),
-                      Precision(4, "differential"), Precision(None, "analog")]
+        encodings = ("twos_complement", "offset", "differential", "analog")
         for mapping in ("sequential", "parallel"):
-            for precision in precisions:
-                arch = test_arch(mapping, precision, crossbar)
-                w_conv = conv_weights.float() if precision.weight_bits is None else conv_weights
-                w_dense = dense_weights.float() if precision.weight_bits is None else dense_weights
-                with self.subTest(mapping=mapping, encoding=precision.weight_encoding):
-                    self.check(arch, conv_spikes, w_conv, stride=2, padding=1)
-                    self.check(arch, conv_spikes, w_conv, stride=1, padding=0)
-                    self.check(arch, dense_spikes, w_dense)
+            for memory in (NONUNIFORM_2BIT, LINEAR_1BIT):
+                # 16-row tiles with 6 active rows: partial tiles, 3 phases.
+                crossbar = Crossbar(memory, rows=16, cols=8, active_rows=6)
+                for encoding in encodings:
+                    analog = encoding == "analog"
+                    magnitude_bits = 3 if encoding == "differential" else 4
+                    slices = 1 if analog else math.ceil(magnitude_bits / memory.cell_bits)
+                    gains = tuple(0.3 + 0.5 * s for s in range(slices))   # not binary
+                    arch = test_arch(mapping, Precision(None if analog else 4, encoding),
+                                     crossbar, gains)
+                    w_conv = conv_weights.float() if analog else conv_weights
+                    w_dense = dense_weights.float() if analog else dense_weights
+                    with self.subTest(mapping=mapping, memory=memory.name, encoding=encoding):
+                        self.check(arch, conv_spikes, w_conv, stride=2, padding=1)
+                        self.check(arch, conv_spikes, w_conv, stride=1, padding=0)
+                        self.check(arch, dense_spikes, w_dense)
 
     def test_silent_input_powers_only_ungated_parts(self):
-        arch = test_arch("parallel", Precision(4), Crossbar(rows=8, cols=8))
+        arch = test_arch("parallel", Precision(4), Crossbar(LINEAR_1BIT, rows=8, cols=8))
         silent = torch.zeros(1, 2, 4, 4, 2)
         result = evaluate_layer(arch, silent, torch.ones(3, 2, 3, 3, dtype=torch.int64),
                                 output_spikes=0)
-        for name in ("cells", "ota", "driver", "wl_driver", "tile_ctrl", "neuron", "sense_amp",
-                     "controller"):
+        for name in ("cells", "mirrors", "mirrors_custom", "ota", "driver", "wl_driver",
+                     "tile_ctrl", "neuron", "sense_amp", "controller"):
             self.assertEqual(result.components[name].energy_nj, 0.0, name)
         for name in ("bias", "bank", "clock"):
             self.assertGreater(result.components[name].energy_nj, 0.0, name)
 
 
 class HandCalculationTests(unittest.TestCase):
-    def test_rram_1bit_dense_layer(self):
+    def test_ota_cim_dense_layer(self):
+        """128 -> 64 dense layer, 4-bit weights on 1-bit RRAM, 4 time bins."""
+        arch = ota_cim.build("ota", memories.RRAM_1BIT)
         g = torch.Generator().manual_seed(0)
         weights = torch.randint(-7, 8, (64, 128, 1, 1), generator=g)
         spikes = torch.randint(0, 2, (1, 128, 1, 1, 4), generator=g)
-        r = evaluate_layer(rram_1bit.ARCH, spikes, weights)
+        r = evaluate_layer(arch, spikes, weights)
         codes, s = weights[:, :, 0, 0].numpy() % 16, spikes[0, :, 0, 0, :].numpy()
-        current = sum(0.2 * np.sum(s[:, t] * np.where((codes[o] >> b) & 1, 1 / 20e3, 1 / 200e3))
-                      for o in range(64) for b in range(4) for t in range(4))
+        # Current of weight-bit b's columns, over all outputs and time bins.
+        bit_current = [sum(0.2 * np.sum(s[:, t] * np.where((codes[o] >> b) & 1, 1 / 20e3, 1 / 200e3))
+                           for o in range(64) for t in range(4)) for b in range(4)]
         # OTAs: 256 used columns in each of the 2 row tiles, per time bin in
         # which that row tile receives a spike.
         busy = sum(bool(s[r * 64:(r + 1) * 64, t].any()) for r in range(2) for t in range(4))
-        expected = {"cells": 1.1 * current * 5.0,
+        expected = {"cells": 1.1 * sum(bit_current) * 5.0,
                     "sl_ota": 1.1 * 10e-6 * 256 * busy * 5.0,
-                    "lif_comparator": 1.1 * 10e-6 * 64 * 4 * 7.0}
+                    # mirrors: MSB x1, then 1/2, 1/4, 1/8
+                    "slice_mirrors": 1.1 * sum(2.0 ** (b - 3) * bit_current[b] for b in range(4)) * 5.0,
+                    # comparators: 64 neurons on for the 2 ns fire step of each of 4 bins
+                    "lif_comparator": 1.1 * 10e-6 * 64 * 4 * 2.0}
         for name, energy in expected.items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=9)
-        self.assertEqual(r.latency_ns, 28.0)
+        self.assertEqual(r.latency_ns, 4 * (5.0 + 2.0))
         self.assertEqual(r.components["sl_ota"].installed, 512)
         self.assertEqual((r.macs, r.synaptic_ops), (128 * 64 * 4, s.sum() * 64))
 
     def test_readme_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
-        r = evaluate_layer(c3cim.ARCH, x, w)
+        r = evaluate_layer(c3cim.build("c3cim", memories.RRAM_C3), x, w)
         for name, energy in dict(column=.000132, column_driver=.0156684, VI=.005832,
                                  LIF=.0063624).items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=12)
         self.assertAlmostEqual(r.latency_ns, 482.0)
         self.assertAlmostEqual(r.area_um2, 10259.68, places=6)
-        r = evaluate_layer(conventional.ARCH, x, w)
+        r = evaluate_layer(conventional.build("conventional", memories.RRAM_ANALOG), x, w)
         for name, energy in dict(crossbar=.04752, reference_array=.0239976, DA=.00072468,
                                  reference_subtractor=0.0, LIF=.0005016).items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=12)
@@ -258,9 +287,9 @@ class HandCalculationTests(unittest.TestCase):
     def test_conv_mappings_trade_area_for_latency(self):
         spikes = torch.ones(1, 2, 5, 5, 1)
         weights = torch.ones(4, 2, 3, 3, dtype=torch.int64)
-        seq = evaluate_layer(rram_1bit.ARCH, spikes, weights, padding=1)
-        par_arch = Architecture(**{**vars(rram_1bit.ARCH), "conv_mapping": "parallel"})
-        par = evaluate_layer(par_arch, spikes, weights, padding=1)
+        seq = evaluate_layer(ota_cim.build("s", memories.RRAM_1BIT), spikes, weights, padding=1)
+        par = evaluate_layer(ota_cim.build("p", memories.RRAM_1BIT, conv_mapping="parallel"),
+                             spikes, weights, padding=1)
         self.assertEqual(seq.geometry.windows, 25)
         self.assertEqual((seq.components["cells"].installed, par.components["cells"].installed), (1, 25))
         self.assertEqual((seq.latency_ns, par.latency_ns), (25 * 5.0 + 2.0, 5.0 + 2.0))
@@ -269,7 +298,7 @@ class HandCalculationTests(unittest.TestCase):
 
 class TimelineTests(unittest.TestCase):
     def run_arch(self, stages, components, x=None, **kw):
-        crossbar = kw.pop("crossbar", Crossbar())
+        crossbar = kw.pop("crossbar", Crossbar(LINEAR_1BIT))
         arch = Architecture("t", crossbar, Precision(None, "analog"), stages, components, **kw)
         return evaluate_layer(arch, torch.ones(1, 64, 1, 1, 3) if x is None else x,
                               torch.ones(1, 64, 1, 1))
@@ -291,7 +320,7 @@ class TimelineTests(unittest.TestCase):
         comps = [Component("amp", during=["sense"], static_ua=1.0),
                  Component("neuron", count="outputs", during=["timestep"], static_ua=1.0)]
         r = self.run_arch(stages, comps, x=torch.ones(1, 64, 1, 1, 2),
-                          crossbar=Crossbar(active_rows=16),       # 4 reads per bin
+                          crossbar=Crossbar(LINEAR_1BIT, active_rows=16),       # 4 reads per bin
                           read_interval_ns=3.0, timestep_interval_ns=10.0)
         self.assertEqual(r.timeline.timestep["fire"], (14.0, 15.0))  # 3*3 + 5, then fire
         self.assertEqual(r.latency_ns, 25.0)                         # next bin starts at 10
@@ -302,7 +331,7 @@ class TimelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "two reads at once"):
             self.run_arch([Stage("drive", 2.0), Stage("sense", 3.0)],
                           [Component("both", during=["drive", "sense"], static_ua=1.0)],
-                          crossbar=Crossbar(active_rows=32), read_interval_ns=3.0)
+                          crossbar=Crossbar(LINEAR_1BIT, active_rows=32), read_interval_ns=3.0)
 
     def test_timestep_stage_before_reads(self):
         r = self.run_arch([Stage("read", 5.0), Stage("precharge", 1.0, level="timestep", after=[]),
@@ -320,7 +349,7 @@ class ValidationTests(unittest.TestCase):
         self.assertIs(quantize_weights(weights, None)[0], weights)
 
     def test_weight_code_checks(self):
-        arch = test_arch("sequential", Precision(4), Crossbar())
+        arch = test_arch("sequential", Precision(4), Crossbar(LINEAR_1BIT))
         with self.assertRaisesRegex(ValueError, "within"):
             evaluate_layer(arch, torch.ones(1, 1, 1, 1, 1), torch.tensor([[[[8]]]]))
         with self.assertRaisesRegex(ValueError, "integer weight codes"):
@@ -340,7 +369,7 @@ class ValidationTests(unittest.TestCase):
                dict(conv_mapping="diagonal")]
         for kwargs in bad:
             with self.subTest(**{k: str(v) for k, v in kwargs.items()}), self.assertRaises(ValueError):
-                Architecture("x", Crossbar(), kwargs.pop("precision", Precision()),
+                Architecture("x", Crossbar(LINEAR_1BIT), kwargs.pop("precision", Precision()),
                              kwargs.pop("stages", read), kwargs.pop("components", []), **kwargs)
 
 

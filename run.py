@@ -2,10 +2,11 @@
 
     python run.py
 
-Architectures are defined in architectures/ (one file each: crossbar,
-precision, conv mapping, timeline stages, components). Copy a file to start a
-new design, or build a hardware.Architecture right here and add it to
-ARCHITECTURES. Command-line flags override the run settings for one run.
+Hardware is built from architectures/: a memory technology (memories.py)
+combined with a design template (build(name, memory, **parameters)). Change
+parameters here, add a new memory or template, or build a
+hardware.Architecture right here. Command-line flags override the run
+settings for one run.
 
 Results: printed, and saved under logs/ (a JSON per architecture and the
 comparison table logs/comparison_summary.csv).
@@ -13,7 +14,7 @@ comparison table logs/comparison_summary.csv).
 import argparse
 import os
 
-from architectures import c3cim, conventional, rram_1bit
+from architectures import c3cim, conventional, memories, ota_cim
 from evaluation.report import export, format_results
 from evaluation.runner import evaluate
 
@@ -27,7 +28,11 @@ MAX_BATCHES = 1        # None = the full test set (slow)
 # ============================================================================
 # HARDWARE: architectures to evaluate (names must be unique)
 # ============================================================================
-ARCHITECTURES = [rram_1bit.ARCH, conventional.ARCH, c3cim.ARCH]
+ARCHITECTURES = [
+    ota_cim.build("ota_rram_1bit", memories.RRAM_1BIT, weight_bits=4, conv_mapping="sequential"),
+    conventional.build("conventional", memories.RRAM_ANALOG),
+    c3cim.build("c3cim", memories.RRAM_C3),
+]
 
 # ============================================================================
 # METRICS: switch each reported metric on or off

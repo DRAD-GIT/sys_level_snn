@@ -10,7 +10,9 @@ import torch
 
 import models
 import models.nmnist
-from architectures import c3cim, rram_1bit
+from architectures import c3cim, memories, ota_cim
+
+ARCHITECTURES = [ota_cim.build("ota", memories.RRAM_1BIT), c3cim.build("c3cim", memories.RRAM_C3)]
 from evaluation.probes import LayerProbe
 from evaluation.report import export, format_results
 from evaluation.runner import evaluate
@@ -52,21 +54,21 @@ class PipelineTests(unittest.TestCase):
         spec = dataclasses.replace(models.get_spec("nmnist"), dataset_class=RandomSpikes)
         self.spec_patch = patch.object(models.nmnist, "SPEC", spec)
         self.spec_patch.start()
-        self.results = evaluate("nmnist", [rram_1bit.ARCH, c3cim.ARCH], batch_size=2,
+        self.results = evaluate("nmnist", ARCHITECTURES, batch_size=2,
                                 max_batches=1, num_workers=0, log=lambda *_: None)
 
     def tearDown(self):
         self.spec_patch.stop()
 
     def test_results_per_architecture_and_layer(self):
-        self.assertEqual(set(self.results), {"rram_1bit", "c3cim"})
+        self.assertEqual(set(self.results), {"ota", "c3cim"})
         for accuracy, costs in self.results.values():
             self.assertEqual(list(costs), list(models.get_spec("nmnist").layers))
             self.assertTrue(0 <= accuracy <= 100)
             for cost in costs.values():
                 self.assertEqual(cost.inferences, 2)
                 self.assertGreater(cost.energy_nj, 0)
-        sc1 = self.results["rram_1bit"][1]["SC1"]
+        sc1 = self.results["ota"][1]["SC1"]
         self.assertEqual(sc1.geometry.windows, 28 * 28)          # 34x34 input, 7x7 kernel
         self.assertGreater(sc1.output_spikes, 0)
 
@@ -78,8 +80,8 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("component", text)
         self.assertNotIn("TOPS/W", text)
         with tempfile.TemporaryDirectory() as folder:
-            rows = export(self.results, [rram_1bit.ARCH, c3cim.ARCH], "nmnist", metrics, folder)
-            rows = export(self.results, [rram_1bit.ARCH, c3cim.ARCH], "nmnist", metrics, folder)
+            rows = export(self.results, ARCHITECTURES, "nmnist", metrics, folder)
+            rows = export(self.results, ARCHITECTURES, "nmnist", metrics, folder)
             with open(rows[0]["result_json"]) as file:
                 report = json.load(file)
             self.assertEqual(set(report["network"]), {"energy", "latency"})

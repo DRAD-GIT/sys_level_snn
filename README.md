@@ -6,12 +6,13 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 
 ```text
 run.py                 MAIN SCRIPT: model, architectures to evaluate, metric switches
-architectures/         hardware definitions, one file per design (ARCH = Architecture(...))
-  rram_1bit.py         1-bit RRAM, OTA-held source lines, comparator LIFs
-  conventional.py      current-mode CIM, analog cells + reference columns
-  c3cim.py             C3CIM macro (fixed currents)
+architectures/         hardware definitions
+  memories.py          memory technologies: bits per cell, conductance levels
+  ota_cim.py           design template: OTA-held source lines, slice mirrors, comparator LIFs
+  conventional.py      design template: analog cells + reference columns, DA, LIF bank
+  c3cim.py             design template: C3CIM macro (fixed currents)
 hardware/              the hardware model
-  architecture.py      Crossbar, Precision, Stage, Component, Architecture (+ validation)
+  architecture.py      Memory, Crossbar, Precision, Stage, Component, Architecture
   mapping.py           layer -> windows, tiles, weight slices; spike activity
   timeline.py          stage placement: serial, parallel, overlapping, pipelined
   engine.py            evaluate_layer: energy / latency / area of one layer
@@ -34,7 +35,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then edit `run.py`:
 
 - `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
-- `ARCHITECTURES`: which designs from `architectures/` to evaluate (or build one inline).
+- `ARCHITECTURES`: which designs to evaluate, each a design template combined with a memory, e.g. `ota_cim.build("ota_rram_1bit", memories.RRAM_1BIT, weight_bits=4)` (or build an `Architecture` inline).
 - `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
 ```bash
@@ -52,28 +53,39 @@ The weight files are plain tensors (`torch.load(weights_only=True)`); `models.lo
 
 ## 3. Defining hardware
 
-An architecture has five parts. `architectures/rram_1bit.py`:
+Hardware is split so that any memory can be combined with any design:
+
+- a **Memory** (`architectures/memories.py`): bits per cell and the conductance of every level, linear between `1/r_off` and `1/r_on` or listed explicitly (`levels_s`) for nonuniform devices;
+- a **design template** (`architectures/*.py`): `build(name, memory, **parameters)` returning an `Architecture`: crossbar, precision, conv mapping, stages and components, with every circuit value a parameter.
+
+`architectures/ota_cim.py` (abridged):
 
 ```python
-ARCH = Architecture(
-    name="rram_1bit",
-    crossbar=Crossbar(rows=64, cols=64, cell_bits=1, r_on=20e3, r_off=200e3, v_read=0.2),
-    precision=Precision(weight_bits=4, weight_encoding="twos_complement"),
-    conv_mapping="sequential",
-    stages=[Stage("read", 5.0),                     # every crossbar read
-            Stage("fire", 2.0, level="timestep")],  # once per time bin, after the reads
-    components=[
-        Component("cells", model="crossbar_read", count="tiles", during=["read"], supply_v=1.1),
-        Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
-                  during=["read"], supply_v=1.1, static_ua=10.0),
-        Component("lif_comparator", count="outputs", during=["timestep"], supply_v=1.1, static_ua=10.0),
-    ],
-)
+def build(name, memory, *, rows=64, cols=64, v_read=0.2, weight_bits=4, conv_mapping="sequential",
+          supply_v=1.1, settle_ns=5.0, fire_ns=2.0, ota_ua=10.0, comparator_ua=10.0, ...):
+    return Architecture(
+        name=name,
+        crossbar=Crossbar(memory=memory, rows=rows, cols=cols, v_read=v_read),
+        precision=Precision(weight_bits=weight_bits, weight_encoding="twos_complement"),
+        conv_mapping=conv_mapping,
+        stages=[Stage("read", settle_ns),                   # every crossbar read
+                Stage("fire", fire_ns, level="timestep")],  # once per time bin, after the reads
+        components=[
+            Component("cells", model="crossbar_read", count="tiles", during=["read"], supply_v=supply_v),
+            Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
+                      during=["read"], supply_v=supply_v, static_ua=ota_ua),
+            Component("slice_mirrors", model="slice_mirror", count="used_columns", during=["read"],
+                      supply_v=supply_v),
+            Component("lif_comparator", count="outputs", during=["fire"], supply_v=supply_v,
+                      static_ua=comparator_ua),
+        ])
 ```
+
+Here the source-line OTAs are powered only in reads where their tile receives a spike, each weight-slice column is mirrored with a binary gain into its neuron, and each LIF comparator draws its static current only during the 2 ns fire step of every time bin.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
-**Crossbar**: tile size, bits per cell, `r_on`/`r_off`, read voltage, `active_rows` (rows enabled per read; fewer than `rows` splits a read into row phases), and `reference_columns` (analog encoding: one G(0) column per output).
+**Crossbar**: the memory, tile size, read voltage, `active_rows` (rows enabled per read; fewer than `rows` splits a read into row phases), and `reference_columns` (analog encoding: one G(0) column per output).
 
 **Precision**: `weight_bits` (None = unquantized, analog only) and `weight_encoding`:
 
@@ -84,18 +96,16 @@ Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 | `differential` | 2 x ceil((weight_bits - 1) / cell_bits) | magnitude slices, positive and negative columns |
 | `analog` | 1 | G linear in the weight over [-max\|w\|, max\|w\|]; G(0) at the midpoint |
 
-A cell at level L of 2^cell_bits - 1 has G = G_off + L / (2^cell_bits - 1) x (G_on - G_off). How slice currents are weighted and combined after the array is part of your component list.
+A cell at level L has the memory's level-L conductance. How slice currents are weighted and combined after the array is part of the component list (e.g. `slice_mirror`).
 
 Inputs are binary spikes. Spikes of every time bin are integrated with equal weight in the LIF, so input precision is the number of time bins: each time bin is one **timestep**.
 
-**Conv mapping**: a layer is unrolled into windows (one per output pixel; stride and padding included; a dense layer has one window).
+**Conv mapping**: each kernel (one output channel) occupies K = in_channels x kh x kw rows of one column per weight slice (a 3x3x3 kernel with 4-bit weights on 1-bit cells: 27 rows x 4 columns). A layer is unrolled into windows (one per output pixel, stride and padding included; a dense layer has one window), and a window's input patch drives the kernel rows. One weight copy holds all kernels in the fewest tiles: K rows x (out_channels x columns per weight), split into row tiles x column tiles.
 
 | `conv_mapping` | Weight copies | Reads per time bin |
 |---|---|---|
-| `sequential` | 1: the kernel weights once; windows applied one after another, column tiles in parallel | windows x row phases |
-| `parallel` | one per window: all windows at once (maximum resources) | row phases |
-
-Every weight copy holds K = in_channels x kh x kw rows and out_channels x columns-per-weight columns, split into row tiles x column tiles.
+| `sequential` | 1: all kernels once; the windows are applied one after another | windows x row phases |
+| `parallel` | one per window: every window computed at once | row phases |
 
 **Stages** (timeline): `level="read"` stages repeat every read; `level="timestep"` stages run once per time bin, where the whole block of reads is the pseudo-stage `"reads"` (which the first timestep stage follows by default). Placement: `after=None` follows the previous stage of the level (serial), `after=[]` starts with the level (parallel), `after=["x", "y"]` waits for those, and a negative `offset_ns` overlaps the start with the end of the dependency. `read_interval_ns` / `timestep_interval_ns` pipeline consecutive reads / time bins.
 
@@ -103,7 +113,7 @@ Every weight copy holds K = in_channels x kh x kw rows and out_channels x column
 
 - `static_ua` x `supply_v` x powered time, for every powered instance;
 - `event_pj` per event: per powered instance per read (`events="read"`), per time bin (`"timestep"`), or per LIF output spike of the layer (`"output_spike"`);
-- `model="crossbar_read"` / `"reference_read"`: the cell current computed from the spikes and conductances, drawn from `supply_v` during its read stage.
+- data-driven models, drawn from `supply_v` during their read stage, with currents computed from the spikes and conductances: `"crossbar_read"` (weight columns), `"reference_read"` (G(0) reference columns) and `"slice_mirror"` (current mirrors copying each weight-slice column with gain `slice_gains`; default binary, most significant slice x1, the next x1/2, ...).
 
 Count and on rules, with the unit each instance belongs to:
 
@@ -120,7 +130,7 @@ Count and on rules, with the unit each instance belongs to:
 
 `{"rule": ..., "gated": True}` powers an instance only when its unit receives at least one input spike in that read (read-level components) or time bin (whole-bin components). Without gating, every valid unit is powered: a partially filled row tile stops after its last row phase.
 
-Leave unknown values at 0 (e.g. areas) and switch the metric off; add, remove or rename components freely. A new design is a new file in `architectures/`.
+Leave unknown values at 0 (e.g. areas) and switch the metric off; add, remove or rename components freely. A new memory is one line in `memories.py`; a new design is a new template in `architectures/`.
 
 ## 4. How costs are computed
 
@@ -129,13 +139,13 @@ For each layer and batch (`hardware/engine.py`):
 1. **Mapping**: windows, weight copies, tiles, row phases and reads per time bin (`mapping.layer_geometry`).
 2. **Activity**: every window's input patch is extracted from the spikes; per row, the number of spikes; per read and time bin, which row tiles, windows and the layer receive a spike (`mapping.spike_activity`).
 3. **Timeline**: stage start/end times, reads per time bin, latency per inference = (T - 1) x timestep interval + timestep span (`timeline.build_timeline`). Latency follows the schedule and does not depend on the data.
-4. **Energy** per component: static energy = supply x current x (powered time per read or time bin) x (powered instances summed over all reads or time bins); event energy; array energy = supply x v_read x sum over spikes of the conductances of that row (every column slice) x read time.
+4. **Energy** per component: static energy = supply x current x (powered time per read or time bin) x (powered instances summed over all reads or time bins); event energy; data-driven energy = supply x (for each column slice: v_read x sum over spikes of that row's conductance, times its mirror gain for `slice_mirror`) x stage time.
 
 Per inference: energy is divided by the number of evaluated samples; area counts installed instances once. Network totals add the layers, which run one after another. Reported metrics: energy (nJ), latency (us), power = energy / latency (mW), area (mm^2), TOPS/W = 2 x dense MACs / energy (every input in every time bin, zeros included), and pJ per synaptic operation (SOP = an input spike reaching one output neuron; the event-driven SNN figure).
 
 ## 5. Verification
 
-`tests/test_hardware.py` holds a deliberately literal reference model: it builds every window's patch by hand, walks every sample, time bin, window, row tile and row phase, decides for each unit whether it is powered, and sums every cell's current. The engine must match it for both conv mappings, stride and padding, partial tiles, row phases, 2-bit cells, all four encodings and every rule (gated or not). Hand calculations cover the `rram_1bit` dense layer cell by cell, and the `conventional` and `c3cim` files reproduce this project's earlier worked examples exactly (K = 96 rows, 2 outputs, 8 active rows, one time bin):
+`tests/test_hardware.py` holds a deliberately literal reference model: it builds every window's patch by hand, walks every sample, time bin, window, row tile and row phase, decides for each unit whether it is powered, and sums every cell's current. The engine must match it for both conv mappings, stride and padding, partial tiles, row phases, linear 1-bit and nonuniform 2-bit memories, all four encodings, slice mirrors with binary and custom gains, and every rule (gated or not). Hand calculations cover the `ota_cim` dense layer cell by cell (cells, gated OTAs, binary mirrors, comparators on for the fire step), and the `conventional` and `c3cim` templates reproduce this project's earlier worked examples exactly (K = 96 rows, 2 outputs, 8 active rows, one time bin):
 
 | Architecture | Energy (nJ) | Latency (ns) | Area (um^2) |
 |---|---:|---:|---:|
@@ -169,7 +179,7 @@ The original pickled checkpoints (commit `7f020a7`, `pretrained/*.pt`) needed sl
 
 ## 7. Scope and caveats
 
-- Costs come from the component list: anything not listed (routing, buffers, control, the circuit that weights and combines bit-slice currents) is not charged.
+- Costs come from the component list: anything not listed (routing, buffers, control) is not charged.
 - No analog nonidealities: IR drop, device variation, noise, compliance and settling limits are not modelled, and accuracy comes from the software network.
 - Latency follows the fixed schedule; reads without spikes still take their time (only power is gated).
 - Only weighted conv and dense layers are mapped; pooling runs in software and is not charged.

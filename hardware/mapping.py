@@ -1,16 +1,20 @@
 """Layer -> crossbar mapping: windows, tiles, weight slices, spike activity.
 
-A weighted layer is a K x (out_channels * windows) matrix: K = in_channels *
-kh * kw rows; one window per output pixel (1 for a dense layer). One weight
-copy holds K rows x (out_channels * columns_per_weight) columns, split into
-row_tiles x column_tiles tiles. Row tiles of a copy work in parallel, each
-reading its rows in phases of `active_rows`.
+Each kernel (one output channel) occupies K = in_channels * kh * kw rows of
+one column per weight slice; a window's input patch drives those rows. One
+weight copy holds all kernels: K rows x (out_channels * columns_per_weight)
+columns, split into row_tiles x column_tiles tiles (the fewest that fit).
+"sequential" uses one copy and applies the windows one after another;
+"parallel" uses one copy per window so all windows run at once. Row tiles of
+a copy work in parallel, each reading its rows in phases of `active_rows`.
 """
 import math
 from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
+
+from hardware.architecture import slices_per_group
 
 
 @dataclass(frozen=True)
@@ -49,18 +53,14 @@ class Geometry:
 
 def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
     """input_shape: (channels, height, width); weight_shape: (out, in, kh, kw)."""
-    xb, pr = arch.crossbar, arch.precision
+    xb = arch.crossbar
     channels, height, width = input_shape
     out_ch, in_ch, kh, kw = weight_shape
     if channels != in_ch:
         raise ValueError(f"input has {channels} channels, weights expect {in_ch}")
     windows = ((height + 2 * padding - kh) // stride + 1) * ((width + 2 * padding - kw) // stride + 1)
-    if pr.weight_encoding == "analog":
-        per_weight = 1
-    elif pr.weight_encoding == "differential":
-        per_weight = 2 * math.ceil((pr.weight_bits - 1) / xb.cell_bits)
-    else:
-        per_weight = math.ceil(pr.weight_bits / xb.cell_bits)
+    groups = 2 if arch.precision.weight_encoding == "differential" else 1
+    per_weight = groups * slices_per_group(arch)
     k_rows = in_ch * kh * kw
     active = xb.active_rows or xb.rows
     phases = tuple(math.ceil(min(xb.rows, k_rows - start) / active)
@@ -84,19 +84,21 @@ def quantize_weights(weights, bits):
 
 
 def conductance_slices(arch, weights):
-    """Conductance (S) of every physical column slice as [out, K] matrices,
-    plus the reference conductance G(0) (analog encoding)."""
-    xb, pr = arch.crossbar, arch.precision
+    """Every physical column slice as (conductance [out, K] in S, slice index
+    within its sign group), plus the reference conductance G(0) for analog."""
+    memory, pr = arch.crossbar.memory, arch.precision
     w = weights.reshape(weights.shape[0], -1)
-    g_on, g_off = 1 / xb.r_on, 1 / xb.r_off
+    levels = torch.tensor(memory.conductances(), dtype=torch.float64)
     if pr.weight_encoding == "analog":
-        # G linear in the weight over [-max|w|, max|w|]; G(0) is the midpoint.
-        g_mid = (g_on + g_off) / 2
+        # G linear in the weight over [-max|w|, max|w|] across the memory's
+        # conductance range; G(0) is the midpoint.
+        g_min, g_max = float(levels[0]), float(levels[-1])
+        g_mid = (g_min + g_max) / 2
         peak = float(w.abs().max()) or 1.0
-        return [g_mid + w.double() / peak * (g_on - g_off) / 2], g_mid
+        return [(g_mid + w.double() / peak * (g_max - g_min) / 2, 0)], g_mid
     if w.is_floating_point():
         raise ValueError("bit-sliced encodings need integer weight codes (see quantize_weights)")
-    bits, cell = pr.weight_bits, xb.cell_bits
+    bits, cell = pr.weight_bits, memory.cell_bits
     top = 2 ** (bits - 1) - 1
     if w.abs().max() > top:
         raise ValueError(f"weight codes must be within +/-{top} for {bits}-bit weights")
@@ -105,10 +107,17 @@ def conductance_slices(arch, weights):
     elif pr.weight_encoding == "offset":
         planes = [w + 2 ** (bits - 1)]
     else:  # differential: magnitudes of the positive and negative parts
-        planes, bits = [w.clamp(min=0), (-w).clamp(min=0)], bits - 1
-    levels = 2 ** cell - 1
-    return [g_off + ((plane >> (s * cell)) & levels).double() / levels * (g_on - g_off)
-            for plane in planes for s in range(math.ceil(bits / cell))], None
+        planes = [w.clamp(min=0), (-w).clamp(min=0)]
+    mask = 2 ** cell - 1
+    return [(levels[(plane >> (s * cell)) & mask], s)
+            for plane in planes for s in range(slices_per_group(arch))], None
+
+
+def default_slice_gains(arch):
+    """Binary mirror gains per slice (least significant first): the most
+    significant slice 1, each lower slice 2^-cell_bits of the next."""
+    n, cell = slices_per_group(arch), arch.crossbar.memory.cell_bits
+    return tuple(2.0 ** (cell * (s - n + 1)) for s in range(n))
 
 
 @dataclass

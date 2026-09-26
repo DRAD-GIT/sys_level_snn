@@ -9,8 +9,10 @@ than the tile height) and, with the "sequential" conv mapping, once per
 convolution window. Input spikes of every time bin carry the same weight in
 the LIF membrane, so input precision is the number of time bins.
 
-Weights of `weight_bits` are stored in cells of `cell_bits` (bit-slicing: more
-columns per weight). Convolutions are unrolled into windows:
+A kernel (the weights of one output channel) occupies one column per weight
+slice: weights of `weight_bits` are stored in cells of the memory's
+`cell_bits` (bit-slicing). Convolutions are unrolled into windows, each
+window's input patch driving the kernel rows:
   "sequential": one copy of the kernel weights; the windows are applied one
                 after another (column tiles still work in parallel);
   "parallel":   one copy of the kernel weights per window; all windows at once.
@@ -23,19 +25,39 @@ WINDOW_RULES = ("outputs", "output_bank")   # neurons / output positions of a wi
 LAYER_RULES = ("one", "fixed")
 DATA_RULES = ("spiking_rows",)              # word lines carrying a spike, per read
 ENCODINGS = ("twos_complement", "offset", "differential", "analog")
-MODELS = ("static", "crossbar_read", "reference_read")
+MODELS = ("static", "crossbar_read", "reference_read", "slice_mirror")
 EVENTS = ("read", "timestep", "output_spike")
 LEVELS = ("read", "timestep")
 MAPPINGS = ("sequential", "parallel")
 
 
 @dataclass
+class Memory:
+    """A memory cell technology: bits per cell and the conductance of each level.
+
+    Levels are spaced linearly in conductance from 1/r_off (level 0) to 1/r_on
+    (top level), unless `levels_s` lists every level's conductance (siemens,
+    ascending) for nonuniform devices. Analog cells use the continuous range.
+    """
+    name: str
+    cell_bits: int = 1
+    r_on: float | None = None       # lowest resistance (top level)
+    r_off: float | None = None      # highest resistance (level 0)
+    levels_s: tuple[float, ...] | None = None
+
+    def conductances(self):
+        if self.levels_s is not None:
+            return tuple(self.levels_s)
+        top = 2 ** self.cell_bits - 1
+        return tuple(1 / self.r_off + level / top * (1 / self.r_on - 1 / self.r_off)
+                     for level in range(top + 1))
+
+
+@dataclass
 class Crossbar:
+    memory: Memory
     rows: int = 64                  # physical rows (word lines) per tile
     cols: int = 64                  # physical columns per tile
-    cell_bits: int = 1              # bits stored per cell
-    r_on: float = 20e3              # lowest resistance (highest cell level)
-    r_off: float = 200e3            # highest resistance (cell level 0)
     v_read: float = 0.2             # read voltage across a selected cell
     active_rows: int | None = None  # rows enabled per read; None = all rows
     reference_columns: bool = False  # analog encoding: one G(0) column per output
@@ -75,9 +97,14 @@ class Component:
 
     energy = supply_v * static_ua * powered time      (bias/static current)
            + event_pj * events                        (per read, time bin or output spike)
-    model "crossbar_read" / "reference_read": the array's cell current,
-    computed from the spikes and conductances, drawn from supply_v during
-    its single read-level stage.
+    Data-driven models, charged during their single read-level stage from
+    supply_v, with currents computed from the spikes and conductances:
+      "crossbar_read"   the cell current of the weight columns;
+      "reference_read"  the cell current of the G(0) reference columns;
+      "slice_mirror"    current mirrors copying every weight-slice column's
+                        current with gain `slice_gains` (per slice, least
+                        significant first; default binary: most significant
+                        slice 1, the next 1/2, ...) into its neuron.
 
     count / on: a rule name or {"rule": name, "value": n (fixed),
     "size": n (column_groups), "gated": True}. on="all" repeats `count`.
@@ -94,6 +121,7 @@ class Component:
     events: str = "read"
     area_um2: float = 0.0
     model: str = "static"
+    slice_gains: tuple[float, ...] | None = None
     group: str = "periphery"        # reporting label only
 
 
@@ -146,18 +174,44 @@ def _number(value, label, positive=False):
         raise ValueError(f"{label} must be a {'positive' if positive else 'nonnegative'} number")
 
 
+def validate_memory(memory):
+    _positive_int(memory.cell_bits, f"memory {memory.name}: cell_bits")
+    if memory.levels_s is None:
+        for label in ("r_on", "r_off"):
+            _number(getattr(memory, label), f"memory {memory.name}: {label}", positive=True)
+        if memory.r_off <= memory.r_on:
+            raise ValueError(f"memory {memory.name}: r_off must exceed r_on")
+    else:
+        levels = list(memory.levels_s)
+        if len(levels) != 2 ** memory.cell_bits:
+            raise ValueError(f"memory {memory.name}: levels_s needs 2^cell_bits entries")
+        for level in levels:
+            _number(level, f"memory {memory.name}: levels_s")
+        if levels != sorted(levels) or levels[0] == levels[-1]:
+            raise ValueError(f"memory {memory.name}: levels_s must ascend")
+
+
+def slices_per_group(arch):
+    """Weight-slice columns per sign group (x2 groups for differential)."""
+    pr, cell = arch.precision, arch.crossbar.memory.cell_bits
+    if pr.weight_encoding == "analog":
+        return 1
+    bits = pr.weight_bits - 1 if pr.weight_encoding == "differential" else pr.weight_bits
+    return -(-bits // cell)
+
+
 def validate(arch):
     xb, pr = arch.crossbar, arch.precision
-    for label in ("rows", "cols", "cell_bits"):
+    if not isinstance(xb.memory, Memory):
+        raise ValueError("crossbar.memory must be a Memory")
+    validate_memory(xb.memory)
+    for label in ("rows", "cols"):
         _positive_int(getattr(xb, label), f"crossbar.{label}")
     if xb.active_rows is not None:
         _positive_int(xb.active_rows, "crossbar.active_rows")
         if xb.active_rows > xb.rows:
             raise ValueError("active_rows cannot exceed rows")
-    for label in ("r_on", "r_off", "v_read"):
-        _number(getattr(xb, label), f"crossbar.{label}", positive=True)
-    if xb.r_off <= xb.r_on:
-        raise ValueError("r_off must exceed r_on")
+    _number(xb.v_read, "crossbar.v_read", positive=True)
     if pr.weight_encoding not in ENCODINGS:
         raise ValueError(f"weight_encoding must be one of {ENCODINGS}")
     if pr.weight_bits is None:
@@ -211,3 +265,9 @@ def validate(arch):
             raise ValueError(f"{c.name}: {c.model} needs exactly one read-level stage")
         if c.model == "reference_read" and not xb.reference_columns:
             raise ValueError(f"{c.name}: reference_read needs crossbar.reference_columns")
+        if c.slice_gains is not None:
+            if c.model != "slice_mirror" or len(c.slice_gains) != slices_per_group(arch):
+                raise ValueError(f"{c.name}: slice_gains needs model 'slice_mirror' and one "
+                                 f"gain per weight slice ({slices_per_group(arch)})")
+            for gain in c.slice_gains:
+                _number(gain, f"{c.name}.slice_gains")
