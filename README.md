@@ -73,7 +73,6 @@ RRAM_1BIT_XBAR = compose(
     blocks=[
         crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
         periphery.source_line_ota(static_ua=10.0),         # powered only when spikes arrive
-        periphery.slice_mirrors(),                          # binary-weighted slice sum
         neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),    # comparator on for the fire step
     ],
     conv_mapping="sequential",

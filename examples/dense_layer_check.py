@@ -5,13 +5,12 @@
 Hardware: binary spikes on the word lines; 1-bit RRAM cells (20 kOhm /
 200 kOhm); an OTA per source line holds 0.2 V (bit lines grounded into the
 neurons) and draws 10 uA while operating; 64x64 tiles settling in 5 ns per
-read; supply 1.1 V. Each weight bit has its own column; the four columns of a
-weight are mirrored with gains 1, 1/2, 1/4, 1/8 into one LIF neuron, whose
+read; supply 1.1 V. Each weight bit has its own column (4-bit weights on
+1-bit cells: 4 columns per weight) feeding the output's LIF neuron, whose
 comparator draws 10 uA during its 2 ns fire step.
 
-Data: random 4-bit weights and random 4-bit inputs. In an SNN every time
-bin's spikes are integrated with equal weight, so a 4-bit input v (0..15) is
-a spike train with v spikes over 15 time bins.
+Data: random 4-bit weights and random binary input spikes. In an SNN the
+input of every time bin is a spike (0 or 1); only the weights are multi-bit.
 
 The script prints the engine's result next to an independent hand calculation.
 """
@@ -32,22 +31,19 @@ ARCH = compose(
         crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
                             supply_v=1.1),
         periphery.source_line_ota(static_ua=10.0, supply_v=1.1),   # on only when spikes arrive
-        periphery.slice_mirrors(supply_v=1.1),                     # gains 1, 1/2, 1/4, 1/8
         neurons.lif_neuron(static_ua=10.0, fire_ns=2.0, supply_v=1.1),
     ],
 )
 
-IN, OUT, BINS = 128, 64, 15
+IN, OUT, BINS = 128, 64, 10     # 10 SNN time bins
+SPIKE_PROBABILITY = 0.2         # chance that an input spikes in a time bin
 
 
 def random_layer(seed=0):
     g = torch.Generator().manual_seed(seed)
     weights = torch.randint(-7, 8, (OUT, IN, 1, 1), generator=g)      # signed 4-bit codes
-    values = torch.randint(0, 16, (IN,), generator=g)                  # 4-bit inputs
-    # Rate code: input i spikes in v_i randomly chosen bins out of 15.
-    order = torch.rand(IN, BINS, generator=g).argsort(dim=1)
-    spikes = (order < values[:, None]).float().reshape(1, IN, 1, 1, BINS)
-    return weights, values, spikes
+    spikes = (torch.rand(1, IN, 1, 1, BINS, generator=g) < SPIKE_PROBABILITY).float()  # binary
+    return weights, spikes
 
 
 def hand_calculation(weights, spikes):
@@ -62,18 +58,18 @@ def hand_calculation(weights, spikes):
     return {
         "cells": 1.1 * sum(bit_current) * 5.0,                          # V * A * ns = nJ
         "sl_ota": 1.1 * 10e-6 * 256 * busy_tile_reads * 5.0,           # 256 used columns per row tile
-        "slice_mirrors": 1.1 * sum(2.0 ** (b - 3) * bit_current[b] for b in range(4)) * 5.0,
         "lif": 1.1 * 10e-6 * OUT * BINS * 2.0,                         # 64 comparators x 2 ns per bin
     }, BINS * (5.0 + 2.0)
 
 
 if __name__ == "__main__":
-    weights, values, spikes = random_layer()
+    weights, spikes = random_layer()
     result = evaluate_layer(ARCH, spikes, weights)
     g = result.geometry
     print(f"mapping: {g.rows_needed} rows x {g.used_columns} columns ({g.out_channels} outputs x "
           f"{g.columns_per_weight} weight bits) -> {g.row_tiles} x {g.column_tiles} tiles of 64x64")
-    print(f"inputs: {int(values.sum())} spikes over {BINS} time bins; reads per bin: {g.reads_per_timestep}")
+    print(f"inputs: {int(spikes.sum())} binary spikes over {BINS} time bins; "
+          f"reads per bin: {g.reads_per_timestep}")
     expected, latency = hand_calculation(weights, spikes)
     print(f"\n{'component':<16}{'installed':>10}{'engine nJ':>14}{'hand nJ':>14}")
     for name, cost in result.components.items():
