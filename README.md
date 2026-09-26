@@ -27,6 +27,7 @@ evaluation/            pipeline used by run.py
   probes.py            layer input spikes and LIF output spike counts
   report.py            metric switches, text report, JSON and CSV export
   software.py          prediction, loss, accuracy
+examples/              dense_layer_check.py: one layer evaluated and checked by hand
 tools/                 checkpoint conversion and slayerSNN verification scripts
 tests/                 reference-model, hand-calculation and pipeline tests
 ```
