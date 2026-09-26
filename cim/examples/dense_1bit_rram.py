@@ -1,10 +1,10 @@
-"""Example: 128 -> 64 dense layer on 64x64 1-bit RRAM tiles.
+"""Example: 128 -> 64 spiking dense layer on 64x64 1-bit RRAM tiles.
 
-4-bit weights (two's complement, bit-sliced over 4 one-bit columns) and
-4-bit inputs applied bit-serially on binary word lines. An OTA holds each
-source line at 0.2 V (bit lines grounded into the neurons); the array
-settles in 5 ns per read. Each LIF neuron's comparator draws 10 uA while
-the neuron operates.
+4-bit weights (two's complement, bit-sliced over 4 one-bit columns); binary
+input spikes on the word lines over 4 time bins, each bin's current
+integrated with equal weight in the LIF. An OTA holds each source line at
+0.2 V (bit lines grounded into the neurons); the array settles in 5 ns per
+read. Each LIF neuron's comparator draws 10 uA while the neuron operates.
 
     python cim/examples/dense_1bit_rram.py
 """
@@ -19,11 +19,10 @@ from cim import Architecture, Component, Crossbar, Precision, Stage, evaluate_la
 ARCH = Architecture(
     name="1bit_rram_ota",
     crossbar=Crossbar(rows=64, cols=64, cell_bits=1, r_on=20e3, r_off=200e3, v_read=0.2),
-    precision=Precision(weight_bits=4, weight_encoding="twos_complement",
-                        input_bits=4, input_bits_per_read=1),
+    precision=Precision(weight_bits=4, weight_encoding="twos_complement"),
     stages=[
-        Stage("read", 5.0),                           # settle + sense, every read
-        Stage("fire", 2.0, level="timestep"),         # LIF compare/fire after the reads (placeholder)
+        Stage("read", 5.0),                           # settle + integrate, every read
+        Stage("fire", 2.0, level="timestep"),         # LIF compare/fire each time bin (placeholder)
     ],
     components=[
         Component("cells", model="crossbar_read", count="tiles", during=["read"],
@@ -36,11 +35,11 @@ ARCH = Architecture(
 )
 
 
-def example_data(seed=0):
+def example_data(seed=0, time_bins=4):
     g = torch.Generator().manual_seed(seed)
-    weights = torch.randint(-8, 8, (64, 128, 1, 1), generator=g)    # signed 4-bit codes
-    inputs = torch.randint(0, 16, (1, 128, 1, 1, 1), generator=g)   # 4-bit codes, 1 timestep
-    return inputs, weights
+    weights = torch.randint(-8, 8, (64, 128, 1, 1), generator=g)            # signed 4-bit codes
+    spikes = torch.randint(0, 2, (1, 128, 1, 1, time_bins), generator=g)   # binary spikes
+    return spikes, weights
 
 
 if __name__ == "__main__":

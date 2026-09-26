@@ -3,9 +3,10 @@
 Mapping: the layer is unrolled into a K x O matrix, K = in_channels * kh * kw
 rows and O = out_channels * output pixels logical outputs. Each weight takes
 `columns_per_weight` physical columns (weight slices; x2 for differential).
-Row tiles run in parallel; row phases and input slices are sequential reads.
-The array current is computed from the actual input codes and conductances;
-each cell is read once per input slice, whatever the row phasing.
+Row tiles run in parallel; row phases are sequential reads. Inputs are
+binary spikes, one set of reads per time bin. The array current is computed
+from the actual spikes and conductances; each cell is read once per time
+bin, whatever the row phasing.
 """
 import math
 from dataclasses import dataclass, field
@@ -26,7 +27,6 @@ class Geometry:
     row_tiles: int          # Nr
     column_tiles: int       # Nc
     tile_phases: list       # row phases of each row tile
-    input_slices: int
     timesteps: int
     batch: int
 
@@ -49,7 +49,8 @@ class LayerResult:
     geometry: Geometry
     components: dict
     latency_ns: float       # per inference
-    macs: int               # per inference, at the layer's precision
+    macs: int               # dense MACs per inference (every input, every time bin)
+    synaptic_ops: float = 0.0       # per inference: input spikes x outputs they reach
     timeline: object = None
     array_current_ua: float = 0.0   # mean total cell current during a read
 
@@ -63,22 +64,28 @@ class LayerResult:
 
     @property
     def tops_per_w(self):
+        """Dense-equivalent efficiency: 2 ops per MAC, zero inputs included."""
         return 2 * self.macs / self.energy_nj * 1e-3 if self.energy_nj else 0.0
+
+    @property
+    def pj_per_sop(self):
+        """Energy per synaptic operation (spike-driven SNN metric)."""
+        return self.energy_nj * 1e3 / self.synaptic_ops if self.synaptic_ops else 0.0
 
     def summary(self):
         g = self.geometry
         lines = [f"tiles {g.row_tiles} x {g.column_tiles} (rows {g.rows_needed}, columns "
                  f"{g.used_columns} = {g.outputs} outputs x {g.columns_per_weight}); "
-                 f"reads/timestep {g.input_slices} input slices x {g.phases} phases; "
-                 f"timesteps {g.timesteps}",
+                 f"reads per time bin {g.phases}; time bins {g.timesteps}",
                  f"{'component':<18}{'group':<18}{'installed':>10}{'area um^2':>12}"
                  f"{'energy nJ':>13}{'on ns':>9}"]
         for name, c in self.components.items():
             lines.append(f"{name:<18}{c.group:<18}{c.installed:>10}{c.area_um2:>12.6g}"
                          f"{c.energy_nj:>13.6g}{c.powered_ns:>9.4g}")
         lines.append(f"total: energy {self.energy_nj:.6g} nJ, latency {self.latency_ns:.6g} ns, "
-                     f"area {self.area_um2:.6g} um^2, {self.macs} MACs, "
-                     f"{self.tops_per_w:.4g} TOPS/W")
+                     f"area {self.area_um2:.6g} um^2")
+        lines.append(f"{self.synaptic_ops:.6g} synaptic ops -> {self.pj_per_sop:.4g} pJ/SOP; "
+                     f"{self.macs} dense MACs -> {self.tops_per_w:.4g} TOPS/W")
         return "\n".join(lines)
 
 
@@ -107,7 +114,7 @@ def _geometry(arch, x, w, padding):
     phases = [math.ceil(min(xb.rows, k_rows - start) / active) for start in range(0, k_rows, xb.rows)]
     return Geometry(k_rows, outputs, cpw, used, math.ceil(k_rows / xb.rows),
                     math.ceil(used / xb.cols), phases,
-                    math.ceil(pr.input_bits / pr.input_bits_per_read), timesteps, batch)
+                    timesteps, batch)
 
 
 def _instances(rule, g, xb, phased):
@@ -186,35 +193,28 @@ def _window_sums(inputs, kh, kw, padding):
     return sums
 
 
-def _array_current(arch, x, w, padding, levels, g):
-    """Total cell current (A) summed over all reads, split data / reference.
+def _array_current(arch, x, w, padding, levels):
+    """Total cell current (A) summed over all reads, split data / reference,
+    and the synaptic operations (spike x output pairs) over the batch.
 
     sum over outputs of conv(x, G) = sum_(c,i,j) [sum_o G(o,c,i,j)] * [window
     sum of x at (c,i,j)], so no convolution is needed. float64 throughout.
     """
-    xb, pr = arch.crossbar, arch.precision
-    if x.min() < 0 or x.max() > 2 ** pr.input_bits - 1:
-        raise ValueError(f"input codes must be within [0, {2 ** pr.input_bits - 1}]")
-    codes = x.to(torch.int64)
+    xb = arch.crossbar
+    spikes = x != 0  # any nonzero entry is a spike on that word line
     slices, g_zero = _conductance_slices(arch, w, levels)
-    kh, kw = w.shape[2], w.shape[3]
-    top = 2 ** pr.input_bits_per_read - 1
-    data = reference = 0.0
-    for s in range(g.input_slices):
-        # Word-line drive of this input slice, summed over batch and timesteps.
-        drive = (((codes >> (s * pr.input_bits_per_read)) & top).double() / top).sum((0, 4))
-        windows = _window_sums(drive, kh, kw, padding)
-        for kernel in slices:
-            data += float((kernel.sum(0) * windows).sum())
-        if xb.reference_columns:
-            reference += float(windows.sum()) * w.shape[0] * g_zero
-    return data * xb.v_read, reference * xb.v_read
+    # Word-line activity: spikes summed over batch and time bins.
+    windows = _window_sums(spikes.sum((0, 4)).double(), w.shape[2], w.shape[3], padding)
+    data = sum(float((kernel.sum(0) * windows).sum()) for kernel in slices)
+    synaptic_ops = float(windows.sum()) * w.shape[0]
+    reference = synaptic_ops * g_zero if xb.reference_columns else 0.0
+    return data * xb.v_read, reference * xb.v_read, synaptic_ops
 
 
 def evaluate_layer(arch, x, w, *, padding=0, levels=None, output_spikes=None):
     """Hardware cost of one layer for a batch of inputs.
 
-    x: input codes [batch, channels, height, width, timesteps] (spikes: 0/1).
+    x: input spikes [batch, channels, height, width, time bins]; nonzero = spike.
     w: weights [out, in, kh, kw]; integer codes for bit-sliced encodings,
        floats (with `levels`, the quantization levels) for "analog".
     output_spikes: total output spikes, for components with events="output_spike".
@@ -226,8 +226,8 @@ def evaluate_layer(arch, x, w, *, padding=0, levels=None, output_spikes=None):
     if levels is None:
         levels = torch.stack([w.min(), w.max()]).float()
     g = _geometry(arch, x, w, padding)
-    tl = build_timeline(arch, g.input_slices * g.phases, g.timesteps)
-    data_a, reference_a = _array_current(arch, x, w, padding, levels, g)
+    tl = build_timeline(arch, g.phases, g.timesteps)
+    data_a, reference_a, synaptic_ops = _array_current(arch, x, w, padding, levels)
     runs = g.batch * g.timesteps  # timesteps executed over the batch
 
     components = {}
@@ -238,11 +238,11 @@ def evaluate_layer(arch, x, w, *, padding=0, levels=None, output_spikes=None):
         read_level = bool(c.during) and all(s in tl.read for s in c.during)
         if read_level:
             per_read = tl.read_on_time(c.during)
-            if per_read > tl.read_interval + 1e-12 and g.input_slices * g.phases > 1:
+            if per_read > tl.read_interval + 1e-12 and g.phases > 1:
                 raise ValueError(f"{c.name} is powered longer than the read interval "
                                  "(it would be on for two reads at once)")
-            instance_ns = per_read * _instances(on_rule, g, xb, phased=True) * g.input_slices
-            powered_ns = per_read * g.input_slices * g.phases * g.timesteps
+            instance_ns = per_read * _instances(on_rule, g, xb, phased=True)
+            powered_ns = per_read * g.phases * g.timesteps
         elif c.during:
             per_step = tl.timestep_on_time(c.during)
             instance_ns = per_step * _instances(on_rule, g, xb, phased=False)
@@ -256,7 +256,7 @@ def evaluate_layer(arch, x, w, *, padding=0, levels=None, output_spikes=None):
             energy += c.supply_v * current * (end - start)  # A * V * ns = nJ
         if c.event_pj:
             if c.events == "read":
-                events = _instances(on_rule, g, xb, phased=True) * g.input_slices * runs
+                events = _instances(on_rule, g, xb, phased=True) * runs
             elif c.events == "timestep":
                 events = _instances(on_rule, g, xb, phased=False) * runs
             else:
@@ -267,6 +267,7 @@ def evaluate_layer(arch, x, w, *, padding=0, levels=None, output_spikes=None):
         components[c.name] = ComponentResult(c.group, installed, installed * c.area_um2,
                                              energy / g.batch, powered_ns)
 
-    reads = g.batch * g.timesteps * g.input_slices * g.phases
+    reads = g.batch * g.timesteps * g.phases
     return LayerResult(g, components, tl.latency_ns, g.rows_needed * g.outputs * g.timesteps,
-                       tl, (data_a + reference_a) * 1e6 / reads if reads else 0.0)
+                       synaptic_ops / g.batch, tl,
+                       (data_a + reference_a) * 1e6 / reads if reads else 0.0)

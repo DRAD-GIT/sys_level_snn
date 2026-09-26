@@ -28,22 +28,23 @@ class HandCalculationTests(unittest.TestCase):
         result = evaluate_layer(DENSE_ARCH, x, w)
         # Independent calculation, cell by cell.
         codes = w[:, :, 0, 0].numpy() % 16                  # two's complement bits
-        inputs = x[0, :, 0, 0, 0].numpy()
+        spikes = x[0, :, 0, 0, :].numpy()                   # (128 inputs, 4 time bins)
         current = 0.0
         for o in range(64):
             for s in range(4):                              # weight bit / column
                 g = np.where((codes[o] >> s) & 1, 1 / 20e3, 1 / 200e3)
-                for b in range(4):                          # input bit / read
-                    current += 0.2 * np.sum(((inputs >> b) & 1) * g)
+                for t in range(4):                          # time bin / read
+                    current += 0.2 * np.sum(spikes[:, t] * g)
         expected = {"cells": 1.1 * current * 5.0,
                     "sl_ota": 1.1 * 10e-6 * 512 * 4 * 5.0,  # 512 used columns x 4 reads x 5 ns
-                    "lif_comparator": 1.1 * 10e-6 * 64 * (4 * 5.0 + 2.0)}
+                    "lif_comparator": 1.1 * 10e-6 * 64 * 4 * (5.0 + 2.0)}
         for name, energy in expected.items():
             self.assertAlmostEqual(result.components[name].energy_nj, energy, places=9)
-        self.assertEqual(result.latency_ns, 22.0)
+        self.assertEqual(result.latency_ns, 4 * 7.0)        # read + fire per time bin
         self.assertEqual((result.geometry.row_tiles, result.geometry.column_tiles), (2, 4))
         self.assertEqual(result.components["sl_ota"].installed, 512)
-        self.assertEqual(result.macs, 128 * 64)
+        self.assertEqual(result.macs, 128 * 64 * 4)                   # every input, every bin
+        self.assertEqual(result.synaptic_ops, spikes.sum() * 64)      # each spike reaches 64 outputs
 
     def test_readme_c3_example(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
@@ -116,7 +117,7 @@ class TimelineTests(unittest.TestCase):
         x = torch.ones(1, 64, 1, 1, 2)
         a = arch([Stage("drive", 2.0), Stage("sense", 3.0), Stage("fire", 1.0, level="timestep")],
                  [static("sense_amp", ["sense"]), static("neuron", ["timestep"])],
-                 precision=Precision(weight_encoding="analog", input_bits=4),  # 4 reads/timestep
+                 crossbar=Crossbar(active_rows=16),          # 4 row phases = 4 reads per bin
                  read_interval_ns=3.0, timestep_interval_ns=10.0)
         r = evaluate_layer(a, x, self.w)
         # One read: drive 0-2, sense 2-5. Reads start every 3 ns -> block 3*3+5 = 14,
@@ -128,7 +129,7 @@ class TimelineTests(unittest.TestCase):
 
     def test_component_cannot_serve_overlapping_reads(self):
         a = arch([Stage("drive", 2.0), Stage("sense", 3.0)], [static("both", ["drive", "sense"])],
-                 precision=Precision(weight_encoding="analog", input_bits=2), read_interval_ns=3.0)
+                 crossbar=Crossbar(active_rows=32), read_interval_ns=3.0)
         with self.assertRaisesRegex(ValueError, "two reads at once"):
             evaluate_layer(a, torch.ones(1, 64, 1, 1, 1), self.w)
 
@@ -147,16 +148,15 @@ class SlicingTests(unittest.TestCase):
         r = evaluate_layer(a, x, w)
         return r.components["cells"].energy_nj, r.geometry
 
-    def test_two_bit_cells_and_two_bit_reads(self):
+    def test_two_bit_cells_over_time_bins(self):
         xb = Crossbar(rows=4, cols=4, cell_bits=2, r_on=1e3, r_off=4e3, v_read=1.0)
-        pr = Precision(weight_bits=4, weight_encoding="offset", input_bits=4, input_bits_per_read=2)
+        pr = Precision(weight_bits=4, weight_encoding="offset")
         w = torch.tensor([[[[5]]]])                      # offset code 13 = cells (1, 3)
-        x = torch.tensor([[[[[9]]]]])                    # 9 = input slices (1, 2) of 2 bits
+        x = torch.tensor([[[[[1, 0, 1]]]]])              # spikes in 2 of 3 time bins
         energy, geometry = self.cells_energy(pr, xb, x, w)
         g = lambda level: 1 / 4e3 + level / 3 * (1 / 1e3 - 1 / 4e3)
-        expected = sum(v / 3 * g(level) for v in (1, 2) for level in (1, 3))
-        self.assertAlmostEqual(energy, expected, places=12)
-        self.assertEqual((geometry.columns_per_weight, geometry.input_slices), (2, 2))
+        self.assertAlmostEqual(energy, 2 * (g(1) + g(3)), places=12)
+        self.assertEqual((geometry.columns_per_weight, geometry.timesteps), (2, 3))
 
     def test_differential_and_twos_complement(self):
         xb = Crossbar(rows=8, cols=8, r_on=1e3, r_off=1e6, v_read=1.0)

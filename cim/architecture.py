@@ -3,12 +3,12 @@
 Units: resistance ohm, voltage V, current uA, time ns, energy pJ (events),
 area um^2 per installed instance.
 
-Execution hierarchy for one inference:
-    timestep (T per inference; SNN time bins)
-      read (reads per timestep = input slices x row phases)
-Input slices: an input of `input_bits` applied `input_bits_per_read` bits at a
-time (1 = binary word lines, i.e. bit-serial). Row phases: rows enabled per
-read (`active_rows`) smaller than the tile height.
+Execution hierarchy for one inference of a spiking layer:
+    timestep (one per SNN time bin)
+      read (reads per timestep = row phases, when active_rows < rows)
+Inputs are binary spikes on the word lines. Spikes of every time bin carry the
+same weight in the LIF membrane, so input precision is set by the number of
+time bins, not by bit-serial reads.
 Weight slices: a `weight_bits` weight stored in cells of `cell_bits` each.
 """
 from dataclasses import dataclass, field
@@ -42,8 +42,6 @@ class Precision:
     # the array; differential: separate positive and negative columns;
     # analog: one multi-level cell per weight, float weights mapped linearly.
     weight_encoding: str = "twos_complement"
-    input_bits: int = 1            # bits per input value per timestep (1 = spikes)
-    input_bits_per_read: int = 1   # word-line / DAC resolution
 
 
 @dataclass
@@ -143,8 +141,7 @@ def validate(arch):
         raise ValueError("r_off must exceed r_on")
     if pr.weight_encoding not in ENCODINGS:
         raise ValueError(f"weight_encoding must be one of {ENCODINGS}")
-    for label in ("weight_bits", "input_bits", "input_bits_per_read"):
-        _positive_int(getattr(pr, label), f"precision.{label}")
+    _positive_int(pr.weight_bits, "precision.weight_bits")
     if pr.weight_encoding == "differential" and pr.weight_bits < 2:
         raise ValueError("differential encoding needs weight_bits >= 2 (sign + magnitude)")
     if xb.reference_columns and pr.weight_encoding != "analog":
