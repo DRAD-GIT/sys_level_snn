@@ -5,9 +5,17 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-import slayerSNN as snn  # type: ignore
+import yaml
+
+from .srm import SRMLayer
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def load_params(path):
+    """Network parameter YAML (simulation, neuron, training) as a dict."""
+    with open(path, encoding="utf-8") as file:
+        return yaml.safe_load(file)
 
 
 class NDataset(torch.utils.data.Dataset):
@@ -22,30 +30,36 @@ class NDataset(torch.utils.data.Dataset):
 
 
 class NNetwork(torch.nn.Module):
-    def __init__(self, net_params: snn.params):
+    """Base network: ``self.slayer`` provides the spiking layers.
+
+    backend defaults to the plain-PyTorch SRMLayer. Passing slayerSNN's
+    ``snn.layer`` builds the same network on the original SLAYER framework;
+    that is only used to verify SRMLayer (tools/export_slayer_reference.py).
+    """
+
+    def __init__(self, net_params: dict, backend=None):
         super(NNetwork, self).__init__()
 
-        self.slayer = snn.layer(net_params['neuron'], net_params['simulation'])
+        layer = backend or SRMLayer
+        self.slayer = layer(net_params['neuron'], net_params['simulation'])
 
 
 @dataclass(frozen=True)
 class ModelSpec:
     """Everything the evaluation pipeline needs to know about one model.
 
-    layers: (module name, padding) of each weighted conv/dense layer, in
-        forward order. Only these layers are mapped onto CIM hardware.
+    layers: names of the weighted conv/dense layers, in forward order. Only
+        these layers are mapped onto CIM hardware.
     checkpoint / params_yaml: paths relative to the repository root.
-    std_quantization: True clips the quantization range to mean +/- k*std;
-        False uses the weights' min/max.
     """
     name: str
     display_name: str
+    network_class: type
     dataset_class: type
     checkpoint: str
     params_yaml: str
-    layers: tuple[tuple[str, int], ...]
+    layers: tuple[str, ...]
     max_batch_size: int | None = None
-    std_quantization: bool = False
 
     def path(self, relative: str) -> str:
         return os.path.join(REPO_ROOT, relative)
