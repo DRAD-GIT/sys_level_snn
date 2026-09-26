@@ -1,10 +1,10 @@
-"""Hardware definitions.
+"""Hardware building blocks. An architecture = one crossbar + periphery + neurons:
 
-memories.py     memory technologies (bits per cell, conductance levels)
-ota_cim.py      OTA-regulated current-mode CIM with slice mirrors and comparator LIFs
-conventional.py current-mode CIM with analog cells and a reference array
-c3cim.py        C3CIM macro (fixed currents)
+    compose(name, Precision(...), blocks=[crossbar, *periphery, neuron])
 
-Each design module has build(name, memory, **parameters) -> hardware.Architecture,
-so any memory can be combined with any design; run.py builds the ones to evaluate.
+memories.py   memory technologies (bits per cell, conductance levels)
+crossbars.py  crossbar types: conv_xbar (current-mode), c3cim_xbar (constant-current columns)
+periphery.py  source-line OTAs, slice mirrors, DA, reference subtractor, VI converter
+neurons.py    LIF neurons
+designs.py    reference designs composed from these blocks
 """

@@ -10,9 +10,10 @@ import torch
 
 import models
 import models.nmnist
-from architectures import c3cim, memories, ota_cim
+from architectures import designs
+from run import RRAM_1BIT_XBAR
 
-ARCHITECTURES = [ota_cim.build("ota", memories.RRAM_1BIT), c3cim.build("c3cim", memories.RRAM_C3)]
+ARCHITECTURES = [RRAM_1BIT_XBAR, designs.c3cim()]
 from evaluation.probes import LayerProbe
 from evaluation.report import export, format_results
 from evaluation.runner import evaluate
@@ -61,14 +62,14 @@ class PipelineTests(unittest.TestCase):
         self.spec_patch.stop()
 
     def test_results_per_architecture_and_layer(self):
-        self.assertEqual(set(self.results), {"ota", "c3cim"})
+        self.assertEqual(set(self.results), {"rram_1bit_conv_xbar", "c3cim"})
         for accuracy, costs in self.results.values():
             self.assertEqual(list(costs), list(models.get_spec("nmnist").layers))
             self.assertTrue(0 <= accuracy <= 100)
             for cost in costs.values():
                 self.assertEqual(cost.inferences, 2)
                 self.assertGreater(cost.energy_nj, 0)
-        sc1 = self.results["ota"][1]["SC1"]
+        sc1 = self.results["rram_1bit_conv_xbar"][1]["SC1"]
         self.assertEqual(sc1.geometry.windows, 28 * 28)          # 34x34 input, 7x7 kernel
         self.assertGreater(sc1.output_spikes, 0)
 

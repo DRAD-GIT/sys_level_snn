@@ -6,13 +6,14 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 
 ```text
 run.py                 MAIN SCRIPT: model, architectures to evaluate, metric switches
-architectures/         hardware definitions
+architectures/         hardware building blocks
   memories.py          memory technologies: bits per cell, conductance levels
-  ota_cim.py           design template: OTA-held source lines, slice mirrors, comparator LIFs
-  conventional.py      design template: analog cells + reference columns, DA, LIF bank
-  c3cim.py             design template: C3CIM macro (fixed currents)
+  crossbars.py         crossbar types: conv_xbar (current-mode), c3cim_xbar (constant-current)
+  periphery.py         source-line OTA, slice mirrors, DA, reference subtractor, VI converter
+  neurons.py           LIF neuron
+  designs.py           reference designs (conventional, c3cim) composed from the blocks
 hardware/              the hardware model
-  architecture.py      Memory, Crossbar, Precision, Stage, Component, Architecture
+  architecture.py      Memory, Crossbar, Precision, Stage, Component, Block, compose()
   mapping.py           layer -> windows, tiles, weight slices; spike activity
   timeline.py          stage placement: serial, parallel, overlapping, pipelined
   engine.py            evaluate_layer: energy / latency / area of one layer
@@ -35,7 +36,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then edit `run.py`:
 
 - `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
-- `ARCHITECTURES`: which designs to evaluate, each a design template combined with a memory, e.g. `ota_cim.build("ota_rram_1bit", memories.RRAM_1BIT, weight_bits=4)` (or build an `Architecture` inline).
+- `ARCHITECTURES`: which designs to evaluate, each composed from building blocks (see section 3).
 - `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
 ```bash
@@ -53,35 +54,32 @@ The weight files are plain tensors (`torch.load(weights_only=True)`); `models.lo
 
 ## 3. Defining hardware
 
-Hardware is split so that any memory can be combined with any design:
+An architecture is composed from independent building blocks (`architectures/`), so any memory, crossbar type, periphery and neuron can be combined:
 
-- a **Memory** (`architectures/memories.py`): bits per cell and the conductance of every level, linear between `1/r_off` and `1/r_on` or listed explicitly (`levels_s`) for nonuniform devices;
-- a **design template** (`architectures/*.py`): `build(name, memory, **parameters)` returning an `Architecture`: crossbar, precision, conv mapping, stages and components, with every circuit value a parameter.
+| Block | Module | Available |
+|---|---|---|
+| memory | `memories.py` | bits per cell and the conductance of every level (linear between `1/r_off` and `1/r_on`, or listed in `levels_s`) |
+| crossbar (exactly one) | `crossbars.py` | `conv_xbar`: current-mode, cell current G x v_read into each column; `c3cim_xbar`: constant-current columns with shared drivers |
+| periphery | `periphery.py` | `source_line_ota`, `slice_mirrors`, `da_converter`, `reference_subtractor`, `vi_converter` |
+| neuron | `neurons.py` | `lif_neuron`: static current, powered for its fire step or the whole time bin |
 
-`architectures/ota_cim.py` (abridged):
+Each block function takes every circuit value as a parameter and returns a `Block` (its components and any stage it adds). `compose` puts them together with the weight precision and the conv mapping. The 1-bit RRAM design in `run.py`:
 
 ```python
-def build(name, memory, *, rows=64, cols=64, v_read=0.2, weight_bits=4, conv_mapping="sequential",
-          supply_v=1.1, settle_ns=5.0, fire_ns=2.0, ota_ua=10.0, comparator_ua=10.0, ...):
-    return Architecture(
-        name=name,
-        crossbar=Crossbar(memory=memory, rows=rows, cols=cols, v_read=v_read),
-        precision=Precision(weight_bits=weight_bits, weight_encoding="twos_complement"),
-        conv_mapping=conv_mapping,
-        stages=[Stage("read", settle_ns),                   # every crossbar read
-                Stage("fire", fire_ns, level="timestep")],  # once per time bin, after the reads
-        components=[
-            Component("cells", model="crossbar_read", count="tiles", during=["read"], supply_v=supply_v),
-            Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
-                      during=["read"], supply_v=supply_v, static_ua=ota_ua),
-            Component("slice_mirrors", model="slice_mirror", count="used_columns", during=["read"],
-                      supply_v=supply_v),
-            Component("lif_comparator", count="outputs", during=["fire"], supply_v=supply_v,
-                      static_ua=comparator_ua),
-        ])
+RRAM_1BIT_XBAR = compose(
+    "rram_1bit_conv_xbar",
+    Precision(weight_bits=4, weight_encoding="twos_complement"),
+    blocks=[
+        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
+        periphery.source_line_ota(static_ua=10.0),         # powered only when spikes arrive
+        periphery.slice_mirrors(),                          # binary-weighted slice sum
+        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),    # comparator on for the fire step
+    ],
+    conv_mapping="sequential",
+)
 ```
 
-Here the source-line OTAs are powered only in reads where their tile receives a spike, each weight-slice column is mirrored with a binary gain into its neuron, and each LIF comparator draws its static current only during the 2 ns fire step of every time bin.
+The same OTA and mirrors could be added to a `c3cim_xbar`, or the memory swapped for another; `designs.py` composes the conventional (analog cells, reference columns, DA) and C3CIM (VI converter) baselines the same way. A new circuit is a new block function returning `Block(stages=[...], components=[Component(...)])`; blocks and components are described below.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
@@ -130,7 +128,7 @@ Count and on rules, with the unit each instance belongs to:
 
 `{"rule": ..., "gated": True}` powers an instance only when its unit receives at least one input spike in that read (read-level components) or time bin (whole-bin components). Without gating, every valid unit is powered: a partially filled row tile stops after its last row phase.
 
-Leave unknown values at 0 (e.g. areas) and switch the metric off; add, remove or rename components freely. A new memory is one line in `memories.py`; a new design is a new template in `architectures/`.
+Leave unknown values at 0 (e.g. areas) and switch the metric off. A new memory is one line in `memories.py`; a new circuit is a block function in `crossbars.py`, `periphery.py` or `neurons.py`.
 
 ## 4. How costs are computed
 
@@ -145,7 +143,7 @@ Per inference: energy is divided by the number of evaluated samples; area counts
 
 ## 5. Verification
 
-`tests/test_hardware.py` holds a deliberately literal reference model: it builds every window's patch by hand, walks every sample, time bin, window, row tile and row phase, decides for each unit whether it is powered, and sums every cell's current. The engine must match it for both conv mappings, stride and padding, partial tiles, row phases, linear 1-bit and nonuniform 2-bit memories, all four encodings, slice mirrors with binary and custom gains, and every rule (gated or not). Hand calculations cover the `ota_cim` dense layer cell by cell (cells, gated OTAs, binary mirrors, comparators on for the fire step), and the `conventional` and `c3cim` templates reproduce this project's earlier worked examples exactly (K = 96 rows, 2 outputs, 8 active rows, one time bin):
+`tests/test_hardware.py` holds a deliberately literal reference model: it builds every window's patch by hand, walks every sample, time bin, window, row tile and row phase, decides for each unit whether it is powered, and sums every cell's current. The engine must match it for both conv mappings, stride and padding, partial tiles, row phases, linear 1-bit and nonuniform 2-bit memories, all four encodings, slice mirrors with binary and custom gains, and every rule (gated or not). Hand calculations cover the 1-bit RRAM design's dense layer cell by cell (cells, gated OTAs, binary mirrors, comparators on for the fire step), and the `conventional` and `c3cim` designs reproduce this project's earlier worked examples exactly (K = 96 rows, 2 outputs, 8 active rows, one time bin):
 
 | Architecture | Energy (nJ) | Latency (ns) | Area (um^2) |
 |---|---:|---:|---:|

@@ -144,6 +144,29 @@ class Architecture:
         return {s.name for s in self.stages if s.level == "read"}
 
 
+@dataclass
+class Block:
+    """A reusable piece of hardware: the stages it adds to the timeline and its
+    components. A crossbar block also carries the Crossbar."""
+    stages: list[Stage] = field(default_factory=list)
+    components: list[Component] = field(default_factory=list)
+    crossbar: Crossbar | None = None
+
+
+def compose(name, precision, blocks, *, conv_mapping="sequential", read_interval_ns=None,
+            timestep_interval_ns=None):
+    """Assemble an Architecture from blocks: exactly one crossbar block, then
+    any periphery and neuron blocks. Stages keep the block order, so by
+    default each stage follows the previous one of its level."""
+    crossbars = [b.crossbar for b in blocks if b.crossbar is not None]
+    if len(crossbars) != 1:
+        raise ValueError(f"{name}: compose needs exactly one crossbar block, got {len(crossbars)}")
+    return Architecture(name, crossbars[0], precision,
+                        [s for b in blocks for s in b.stages],
+                        [c for b in blocks for c in b.components],
+                        conv_mapping, read_interval_ns, timestep_interval_ns)
+
+
 def rule_of(spec, *, activity=False):
     """Normalize a count/on rule to {"rule", "value"?, "size"?, "gated"}."""
     rule = {"rule": spec} if isinstance(spec, str) else dict(spec)

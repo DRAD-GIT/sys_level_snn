@@ -11,11 +11,21 @@ import unittest
 import numpy as np
 import torch
 
-from architectures import c3cim, conventional, memories, ota_cim
-from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, evaluate_layer,
-                      quantize_weights)
+from architectures import crossbars, designs, memories, neurons, periphery
+from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, compose,
+                      evaluate_layer, quantize_weights)
 
 LINEAR_1BIT = Memory("linear_1bit", cell_bits=1, r_on=1e3, r_off=1e6)
+
+
+def rram_ota_design(conv_mapping="sequential"):
+    """The 1-bit RRAM current-mode design of run.py, composed from blocks."""
+    return compose("rram_ota", Precision(4, "twos_complement"), [
+        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
+        periphery.source_line_ota(static_ua=10.0),
+        periphery.slice_mirrors(),
+        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),
+    ], conv_mapping=conv_mapping)
 NONUNIFORM_2BIT = Memory("nonuniform_2bit", cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
 from hardware.architecture import TILE_RULES, rule_of
 
@@ -243,9 +253,9 @@ class ReferenceModelTests(unittest.TestCase):
 
 
 class HandCalculationTests(unittest.TestCase):
-    def test_ota_cim_dense_layer(self):
+    def test_rram_ota_dense_layer(self):
         """128 -> 64 dense layer, 4-bit weights on 1-bit RRAM, 4 time bins."""
-        arch = ota_cim.build("ota", memories.RRAM_1BIT)
+        arch = rram_ota_design()
         g = torch.Generator().manual_seed(0)
         weights = torch.randint(-7, 8, (64, 128, 1, 1), generator=g)
         spikes = torch.randint(0, 2, (1, 128, 1, 1, 4), generator=g)
@@ -262,7 +272,7 @@ class HandCalculationTests(unittest.TestCase):
                     # mirrors: MSB x1, then 1/2, 1/4, 1/8
                     "slice_mirrors": 1.1 * sum(2.0 ** (b - 3) * bit_current[b] for b in range(4)) * 5.0,
                     # comparators: 64 neurons on for the 2 ns fire step of each of 4 bins
-                    "lif_comparator": 1.1 * 10e-6 * 64 * 4 * 2.0}
+                    "lif": 1.1 * 10e-6 * 64 * 4 * 2.0}
         for name, energy in expected.items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=9)
         self.assertEqual(r.latency_ns, 4 * (5.0 + 2.0))
@@ -271,15 +281,15 @@ class HandCalculationTests(unittest.TestCase):
 
     def test_readme_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
-        r = evaluate_layer(c3cim.build("c3cim", memories.RRAM_C3), x, w)
-        for name, energy in dict(column=.000132, column_driver=.0156684, VI=.005832,
-                                 LIF=.0063624).items():
+        r = evaluate_layer(designs.c3cim(), x, w)
+        for name, energy in dict(column_source=.000132, column_driver=.0156684, vi=.005832,
+                                 lif=.0063624).items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=12)
         self.assertAlmostEqual(r.latency_ns, 482.0)
         self.assertAlmostEqual(r.area_um2, 10259.68, places=6)
-        r = evaluate_layer(conventional.build("conventional", memories.RRAM_ANALOG), x, w)
-        for name, energy in dict(crossbar=.04752, reference_array=.0239976, DA=.00072468,
-                                 reference_subtractor=0.0, LIF=.0005016).items():
+        r = evaluate_layer(designs.conventional(), x, w)
+        for name, energy in dict(cells=.04752, reference_cells=.0239976, da=.00072468,
+                                 reference_subtractor=0.0, lif=.0005016).items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=12)
         self.assertAlmostEqual(r.latency_ns, 38.0)
         self.assertAlmostEqual(r.area_um2, 9969.4, places=6)
@@ -287,9 +297,8 @@ class HandCalculationTests(unittest.TestCase):
     def test_conv_mappings_trade_area_for_latency(self):
         spikes = torch.ones(1, 2, 5, 5, 1)
         weights = torch.ones(4, 2, 3, 3, dtype=torch.int64)
-        seq = evaluate_layer(ota_cim.build("s", memories.RRAM_1BIT), spikes, weights, padding=1)
-        par = evaluate_layer(ota_cim.build("p", memories.RRAM_1BIT, conv_mapping="parallel"),
-                             spikes, weights, padding=1)
+        seq = evaluate_layer(rram_ota_design("sequential"), spikes, weights, padding=1)
+        par = evaluate_layer(rram_ota_design("parallel"), spikes, weights, padding=1)
         self.assertEqual(seq.geometry.windows, 25)
         self.assertEqual((seq.components["cells"].installed, par.components["cells"].installed), (1, 25))
         self.assertEqual((seq.latency_ns, par.latency_ns), (25 * 5.0 + 2.0, 5.0 + 2.0))
@@ -338,6 +347,28 @@ class TimelineTests(unittest.TestCase):
                            Stage("fire", 2.0, level="timestep", after=["reads"])], [])
         self.assertEqual(r.timeline.timestep["precharge"], (0.0, 1.0))
         self.assertEqual(r.latency_ns, 3 * 7.0)
+
+
+class CompositionTests(unittest.TestCase):
+    def test_blocks_compose_in_order(self):
+        arch = rram_ota_design()
+        self.assertEqual([s.name for s in arch.stages], ["read", "fire"])
+        self.assertEqual([c.name for c in arch.components],
+                         ["cells", "sl_ota", "slice_mirrors", "lif"])
+        extra = compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT),
+                                             periphery.vi_converter(1.0, 3.0),
+                                             neurons.lif_neuron(1.0, 1.0)])
+        self.assertEqual([(s.name, s.level) for s in extra.stages],
+                         [("read", "read"), ("vi", "read"), ("fire", "timestep")])
+
+    def test_compose_needs_one_crossbar(self):
+        with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
+            compose("x", Precision(4), [periphery.slice_mirrors()])
+        with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
+            compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT),
+                                         crossbars.c3cim_xbar(LINEAR_1BIT)])
+        with self.assertRaises(ValueError):
+            neurons.lif_neuron(1.0, 1.0, powered="always")
 
 
 class ValidationTests(unittest.TestCase):

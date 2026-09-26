@@ -2,11 +2,10 @@
 
     python run.py
 
-Hardware is built from architectures/: a memory technology (memories.py)
-combined with a design template (build(name, memory, **parameters)). Change
-parameters here, add a new memory or template, or build a
-hardware.Architecture right here. Command-line flags override the run
-settings for one run.
+Hardware is composed from building blocks (architectures/): a memory, one
+crossbar type, any periphery blocks and a neuron. Swap or re-parameterize any
+block here; add new ones to the architectures/ modules. Command-line flags
+override the run settings for one run.
 
 Results: printed, and saved under logs/ (a JSON per architecture and the
 comparison table logs/comparison_summary.csv).
@@ -14,8 +13,9 @@ comparison table logs/comparison_summary.csv).
 import argparse
 import os
 
-from architectures import c3cim, conventional, memories, ota_cim
+from architectures import crossbars, designs, memories, neurons, periphery
 from evaluation.report import export, format_results
+from hardware import Precision, compose
 from evaluation.runner import evaluate
 
 # ============================================================================
@@ -28,11 +28,19 @@ MAX_BATCHES = 1        # None = the full test set (slow)
 # ============================================================================
 # HARDWARE: architectures to evaluate (names must be unique)
 # ============================================================================
-ARCHITECTURES = [
-    ota_cim.build("ota_rram_1bit", memories.RRAM_1BIT, weight_bits=4, conv_mapping="sequential"),
-    conventional.build("conventional", memories.RRAM_ANALOG),
-    c3cim.build("c3cim", memories.RRAM_C3),
-]
+RRAM_1BIT_XBAR = compose(
+    "rram_1bit_conv_xbar",
+    Precision(weight_bits=4, weight_encoding="twos_complement"),
+    blocks=[
+        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
+        periphery.source_line_ota(static_ua=10.0),            # powered only when spikes arrive
+        periphery.slice_mirrors(),                             # binary-weighted slice sum
+        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),       # comparator on for the fire step
+    ],
+    conv_mapping="sequential",                                 # or "parallel"
+)
+
+ARCHITECTURES = [RRAM_1BIT_XBAR, designs.conventional(), designs.c3cim()]
 
 # ============================================================================
 # METRICS: switch each reported metric on or off
