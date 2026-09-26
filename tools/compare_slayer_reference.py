@@ -21,22 +21,23 @@ import torch
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import models  # noqa: E402
-from evaluation.runner import ESTIMATORS  # noqa: E402
+from evaluation.probes import LayerProbe  # noqa: E402
 from evaluation.software import predict_class  # noqa: E402
-from tools.slayer_reference import FORMAT, record_layer_inputs, unpack  # noqa: E402
+from hardware import evaluate_layer, quantize_weights  # noqa: E402
+from tools.slayer_reference import FORMAT, unpack  # noqa: E402
 
 
-def _hardware_energy(architectures, layers, weights, inputs):
+def _hardware_energy(architectures, net, layer_names, inputs):
     """Network energy (nJ) per architecture for one set of layer inputs."""
     energy = {}
-    for arch, config in architectures.items():
+    for arch in architectures:
         total = 0.0
-        for name, padding in layers:
-            w = weights[name]
-            levels = torch.tensor([w.min(), w.max()])
-            x = inputs[name].bool().float()
-            total += ESTIMATORS[type(config)](config, x, w, levels, padding).energy_nj
-        energy[arch] = total
+        for name in layer_names:
+            module = getattr(net, name)
+            codes, _ = quantize_weights(module.weight.detach()[..., 0], arch.precision.weight_bits)
+            total += evaluate_layer(arch, inputs[name], codes, stride=module.stride[0],
+                                    padding=module.padding[0]).energy_nj
+        energy[arch.name] = total
     return energy
 
 
@@ -46,9 +47,9 @@ def compare(path, full=False, architectures=None, log=print):
         raise ValueError(f"{path}: unsupported reference format {reference.get('format')}")
     spec = models.get_spec(reference["model"])
     net = models.load_pretrained(spec).eval()
-    layer_names = [name for name, _ in spec.layers]
-    weights = {name: getattr(net, name).weight.detach()[..., 0] for name in layer_names}
-    store, _ = record_layer_inputs(net, layer_names)
+    layer_names = spec.layers
+    probe = LayerProbe(net, layer_names)
+    store = probe.inputs
     if architectures is None:
         import run
         architectures = run.ARCHITECTURES
@@ -61,7 +62,7 @@ def compare(path, full=False, architectures=None, log=print):
         slayer_input = unpack(sample["slayer_input"])
         if not torch.equal(unpack(sample["our_input"]), slayer_input):
             report["reader_mismatches"] += 1
-        store.clear()
+        probe.clear()
         with torch.no_grad():
             output = net(slayer_input[None])
         slayer_layers = {name: unpack(sample["layer_inputs"][name]) for name in layer_names}
@@ -77,7 +78,7 @@ def compare(path, full=False, architectures=None, log=print):
         if int(predict_class(output)[0]) != sample["predicted"]:
             report["prediction_mismatches"] += 1
         for key, inputs in (("energy_ours", store), ("energy_slayer", slayer_layers)):
-            for arch, value in _hardware_energy(architectures, spec.layers, weights, inputs).items():
+            for arch, value in _hardware_energy(architectures, net, layer_names, inputs).items():
                 report[key][arch] = report[key].get(arch, 0.0) + value
 
     log(f"Model {spec.name}: {report['samples']} samples recorded on {reference.get('device')}")

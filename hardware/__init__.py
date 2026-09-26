@@ -1,16 +1,13 @@
-"""CIM hardware cost models.
+"""Modular compute-in-memory cost model for spiking layers.
 
-configs.py     - ConvHardwareConfig / C3HardwareConfig: the numbers you edit
-components.py  - component registry, counting/activity rules, schedule
-mapping.py     - quantization, weight->conductance mapping, tile geometry
-estimators.py  - per-layer energy/latency/area for each architecture
-metrics.py     - HardwareMetrics result containers and summaries
+architecture.py  crossbar, precision, conv mapping, stages and components
+mapping.py       layer -> windows, tiles, weight slices; spike activity
+timeline.py      stage placement: serial, parallel, overlapping, pipelined
+engine.py        energy / latency / area of a layer
 """
-from hardware.components import register_model
-from hardware.configs import C3HardwareConfig, ConvHardwareConfig, load_config
-from hardware.estimators import calculate_c3_metrics, calculate_conv_metrics
-from hardware.metrics import HardwareMetrics
+from hardware.architecture import Architecture, Component, Crossbar, Precision, Stage
+from hardware.engine import LayerCost, evaluate_layer
+from hardware.mapping import quantize_weights
 
-__all__ = ["C3HardwareConfig", "ConvHardwareConfig", "HardwareMetrics",
-           "calculate_c3_metrics", "calculate_conv_metrics", "load_config",
-           "register_model"]
+__all__ = ["Architecture", "Component", "Crossbar", "Precision", "Stage",
+           "LayerCost", "evaluate_layer", "quantize_weights"]

@@ -20,7 +20,9 @@ SIMULATION = {"Ts": 1.0, "tSample": 300}
 
 
 def reference_psp(x, kernel, ts):
-    """slayerCuda convKernel: per neuron, result = sum_i x[t-i]*k[i]; * Ts."""
+    """slayerCuda convKernel: per neuron, result += x[t-i]*k[i] for i = 0, 1, ...;
+    then * Ts. Built with -use_fast_math, nvcc fuses each step into a
+    multiply-add rounded once to float32 (emulated here in float64)."""
     flat = x.reshape(-1, x.shape[-1])
     out = torch.zeros_like(flat)
     for n in range(flat.shape[0]):
@@ -28,7 +30,7 @@ def reference_psp(x, kernel, ts):
             result = torch.tensor(0.0)
             for i in range(len(kernel)):
                 if t - i >= 0:
-                    result = result + flat[n, t - i] * kernel[i]
+                    result = (result.double() + flat[n, t - i].double() * kernel[i].double()).float()
             out[n, t] = result * ts
     return out.reshape(x.shape)
 

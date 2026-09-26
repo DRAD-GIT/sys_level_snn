@@ -21,7 +21,8 @@ import torch
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import models  # noqa: E402
-from tools.slayer_reference import FORMAT, pack, record_layer_inputs  # noqa: E402
+from evaluation.probes import LayerProbe  # noqa: E402
+from tools.slayer_reference import FORMAT, pack  # noqa: E402
 
 
 def slayer_input(snn, dataset, index):
@@ -47,20 +48,19 @@ def main():
     params = models.load_params(spec.path(spec.params_yaml))
     net = models.load_pretrained(spec, device, backend=snn.layer).eval()
     dataset = models.test_dataset(spec, params)
-    layer_names = [name for name, _ in spec.layers]
-    store, _ = record_layer_inputs(net, layer_names)
+    probe = LayerProbe(net, spec.layers)
 
     samples = []
     with torch.no_grad():
         for index in range(min(args.samples, len(dataset))):
             _, ours, _, label = dataset[index]
             reference = slayer_input(snn, dataset, index)
-            store.clear()
+            probe.clear()
             output = net(reference[None].to(device))
             samples.append({
                 "index": index, "label": int(label),
                 "slayer_input": pack(reference), "our_input": pack(ours),
-                "layer_inputs": {name: pack(store[name]) for name in layer_names},
+                "layer_inputs": {name: pack(probe.inputs[name]) for name in spec.layers},
                 "output": pack(output),
                 "predicted": int(snn.predict.getClass(output)[0]),
             })

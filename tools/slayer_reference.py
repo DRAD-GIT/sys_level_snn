@@ -28,12 +28,3 @@ def unpack(packed):
     count = int(np.prod(packed["shape"]))
     bits = np.unpackbits(packed["bits"].numpy(), count=count)
     return torch.from_numpy(bits.astype(np.float32) * packed["amplitude"]).reshape(packed["shape"])
-
-
-def record_layer_inputs(net, layer_names):
-    """Forward hooks storing each named layer's input; returns (store, handles)."""
-    store = {}
-    handles = [getattr(net, name).register_forward_hook(
-        lambda _m, inputs, _o, name=name: store.__setitem__(name, inputs[0].detach()))
-        for name in layer_names]
-    return store, handles

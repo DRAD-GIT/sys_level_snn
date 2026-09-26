@@ -148,14 +148,15 @@ class SRMLayer(torch.nn.Module):
     def psp(self, spikes):
         """Causal filtering of every neuron's signal with srmKernel, times Ts.
 
-        Accumulates taps in the same order as SLAYER's CUDA kernel (i = 0, 1,
-        ...) to stay as close as possible to its float32 rounding.
+        Accumulates taps in SLAYER's order (i = 0, 1, ...) with fused
+        multiply-adds, which is how its CUDA kernel is compiled
+        (-use_fast_math), so float32 rounding follows it closely.
         """
-        kernel = self.srmKernel
+        kernel = self.srmKernel.tolist()
         n_steps = spikes.shape[-1]
         out = torch.zeros_like(spikes)
         for i in range(min(len(kernel), n_steps)):
-            out[..., i:] += spikes[..., :n_steps - i] * kernel[i]
+            out[..., i:].add_(spikes[..., :n_steps - i], alpha=kernel[i])
         return out * self.ts
 
     def spike(self, membrane):

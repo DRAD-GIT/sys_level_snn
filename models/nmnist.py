@@ -99,6 +99,5 @@ SPEC = ModelSpec(
     dataset_class=NMNISTDataset,
     checkpoint="pretrained/nmnist_lenet.pth",
     params_yaml="models/nmnist.yaml",
-    layers=(("SC1", 0), ("SC2", 0), ("SC3", 0), ("SF1", 0), ("SF2", 0)),
-    std_quantization=True,
+    layers=("SC1", "SC2", "SC3", "SF1", "SF2"),
 )

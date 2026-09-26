@@ -72,6 +72,6 @@ SPEC = ModelSpec(
     dataset_class=GestureDataset,
     checkpoint="pretrained/gesture.pth",
     params_yaml="models/gesture.yaml",
-    layers=(("SC1", 2), ("SC2", 1), ("SF1", 0), ("SF2", 0)),
+    layers=("SC1", "SC2", "SF1", "SF2"),
     max_batch_size=2,
 )

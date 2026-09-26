@@ -48,11 +48,9 @@ class NNetwork(torch.nn.Module):
 class ModelSpec:
     """Everything the evaluation pipeline needs to know about one model.
 
-    layers: (module name, padding) of each weighted conv/dense layer, in
-        forward order. Only these layers are mapped onto CIM hardware.
+    layers: names of the weighted conv/dense layers, in forward order. Only
+        these layers are mapped onto CIM hardware.
     checkpoint / params_yaml: paths relative to the repository root.
-    std_quantization: True clips the quantization range to mean +/- k*std;
-        False uses the weights' min/max.
     """
     name: str
     display_name: str
@@ -60,9 +58,8 @@ class ModelSpec:
     dataset_class: type
     checkpoint: str
     params_yaml: str
-    layers: tuple[tuple[str, int], ...]
+    layers: tuple[str, ...]
     max_batch_size: int | None = None
-    std_quantization: bool = False
 
     def path(self, relative: str) -> str:
         return os.path.join(REPO_ROOT, relative)
