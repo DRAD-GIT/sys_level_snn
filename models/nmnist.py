@@ -9,9 +9,12 @@ class NMNISTDataset(NDataset):
     def event_file(self, index):
         return f"{self.path}{int(self.samples[index, 0]):05}.bin"
 
+    def label(self, index):
+        return int(self.samples[index, 1])
+
     def __getitem__(self, index):
         input_index = int(self.samples[index, 0])
-        class_label = int(self.samples[index, 1])
+        class_label = self.label(index)
 
         spikes_in = self.read_events(self.event_file(index)) \
             .to_spike_tensor((*self.sensor_shape, self.n_time_bins), self.sampling_time)

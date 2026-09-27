@@ -35,7 +35,7 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
         total = 0.0
         for name in layer_names:
             module = getattr(net, name)
-            codes, _ = quantize_weights(module.weight.detach()[..., 0], arch.precision.weight_bits)
+            codes, _ = quantize_weights(module.weight.detach()[..., 0].cpu(), arch.precision.weight_bits)
             total += evaluate_layer(arch, inputs[name], codes, stride=module.stride[0],
                                     padding=module.padding[0],
                                     output_spikes=output_spikes.get(name, 0)).energy_nj
@@ -43,15 +43,16 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
     return energy
 
 
-def compare(path, full=False, data_dir=None, architectures=None, log=print):
+def compare(path, full=False, data_dir=None, architectures=None, device=None, log=print):
+    """device: where SRMLayer runs; default the GPU if available (as run.py)."""
+    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     reference = models.load_tensors(path)
     if reference.get("format") != FORMAT:
         raise ValueError(f"{path}: unsupported reference format {reference.get('format')}")
     spec = models.get_spec(reference["model"])
-    net = models.load_pretrained(spec).eval()
+    net = models.load_pretrained(spec, device).eval()
     layer_names = spec.layers
     probe = LayerProbe(net, layer_names)
-    store = probe.inputs
     if architectures is None:
         import run
         architectures = run.ARCHITECTURES
@@ -66,7 +67,8 @@ def compare(path, full=False, data_dir=None, architectures=None, log=print):
             report["reader_mismatches"] += 1
         probe.clear()
         with torch.no_grad():
-            output = net(slayer_input[None])
+            output = net(slayer_input[None].to(device)).cpu()
+        store = {name: probe.inputs[name].cpu() for name in layer_names}
         slayer_layers = {name: unpack(sample["layer_inputs"][name]) for name in layer_names}
         for name in layer_names:
             differ = store[name] != slayer_layers[name]
@@ -85,7 +87,8 @@ def compare(path, full=False, data_dir=None, architectures=None, log=print):
                                                 spikes).items():
                 report[key][arch] = report[key].get(arch, 0.0) + value
 
-    log(f"Model {spec.name}: {report['samples']} samples recorded on {reference.get('device')}")
+    log(f"Model {spec.name}: {report['samples']} samples recorded on {reference.get('device')}; "
+        f"SRMLayer on {device}")
     log(f"  input readers identical: {report['samples'] - report['reader_mismatches']}/{report['samples']}")
     for name, entry in report["layers"].items():
         fraction = entry["differ"] / entry["total"] if entry["total"] else 0.0
@@ -104,12 +107,14 @@ def compare(path, full=False, data_dir=None, architectures=None, log=print):
             raise ValueError(f"{path} has no full-test-set predictions; export with --full")
         dataset = models.test_dataset(spec, models.load_params(spec.path(spec.params_yaml)), data_dir)
         agree = correct = 0
+        n = len(recorded["labels"])
         with torch.no_grad():
             for index, (theirs, label) in enumerate(zip(recorded["predictions"], recorded["labels"])):
-                ours = int(predict_class(net(dataset[index][1][None]))[0])
+                ours = int(predict_class(net(dataset[index][1][None].to(device)))[0])
                 agree += ours == theirs
                 correct += ours == label
-        n = len(recorded["labels"])
+                if (index + 1) % 1000 == 0:
+                    log(f"    {index + 1}/{n} samples: same prediction on {agree}")
         slayer_acc = 100 * sum(p == l for p, l in zip(recorded["predictions"], recorded["labels"])) / n
         report.update(full_agreement=agree / n, full_accuracy=100 * correct / n,
                       full_slayer_accuracy=slayer_acc)
@@ -123,6 +128,7 @@ if __name__ == "__main__":
     parser.add_argument("reference", nargs="+")
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--data", help="dataset folder, or a folder holding it (for --full)")
+    parser.add_argument("--device", help="where SRMLayer runs (cpu / cuda); default cuda if available")
     args = parser.parse_args()
     for reference_path in args.reference:
-        compare(reference_path, full=args.full, data_dir=args.data)
+        compare(reference_path, full=args.full, data_dir=args.data, device=args.device)

@@ -15,6 +15,7 @@ Copy the resulting reference/*.pt files back into the repository.
 import argparse
 import os
 import sys
+import time
 
 import torch
 
@@ -71,10 +72,18 @@ def main():
         full = None
         if args.full:
             predictions, labels = [], []
-            for index in range(len(dataset)):
+            start, total = time.time(), len(dataset)
+            print(f"full test set: classifying {total} samples with slayerSNN")
+            for index in range(total):
                 output = net(slayer_input(snn, dataset, index)[None].to(device))
                 predictions.append(int(snn.predict.getClass(output)[0]))
-                labels.append(int(dataset[index][3]))
+                labels.append(dataset.label(index))
+                if (index + 1) % 500 == 0 or index + 1 == total:
+                    elapsed = time.time() - start
+                    correct = sum(p == l for p, l in zip(predictions, labels))
+                    print(f"  {index + 1}/{total}: accuracy so far {100 * correct / (index + 1):.2f}%, "
+                          f"about {elapsed / (index + 1) * (total - index - 1) / 60:.1f} min left",
+                          flush=True)
             correct = sum(p == l for p, l in zip(predictions, labels))
             print(f"slayerSNN full test accuracy: {100 * correct / len(labels):.2f}%")
             full = {"predictions": predictions, "labels": labels}

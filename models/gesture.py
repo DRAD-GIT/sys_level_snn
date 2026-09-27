@@ -14,11 +14,12 @@ class GestureDataset(NDataset):
         group = self.samples[int(index/11)].split(".")[0]
         return f"{self.path}{group}/{np.mod(index, 11)}.npy"
 
-    def __getitem__(self, index):# modifying it to manually pick data
-        #input_index = int(self.samples[index, 0])
+    def label(self, index):
+        return int(np.mod(index, 11))
+
+    def __getitem__(self, index):
         input_index = index + 1
-        #class_label = int(self.samples[int(index)].split("/")[1].split(".")[0])
-        class_label = np.mod(index,11)
+        class_label = self.label(index)
 
         spikes_in = self.read_events(self.event_file(index)) \
             .to_spike_tensor((*self.sensor_shape, self.n_time_bins), self.sampling_time)
