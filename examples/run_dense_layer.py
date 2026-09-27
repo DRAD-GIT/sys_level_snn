@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from architectures import crossbars, memories  # noqa: E402
+from architectures import crossbars  # noqa: E402
 from evaluation.report import format_results  # noqa: E402
 from hardware import Component, Precision, Stage, compose, evaluate_layer  # noqa: E402
 
@@ -37,7 +37,8 @@ ARCH = compose(
     [
         # 1-bit RRAM (20k / 200k ohm), 64x64 tiles, 0.2 V read made by the OTA
         # from VDD, 5 ns to settle; the array conducts until the LIF ends.
-        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
+        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3,   # 1-bit RRAM cells
+                            rows=64, cols=64, v_read=0.2, read_ns=5.0,
                             cell_supply_v=VDD, during=UNTIL_LIF_ENDS),
         # The LIF fire step: 2 ns once per time bin, after the read.
         Stage("fire", 2.0, level="timestep"),

@@ -7,7 +7,6 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 ```text
 run.py                 MAIN SCRIPT: model, architectures to evaluate, metric switches
 architectures/         hardware parts
-  memories.py          memory technologies: bits per cell, conductance levels
   crossbars.py         crossbar types: conv_xbar (current-mode), c3cim_xbar (constant-current)
   designs.py           reference designs (conventional, c3cim) composed from these parts
 hardware/              the hardware model
@@ -35,7 +34,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then edit `run.py`:
 
 - `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
-- `ARCHITECTURES`: which designs to evaluate, each composed from a memory, a crossbar and your own stages and components (see section 3).
+- `ARCHITECTURES`: which designs to evaluate, each composed from a crossbar (with its memory cells) and your own stages and components (see section 3).
 - `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
 ```bash
@@ -53,12 +52,11 @@ The weight files are plain tensors (`torch.load(weights_only=True)`); `models.lo
 
 ## 3. Defining hardware
 
-An architecture is composed from a **memory**, one **crossbar type** and any **Stages** and **Components** you define; nothing else is built in, so every peripheral circuit and neuron is described the same generic way.
+An architecture is composed from one **crossbar type** (with its memory cells as parameters) and any **Stages** and **Components** you define; nothing else is built in, so every peripheral circuit and neuron is described the same generic way.
 
 | Part | Where | What it is |
 |---|---|---|
-| memory | `architectures/memories.py` | bits per cell and the conductance of every level (linear between `1/r_off` and `1/r_on`, or listed in `levels_s`) |
-| crossbar (exactly one) | `architectures/crossbars.py` | `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers. Each adds the `"read"` stage and the array's own costs |
+| crossbar (exactly one) | `architectures/crossbars.py` | memory cells: `cell_bits` and `r_on`/`r_off` (levels linear in conductance) or `levels_s` (every level's conductance, for nonuniform cells). `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers. Each adds the `"read"` stage and the array's own costs |
 | stages | `hardware.Stage` | the timeline: what repeats every read, what runs once per time bin, serial / parallel / overlapping |
 | components | `hardware.Component` | any circuit: your name, how many are installed (`count`), how many are powered (`on`, optionally spike-`gated`), when (`during` stages or a `window` between stage edges), and its static current and/or event energy |
 
@@ -69,8 +67,8 @@ RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
     Precision(weight_bits=4, weight_encoding="twos_complement"),
     [
-        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
-                            cell_supply_v=VDD),
+        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3,   # 1-bit RRAM cells
+                            rows=64, cols=64, v_read=0.2, read_ns=5.0, cell_supply_v=VDD),
         Stage("fire", 2.0, level="timestep"),                  # once per time bin, after the reads
         Component("sl_ota", count="physical_columns",          # one per column,
                   on={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
@@ -82,7 +80,7 @@ RRAM_1BIT_XBAR = compose(
 )
 ```
 
-To keep the OTA on until the neuron has fired, write `during=["read", "fire"]`; for an exact interval, `window=(("read", "start", 1.0), ("fire", "end", -1.0))`. The same components can sit on a `c3cim_xbar`, or the memory can be swapped. `designs.py` composes the conventional (analog cells, reference columns, DA) and C3CIM (VI converter) baselines the same way; `examples/run_dense_layer.py` is a complete worked example.
+To keep the OTA on until the neuron has fired, write `during=["read", "fire"]`; for an exact interval, `window=(("read", "start", 1.0), ("fire", "end", -1.0))`. The same components can sit on a `c3cim_xbar`, and the cells are changed in the crossbar call. `designs.py` composes the conventional (analog cells, reference columns, DA) and C3CIM (VI converter) baselines the same way; `examples/run_dense_layer.py` is a complete worked example.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
@@ -131,7 +129,7 @@ Count and on rules, with the unit each instance belongs to:
 
 `{"rule": ..., "gated": True}` powers an instance only when its unit receives at least one input spike in that read (read-level components) or time bin (whole-bin components). Without gating, every valid unit is powered: a partially filled row tile stops after its last row phase.
 
-Leave unknown values at 0 (e.g. areas) and switch the metric off. A new memory is one line in `memories.py`; a new circuit is a `Component` (and a `Stage` if it takes time of its own).
+Leave unknown values at 0 (e.g. areas) and switch the metric off. A different memory is a change of the crossbar's cell parameters; a new circuit is a `Component` (and a `Stage` if it takes time of its own).
 
 ## 4. How costs are computed
 

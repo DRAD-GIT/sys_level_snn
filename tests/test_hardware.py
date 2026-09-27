@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 import torch
 
-from architectures import crossbars, designs, memories
+from architectures import crossbars, designs
 from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, compose,
                       evaluate_layer, quantize_weights)
 from hardware.architecture import TILE_RULES, rule_of
@@ -23,7 +23,8 @@ NONUNIFORM_2BIT = Memory("nonuniform_2bit", cell_bits=2, levels_s=(1e-6, 3e-4, 5
 def rram_ota_design(conv_mapping="sequential"):
     """The 1-bit RRAM current-mode design of run.py, with slice mirrors."""
     return compose("rram_ota", Precision(4, "twos_complement"), [
-        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
+        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64, v_read=0.2,
+                            read_ns=5.0),
         Stage("fire", 2.0, level="timestep"),
         Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
                   during="read", static_ua=10.0),
@@ -305,7 +306,7 @@ class HandCalculationTests(unittest.TestCase):
 
         def cells(during, **crossbar):
             arch = compose("x", Precision(4), [
-                crossbars.conv_xbar(LINEAR_1BIT, read_ns=5.0, during=during, **crossbar),
+                crossbars.conv_xbar(r_on=1e3, r_off=1e6, read_ns=5.0, during=during, **crossbar),
                 Stage("fire", 2.0, level="timestep"),
                 Component("lif", count="outputs", during="fire", static_ua=1.0)])
             return evaluate_layer(arch, spikes, weights).components["cells"].energy_nj
@@ -413,10 +414,10 @@ class CompositionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
             compose("x", Precision(4), [Stage("read", 1.0)])
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
-            compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT),
-                                         crossbars.c3cim_xbar(LINEAR_1BIT)])
+            compose("x", Precision(4), [crossbars.conv_xbar(r_on=1e3, r_off=1e6),
+                                         crossbars.c3cim_xbar(r_on=1e3, r_off=1e6)])
         with self.assertRaisesRegex(ValueError, "Blocks, Stages or Components"):
-            compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT), "lif"])
+            compose("x", Precision(4), [crossbars.conv_xbar(r_on=1e3, r_off=1e6), "lif"])
 
 
 class ValidationTests(unittest.TestCase):

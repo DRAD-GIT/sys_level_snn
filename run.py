@@ -2,8 +2,8 @@
 
     python run.py
 
-Hardware is composed from a memory (architectures/memories.py), one crossbar
-type (architectures/crossbars.py) and any Stages and Components you define:
+Hardware is composed from one crossbar type (architectures/crossbars.py, with
+its memory cells given directly) and any Stages and Components you define:
 each component has a name, how many are installed, how many are powered,
 when (stages or a window) and its current / event energy. Command-line flags
 override the run settings for one run.
@@ -14,7 +14,7 @@ comparison table logs/comparison_summary.csv).
 import argparse
 import os
 
-from architectures import crossbars, designs, memories
+from architectures import crossbars, designs
 from evaluation.report import export, format_results
 from hardware import Component, Precision, Stage, compose
 from evaluation.runner import evaluate
@@ -34,8 +34,9 @@ RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
     Precision(weight_bits=4, weight_encoding="twos_complement"),
     [
-        # Crossbar: 1-bit RRAM, 64x64 tiles, 0.2 V read made from VDD, 5 ns read stage.
-        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
+        # Crossbar: 64x64 tiles, 0.2 V read made from VDD, 5 ns read stage.
+        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3,   # 1-bit RRAM cells
+                            rows=64, cols=64, v_read=0.2, read_ns=5.0,
                             cell_supply_v=VDD),
         Stage("fire", 2.0, level="timestep"),                  # once per time bin, after the reads
         Component("sl_ota", count="physical_columns",          # one per column,
