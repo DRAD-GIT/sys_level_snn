@@ -5,6 +5,7 @@ SPEC, and add it to MODEL_MODULES below.
 """
 import importlib
 import os
+import re
 
 import torch
 
@@ -48,16 +49,22 @@ def load_pretrained(spec, device="cpu", backend=None):
     return net.to(device)
 
 
+def _plain(name):
+    """Folder name without case and separators: "N_MNIST" -> "nmnist"."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
 def find_dataset(spec, data_dir):
     """The model's dataset folder: data_dir itself if its name starts with one
-    of spec.dataset_folders, else the one folder inside data_dir that does."""
+    of spec.dataset_folders, else the one folder inside data_dir that does.
+    Names are compared ignoring case, hyphens, underscores and spaces."""
     if not data_dir:
         raise ValueError("set DATASET_DIR in run.py (or pass --data) to the folder holding "
                          f"the {spec.display_name} dataset")
     data_dir = os.path.expanduser(data_dir)
 
     def matches(name):
-        return name.lower().startswith(tuple(p.lower() for p in spec.dataset_folders))
+        return _plain(name).startswith(tuple(_plain(p) for p in spec.dataset_folders))
     if matches(os.path.basename(os.path.normpath(data_dir))):
         return data_dir
     found = sorted(name for name in os.listdir(data_dir)

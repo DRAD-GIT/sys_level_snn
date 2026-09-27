@@ -53,7 +53,8 @@ class ModelSpec:
     layers: names of the weighted conv/dense layers, in forward order. Only
         these layers are mapped onto CIM hardware.
     checkpoint / params_yaml: paths relative to the repository root.
-    dataset_folders: name prefixes of the dataset's folder (case-insensitive).
+    dataset_folders: name prefixes of the dataset's folder (ignoring case and
+        separators: "N-MNIST" also matches "N_MNIST" or "nmnist_v2").
     """
     name: str
     display_name: str

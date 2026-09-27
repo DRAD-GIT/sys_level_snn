@@ -48,12 +48,15 @@ assert "slayerSNN" not in sys.modules
         import models
         nmnist, gesture = models.get_spec("nmnist"), models.get_spec("gesture")
         with tempfile.TemporaryDirectory() as data:
-            for name in ("N-MNIST_v1", "DVS_Gesture", "other"):
+            for name in ("N_MNIST", "DVS_Gesture", "other"):
                 os.mkdir(os.path.join(data, name))
-            self.assertEqual(models.find_dataset(nmnist, data), os.path.join(data, "N-MNIST_v1"))
+            self.assertEqual(models.find_dataset(nmnist, data), os.path.join(data, "N_MNIST"))
             self.assertEqual(models.find_dataset(gesture, data), os.path.join(data, "DVS_Gesture"))
-            direct = os.path.join(data, "N-MNIST_v1")
+            direct = os.path.join(data, "N_MNIST")
             self.assertEqual(models.find_dataset(nmnist, direct), direct)   # the folder itself
+            for name in ("nmnist v2", "NMNIST-small"):   # other spellings match too
+                self.assertEqual(models.find_dataset(nmnist, os.path.join(data, name)),
+                                 os.path.join(data, name))
             os.mkdir(os.path.join(data, "gesture_copy"))
             with self.assertRaisesRegex(FileNotFoundError, "expected one folder"):
                 models.find_dataset(gesture, data)                          # ambiguous

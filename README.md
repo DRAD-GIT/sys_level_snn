@@ -44,7 +44,7 @@ python run.py --model nmnist -b 12 --batches -1 # full N-MNIST test set (slow)
 python -m unittest discover -s tests            # all tests
 ```
 
-**Datasets** are not stored in the repository. Set `DATASET_DIR` (or `--data`) to a folder holding them. The dataset folder is found by its name, case-insensitive: the one folder starting with `N-MNIST` for N-MNIST, and with `Gesture` (or `DVS_Gesture` / `DVS-Gesture`) for DVS-Gesture. `DATASET_DIR` may also be the dataset folder itself. Inside it, the paths in `models/<model>.yaml` apply:
+**Datasets** are not stored in the repository. Set `DATASET_DIR` (or `--data`) to a folder holding them. The dataset folder is found by its name, ignoring case, hyphens, underscores and spaces: the one folder starting with `N-MNIST` (e.g. `N_MNIST`, `nmnist_v2`) for N-MNIST, and with `Gesture` or `DVS-Gesture` (e.g. `DVS_Gesture`) for DVS-Gesture. `DATASET_DIR` may also be the dataset folder itself. Inside it, the paths in `models/<model>.yaml` apply:
 
 ```text
 N-MNIST.../                        Gesture.../
