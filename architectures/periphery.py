@@ -1,31 +1,38 @@
 """Peripheral circuit blocks; add any of them to any crossbar. Each returns a
-Block (its components, plus a stage if it adds time to every read). `stage`
-names the read-level stage the block is powered in; areas default to 0.
+Block (its components, plus a stage if it adds time to every read). `during`
+names the stage(s) the block is powered in (e.g. "read", or ["read", "fire"];
+"timestep" = the whole time bin); areas default to 0.
 """
 from hardware import Block, Component, Stage
 
 
-def source_line_ota(static_ua, *, supply_v=1.1, gated=True, area_um2=0.0, stage="read"):
-    """An OTA per column holding the source line at v_read. gated: powered
-    only in reads where its tile receives a spike."""
+def _stages(during):
+    return [during] if isinstance(during, str) else list(during)
+
+
+def source_line_ota(static_ua, *, supply_v=1.1, gated=True, area_um2=0.0, during="read"):
+    """An OTA per column holding the source line at v_read. gated: powered only
+    when its tile receives a spike (in that read, or in that time bin if it is
+    also powered during time-bin stages such as "fire")."""
     return Block(components=[Component(
         "sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": gated},
-        during=[stage], supply_v=supply_v, static_ua=static_ua, area_um2=area_um2,
+        during=_stages(during), supply_v=supply_v, static_ua=static_ua, area_um2=area_um2,
         group="input_periphery")])
 
 
-def slice_mirrors(*, supply_v=1.1, gains=None, area_um2=0.0, stage="read"):
+def slice_mirrors(*, supply_v=1.1, gains=None, area_um2=0.0, during="read"):
     """A current mirror per weight-slice column copying its current into the
     neuron with a gain (default binary: most significant slice x1, then x1/2...)."""
     return Block(components=[Component(
-        "slice_mirrors", model="slice_mirror", count="used_columns", during=[stage],
+        "slice_mirrors", model="slice_mirror", count="used_columns", during=_stages(during),
         supply_v=supply_v, slice_gains=gains, area_um2=area_um2, group="output_periphery")])
 
 
-def da_converter(static_ua, *, supply_v=1.1, area_um2=0.0, stage="read"):
+def da_converter(static_ua, *, supply_v=1.1, area_um2=0.0, during="read"):
     """A DA circuit per column, powered for used columns during the read."""
     return Block(components=[Component(
-        "da", count="physical_columns", on="used_columns", during=[stage], supply_v=supply_v,
+        "da", count="physical_columns", on="used_columns", during=_stages(during),
+        supply_v=supply_v,
         static_ua=static_ua, area_um2=area_um2, group="output_periphery")])
 
 
