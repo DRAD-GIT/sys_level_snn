@@ -97,8 +97,10 @@ class Component:
 
     energy = supply_v * static_ua * powered time      (bias/static current)
            + event_pj * events                        (per read, time bin or output spike)
-    Data-driven models, charged during their single read-level stage from
-    supply_v, with currents computed from the spikes and conductances:
+    Data-driven models, charged from supply_v while powered, with currents
+    computed from the spikes and conductances (powered only in read-level
+    stages: per read; also in time-bin stages or a window: the time bin's
+    current keeps flowing, which needs one read per time bin):
       "crossbar_read"   the cell current of the weight columns;
       "reference_read"  the cell current of the G(0) reference columns;
       "slice_mirror"    current mirrors copying every weight-slice column's
@@ -306,8 +308,8 @@ def validate(arch):
             raise ValueError(f"{c.name}: {on['rule']} counts spikes per read; use read-level stages")
         if on["rule"] in DATA_RULES and c.event_pj and c.events == "timestep":
             raise ValueError(f"{c.name}: {on['rule']} events are counted per read")
-        if c.model != "static" and (len(c.during) != 1 or not read_level):
-            raise ValueError(f"{c.name}: {c.model} needs exactly one read-level stage")
+        if c.model != "static" and not (c.during or c.window):
+            raise ValueError(f"{c.name}: {c.model} needs 'during' stages or a 'window'")
         if c.model == "reference_read" and not xb.reference_columns:
             raise ValueError(f"{c.name}: reference_read needs crossbar.reference_columns")
         if c.slice_gains is not None:

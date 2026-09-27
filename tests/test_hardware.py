@@ -296,6 +296,22 @@ class HandCalculationTests(unittest.TestCase):
         self.assertEqual(r.components["sl_ota"].installed, 512)
         self.assertEqual((r.macs, r.synaptic_ops), (128 * 64 * 4, s.sum() * 64))
 
+    def test_array_conducting_until_neurons_fire(self):
+        g = torch.Generator().manual_seed(1)
+        weights = torch.randint(-7, 8, (8, 20, 1, 1), generator=g)
+        spikes = (torch.rand(1, 20, 1, 1, 3, generator=g) > 0.5).float()
+
+        def cells(during, **crossbar):
+            arch = compose("x", Precision(4), [
+                crossbars.conv_xbar(LINEAR_1BIT, read_ns=5.0, during=during, **crossbar),
+                neurons.lif_neuron(1.0, 2.0)])
+            return evaluate_layer(arch, spikes, weights).components["cells"].energy_nj
+
+        # One read per time bin: the bin's current flows for 5 + 2 ns instead of 5.
+        self.assertAlmostEqual(cells(["read", "fire"]), cells("read") * 7.0 / 5.0, places=12)
+        with self.assertRaisesRegex(ValueError, "one read per time bin"):
+            cells(["read", "fire"], rows=8, active_rows=4)   # 3 row tiles x 2 phases
+
     def test_readme_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
         r = evaluate_layer(designs.c3cim(), x, w)
@@ -423,7 +439,7 @@ class ValidationTests(unittest.TestCase):
         bad = [dict(stages=[Stage("t", 1.0, level="timestep")]),
                dict(components=[Component("x", during=["missing"])]),
                dict(components=[Component("x", static_ua=1.0)]),
-               dict(components=[Component("x", model="crossbar_read", during=["timestep"])]),
+               dict(components=[Component("x", model="crossbar_read")]),
                dict(components=[Component("x", count={"rule": "column_groups"})]),
                dict(components=[Component("x", count={"rule": "tiles", "gated": True})]),
                dict(components=[Component("x", on="spiking_rows", during=["timestep"], static_ua=1.0)]),

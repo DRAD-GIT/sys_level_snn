@@ -171,8 +171,14 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
             per_bin = tl.window_on_time(c.window) if c.window else tl.timestep_on_time(c.during)
             energy += c.supply_v * c.static_ua * 1e-6 * per_bin * powered_per_bin(on, g, act, sequential)
             active = per_bin * tl.timesteps
-        if c.model != "static":  # data-driven current drawn from supply_v for the stage
-            start, end = tl.read[c.during[0]]
+        if c.model != "static":  # data-driven current drawn from supply_v while powered
+            if read_level:  # current summed over reads x powered time per read
+                current_ns = tl.read_on_time(c.during)
+            elif tl.reads == 1:  # the time bin's current keeps flowing beyond its read
+                current_ns = tl.window_on_time(c.window) if c.window else tl.timestep_on_time(c.during)
+            else:
+                raise ValueError(f"{c.name}: {c.model} powered beyond its reads is only defined "
+                                 f"with one read per time bin (this layer has {tl.reads})")
             if c.model == "crossbar_read":
                 current = sum(a for a, _ in slice_a)
             elif c.model == "reference_read":
@@ -180,7 +186,7 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
             else:
                 gains = c.slice_gains or default_slice_gains(arch)
                 current = sum(gains[s] * a for a, s in slice_a)
-            energy += c.supply_v * current * (end - start)  # A * V * ns = nJ
+            energy += c.supply_v * current * current_ns  # A * V * ns = nJ
         if c.event_pj:
             if c.events == "read":
                 events = powered_per_read(on, g, act, sequential)
