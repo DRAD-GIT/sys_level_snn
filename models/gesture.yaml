@@ -16,8 +16,8 @@ training:
         tgtSpikeCount: {true: 180, false: 30}    # only valid for NumSpikes
     path:
         # IBM DVS-Gesture Dataset
-        # Relative paths are resolved from the repository root, not this YAML's folder.
-        dir_train:  datasets/DVS_Gesture/DvsGestureNpy/
-        dir_test:   datasets/DVS_Gesture/DvsGestureNpy/
-        list_train: datasets/DVS_Gesture/DvsGesture/trials_to_train.txt
-        list_test:  datasets/DVS_Gesture/DvsGesture/trials_to_test.txt
+        # Relative to the dataset folder (found from run.py's DATASET_DIR).
+        dir_train:  DvsGestureNpy/
+        dir_test:   DvsGestureNpy/
+        list_train: DvsGesture/trials_to_train.txt
+        list_test:  DvsGesture/trials_to_test.txt

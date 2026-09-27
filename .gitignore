@@ -1,7 +1,3 @@
 logs/
 __pycache__/
 *.pyc
-
-# Datasets are large: keep only the placeholder READMEs in git.
-datasets/*/*
-!datasets/*/README.md

@@ -38,9 +38,11 @@ class _PrecisionGroup:
         self.costs = {arch.name: {} for arch in architectures}
 
 
-def evaluate(model, architectures, *, batch_size=1, max_batches=None, num_workers=4, log=print):
+def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, num_workers=4,
+             log=print):
     """Evaluate `architectures` (hardware.Architecture) on `model`.
 
+    data_dir: the dataset folder, or a folder holding it (models.find_dataset).
     Returns {architecture name: (software accuracy %, {layer: LayerCost})}.
     """
     if batch_size <= 0 or (max_batches is not None and max_batches <= 0):
@@ -54,7 +56,7 @@ def evaluate(model, architectures, *, batch_size=1, max_batches=None, num_worker
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = models.load_pretrained(spec, device).eval()
     params = models.load_params(spec.path(spec.params_yaml))
-    loader = DataLoader(models.test_dataset(spec, params), batch_size=batch_size,
+    loader = DataLoader(models.test_dataset(spec, params, data_dir), batch_size=batch_size,
                         shuffle=False, num_workers=num_workers)
 
     by_bits = {}

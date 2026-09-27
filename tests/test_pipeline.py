@@ -61,8 +61,10 @@ class PipelineTests(unittest.TestCase):
         spec = dataclasses.replace(models.get_spec("nmnist"), dataset_class=RandomSpikes)
         self.spec_patch = patch.object(models.nmnist, "SPEC", spec)
         self.spec_patch.start()
-        self.results = evaluate("nmnist", ARCHITECTURES, batch_size=2,
-                                max_batches=1, num_workers=0, log=lambda *_: None)
+        with tempfile.TemporaryDirectory() as data:
+            os.mkdir(os.path.join(data, "N-MNIST"))
+            self.results = evaluate("nmnist", ARCHITECTURES, data_dir=data, batch_size=2,
+                                    max_batches=1, num_workers=0, log=lambda *_: None)
 
     def tearDown(self):
         self.spec_patch.stop()

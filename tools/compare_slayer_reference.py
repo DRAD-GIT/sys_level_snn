@@ -1,12 +1,12 @@
 """Check the plain-PyTorch SRMLayer against a recorded slayerSNN run.
 
-    python tools/compare_slayer_reference.py reference/nmnist_slayer.pt [--full]
+    python tools/compare_slayer_reference.py reference/nmnist_slayer.pt [--full --data DIR]
 
 Feeds the exact input spikes slayerSNN saw into the network built on
 SRMLayer and reports, per profiled layer, how many spike entries differ and
 the first time step where they do, the predicted classes, and the effect on
-the hardware estimates. --full re-runs the whole test set (needs the dataset
-in datasets/) and compares against slayerSNN's recorded predictions.
+the hardware estimates. --full re-runs the whole test set (needs the dataset:
+--data) and compares against slayerSNN's recorded predictions.
 
 Identical spikes are expected almost everywhere. SLAYER's CUDA kernels and
 PyTorch round float32 sums in different orders, so a membrane potential that
@@ -43,7 +43,7 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
     return energy
 
 
-def compare(path, full=False, architectures=None, log=print):
+def compare(path, full=False, data_dir=None, architectures=None, log=print):
     reference = torch.load(path, map_location="cpu", weights_only=True)
     if reference.get("format") != FORMAT:
         raise ValueError(f"{path}: unsupported reference format {reference.get('format')}")
@@ -102,7 +102,7 @@ def compare(path, full=False, architectures=None, log=print):
         recorded = reference.get("full")
         if not recorded:
             raise ValueError(f"{path} has no full-test-set predictions; export with --full")
-        dataset = models.test_dataset(spec, models.load_params(spec.path(spec.params_yaml)))
+        dataset = models.test_dataset(spec, models.load_params(spec.path(spec.params_yaml)), data_dir)
         agree = correct = 0
         with torch.no_grad():
             for index, (theirs, label) in enumerate(zip(recorded["predictions"], recorded["labels"])):
@@ -122,6 +122,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare SRMLayer against a slayerSNN reference")
     parser.add_argument("reference", nargs="+")
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--data", help="dataset folder, or a folder holding it (for --full)")
     args = parser.parse_args()
     for reference_path in args.reference:
-        compare(reference_path, full=args.full)
+        compare(reference_path, full=args.full, data_dir=args.data)

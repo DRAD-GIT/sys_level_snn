@@ -1,12 +1,12 @@
 """Record a reference run of the ORIGINAL slayerSNN framework.
 
 Run once on a machine that has slayerSNN (with its CUDA backend), a GPU and
-the dataset in datasets/. It builds each network on slayerSNN (same weights,
+the dataset (--data: its folder, or a folder holding it). It builds each network on slayerSNN (same weights,
 via backend=snn.layer), runs the first N test samples, and saves everything
 tools/compare_slayer_reference.py needs to check the plain-PyTorch SRMLayer:
 
-    python tools/export_slayer_reference.py --model nmnist --samples 20
-    python tools/export_slayer_reference.py --model gesture --samples 22 --full
+    python tools/export_slayer_reference.py --model nmnist --data /data --samples 20
+    python tools/export_slayer_reference.py --model gesture --data /data --samples 22 --full
 
 --full also records slayerSNN's predicted class for every test sample, so the
 comparison can check the full-test-set accuracy too (slow for gesture).
@@ -36,6 +36,7 @@ def slayer_input(snn, dataset, index):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", required=True, choices=sorted(models.MODEL_MODULES))
+    parser.add_argument("--data", required=True, help="dataset folder, or a folder holding it")
     parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--full", action="store_true", help="also record predictions for the whole test set")
     parser.add_argument("--out", help="default: reference/<model>_slayer.pt")
@@ -47,7 +48,7 @@ def main():
     spec = models.get_spec(args.model)
     params = models.load_params(spec.path(spec.params_yaml))
     net = models.load_pretrained(spec, device, backend=snn.layer).eval()
-    dataset = models.test_dataset(spec, params)
+    dataset = models.test_dataset(spec, params, args.data)
     probe = LayerProbe(net, spec.layers)
 
     samples = []

@@ -100,4 +100,5 @@ SPEC = ModelSpec(
     checkpoint="pretrained/nmnist_lenet.pth",
     params_yaml="models/nmnist.yaml",
     layers=("SC1", "SC2", "SC3", "SF1", "SF2"),
+    dataset_folders=("N-MNIST",),
 )

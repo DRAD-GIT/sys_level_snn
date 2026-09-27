@@ -13,11 +13,10 @@ hardware/              the hardware model
   mapping.py           layer -> windows, tiles, weight slices; spike activity
   timeline.py          stage placement: serial, parallel, overlapping, pipelined
   engine.py            evaluate_layer: energy / latency / area of one layer
-models/                SNN networks, datasets and their neuron/simulation YAMLs
+models/                SNN networks, dataset readers and their neuron/simulation YAMLs
   srm.py               plain-PyTorch SRM spiking layers (replaces slayerSNN)
   events.py            event-file readers and spike binning
 pretrained/            trained weights (nmnist_lenet.pth, gesture.pth)
-datasets/              place the datasets here (see each folder's README)
 evaluation/            pipeline used by run.py
   runner.py            inference per weight precision, per-layer hardware evaluation
   probes.py            layer input spikes and LIF output spike counts
@@ -30,24 +29,36 @@ tests/                 reference-model, hand-calculation and pipeline tests
 
 ## 2. Quick start
 
-Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then edit `run.py`:
+Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Then edit `run.py`:
 
 - `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
+- `DATASET_DIR`: where the datasets are (see below).
 - `ARCHITECTURES`: which designs to evaluate, each composed from a crossbar (with its memory cells) and your own stages and components (see section 3).
 - `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
 ```bash
 python run.py                                   # settings in run.py
+python run.py --data /data/neuromorphic         # dataset location for this run
 python run.py --model gesture                   # override the model once
 python run.py --model nmnist -b 12 --batches -1 # full N-MNIST test set (slow)
 python -m unittest discover -s tests            # all tests
 ```
 
+**Datasets** are not stored in the repository. Set `DATASET_DIR` (or `--data`) to a folder holding them. The dataset folder is found by its name, case-insensitive: the one folder starting with `N-MNIST` for N-MNIST, and with `Gesture` (or `DVS_Gesture` / `DVS-Gesture`) for DVS-Gesture. `DATASET_DIR` may also be the dataset folder itself. Inside it, the paths in `models/<model>.yaml` apply:
+
+```text
+N-MNIST.../                        Gesture.../
+├── Test/     00000.bin, ...       ├── DvsGestureNpy/<trial>/0.npy ... 10.npy
+└── Test.txt  "<index> <label>"    └── DvsGesture/trials_to_test.txt  (e.g. user24_led.aedat)
+```
+
+Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without extension>/<class>.npy` for every trial listed in `trials_to_test.txt`.
+
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
 
 Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Gesture batch size is capped at two.
 
-The weight files are plain tensors (`torch.load(weights_only=True)`); `models.load_pretrained` checks that the YAML's neuron parameters still reproduce the neuron kernels stored with them. Dataset paths in the YAMLs are resolved from the repository root. To add a model, write its classes and a `SPEC` in `models/<name>.py` and register it in `models/__init__.py`.
+The weight files are plain tensors (`torch.load(weights_only=True)`); `models.load_pretrained` checks that the YAML's neuron parameters still reproduce the neuron kernels stored with them. To add a model, write its classes and a `SPEC` in `models/<name>.py` and register it in `models/__init__.py`.
 
 ## 3. Defining hardware
 
@@ -169,8 +180,8 @@ The kernels generated from the YAMLs match the kernels stored in the trained wei
 **Verification against the original framework.** Two steps are still to do on a machine that has slayerSNN and the datasets:
 
 ```bash
-python tools/export_slayer_reference.py --model nmnist --samples 20 --full
-python tools/export_slayer_reference.py --model gesture --samples 22
+python tools/export_slayer_reference.py --model nmnist --data /path/to/datasets --samples 20 --full
+python tools/export_slayer_reference.py --model gesture --data /path/to/datasets --samples 22
 ```
 
 Copy the resulting `reference/*_slayer.pt` files into this repository. `python tools/compare_slayer_reference.py reference/*.pt` then reports, for every profiled layer, how many spike entries differ and from which time step. It also compares predicted classes, full-test-set accuracy (with `--full`) and the effect on the hardware energy. `tests/test_slayer_reference.py` runs automatically once reference files exist. Expect identical spikes almost everywhere: slayerSNN's CUDA kernels round float32 sums in a different order from PyTorch, so a membrane potential within rounding of the threshold can occasionally flip a spike.

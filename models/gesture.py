@@ -74,4 +74,5 @@ SPEC = ModelSpec(
     params_yaml="models/gesture.yaml",
     layers=("SC1", "SC2", "SF1", "SF2"),
     max_batch_size=2,
+    dataset_folders=("Gesture", "DVS_Gesture", "DVS-Gesture"),
 )

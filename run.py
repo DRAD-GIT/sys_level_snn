@@ -25,6 +25,9 @@ from evaluation.runner import evaluate
 MODEL = "nmnist"       # "nmnist" or "gesture"
 BATCH_SIZE = 1         # gesture is capped at 2
 MAX_BATCHES = 1        # None = the full test set (slow)
+# Folder holding the dataset folders (names starting with N-MNIST / Gesture),
+# or the dataset folder itself.
+DATASET_DIR = None     # e.g. "/data/neuromorphic"
 
 # ============================================================================
 # HARDWARE: architectures to evaluate (names must be unique)
@@ -71,12 +74,13 @@ LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 def main():
     parser = argparse.ArgumentParser(description="SNN inference + CIM hardware metrics")
     parser.add_argument("--model", default=MODEL, choices=["nmnist", "gesture"])
+    parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
     parser.add_argument("-b", "--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--batches", type=int, default=MAX_BATCHES,
                         help="max batches to run; -1 = full test set")
     args = parser.parse_args()
 
-    results = evaluate(args.model, ARCHITECTURES, batch_size=args.batch_size,
+    results = evaluate(args.model, ARCHITECTURES, data_dir=args.data, batch_size=args.batch_size,
                        max_batches=None if args.batches in (None, -1) else args.batches)
     print(format_results(results, METRICS))
     for row in export(results, ARCHITECTURES, args.model, METRICS, LOG_DIR):

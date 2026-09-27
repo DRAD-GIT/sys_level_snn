@@ -8,7 +8,7 @@ import os
 
 import torch
 
-from .base import REPO_ROOT, load_params
+from .base import load_params
 
 MODEL_MODULES = {"nmnist": "models.nmnist", "gesture": "models.gesture"}
 
@@ -39,12 +39,35 @@ def load_pretrained(spec, device="cpu", backend=None):
     return net.to(device)
 
 
-def test_dataset(spec, net_params):
-    """The model's test set, with YAML dataset paths resolved from the repo root."""
+def find_dataset(spec, data_dir):
+    """The model's dataset folder: data_dir itself if its name starts with one
+    of spec.dataset_folders, else the one folder inside data_dir that does."""
+    if not data_dir:
+        raise ValueError("set DATASET_DIR in run.py (or pass --data) to the folder holding "
+                         f"the {spec.display_name} dataset")
+    data_dir = os.path.expanduser(data_dir)
+
+    def matches(name):
+        return name.lower().startswith(tuple(p.lower() for p in spec.dataset_folders))
+    if matches(os.path.basename(os.path.normpath(data_dir))):
+        return data_dir
+    found = sorted(name for name in os.listdir(data_dir)
+                   if matches(name) and os.path.isdir(os.path.join(data_dir, name)))
+    if len(found) != 1:
+        raise FileNotFoundError(
+            f"{data_dir}: expected one folder starting with {' / '.join(spec.dataset_folders)} "
+            f"for {spec.display_name}, found {found or 'none'}")
+    return os.path.join(data_dir, found[0])
+
+
+def test_dataset(spec, net_params, data_dir):
+    """The model's test set; the YAML's dataset paths are relative to its
+    dataset folder (see find_dataset)."""
+    root = find_dataset(spec, data_dir)
     paths = net_params["training"]["path"]
     return spec.dataset_class(
-        data_path=os.path.join(REPO_ROOT, paths["dir_test"]),
-        samples_file=os.path.join(REPO_ROOT, paths["list_test"]),
+        data_path=os.path.join(root, paths["dir_test"]),
+        samples_file=os.path.join(root, paths["list_test"]),
         sampling_time=net_params["simulation"]["Ts"],
         sample_length=net_params["simulation"]["tSample"],
     )

@@ -51,6 +51,7 @@ class ModelSpec:
     layers: names of the weighted conv/dense layers, in forward order. Only
         these layers are mapped onto CIM hardware.
     checkpoint / params_yaml: paths relative to the repository root.
+    dataset_folders: name prefixes of the dataset's folder (case-insensitive).
     """
     name: str
     display_name: str
@@ -60,6 +61,7 @@ class ModelSpec:
     params_yaml: str
     layers: tuple[str, ...]
     max_batch_size: int | None = None
+    dataset_folders: tuple[str, ...] = ()
 
     def path(self, relative: str) -> str:
         return os.path.join(REPO_ROOT, relative)
