@@ -62,9 +62,9 @@ class LayerCost:
 
 
 def _per_unit(rule, g):
-    """Instances per unit: per row tile (tile rules), per window (window
-    rules) or per layer."""
-    r = rule["rule"]
+    """Instances per unit: per row tile of a tile set (tile rules; used
+    columns per weight copy), per window ("outputs"), per tile set
+    ("output_bank") or per layer."""
     return {"tiles": g.column_tiles,
             "physical_rows": g.column_tiles * g.tile_rows,
             "physical_columns": g.column_tiles * g.tile_cols,
@@ -73,48 +73,56 @@ def _per_unit(rule, g):
             "outputs": g.out_channels,
             "output_bank": g.column_tiles * g.tile_cols,
             "one": 1,
-            "fixed": rule.get("value", 0)}[r]
+            "fixed": rule.get("value", 0)}[rule["rule"]]
 
 
 def installed(rule, g):
     r = rule["rule"]
-    if r in TILE_RULES:
+    if r == "used_columns":
         return g.copies * g.row_tiles * _per_unit(rule, g)
+    if r in TILE_RULES:
+        return g.tile_sets * g.row_tiles * _per_unit(rule, g)
     if r == "outputs":
         return g.windows * g.out_channels
     if r == "output_bank":
-        return g.copies * _per_unit(rule, g)
+        return g.tile_sets * _per_unit(rule, g)
     return _per_unit(rule, g)
 
 
 def powered_per_read(rule, g, act, sequential):
     """Sum over all reads of the powered instances."""
-    r = rule["rule"]
+    r, gated, frames = rule["rule"], rule["gated"], act.frames
     if r == "spiking_rows":  # every word-line segment (one per column tile) with a spike
         return act.spikes_on_rows * g.column_tiles
-    gated = rule["gated"]
-    if r in TILE_RULES:
-        units = act.tile_reads if gated else act.frames * g.windows * sum(g.tile_phases)
-    elif r in ("outputs", "output_bank") or sequential:  # a sequential read = one window
-        units = act.window_reads if gated else act.frames * g.windows * g.phases
+    if r == "used_columns":  # the used columns of every tile read
+        units = act.tile_read_copies if gated else \
+            frames * sum(n * c * sum(p) for n, c, p in g.slot_kinds)
+    elif r in TILE_RULES:
+        units = act.tile_reads if gated else frames * sum(n * sum(p) for n, _, p in g.slot_kinds)
+    elif r == "output_bank":
+        units = act.slot_reads if gated else frames * g.slots * g.phases
+    elif r == "outputs" or sequential:  # a sequential read = one window
+        units = act.window_reads if gated else frames * g.windows * g.phases
     else:
-        units = act.layer_reads if gated else act.frames * g.phases
+        units = act.layer_reads if gated else frames * g.phases
     return units * _per_unit(rule, g)
 
 
 def powered_per_bin(rule, g, act, sequential):
     """Sum over all time bins of the powered instances (whole-bin components)."""
-    r = rule["rule"]
-    gated = rule["gated"]
-    if r in TILE_RULES:
-        if sequential:
-            units = act.shared_tile_bins if gated else act.frames * g.row_tiles
-        else:
-            units = act.tile_bins if gated else act.frames * g.windows * g.row_tiles
-    elif r == "outputs" or (r == "output_bank" and not sequential):
-        units = act.window_bins if gated else act.frames * g.windows
+    r, gated, frames = rule["rule"], rule["gated"], act.frames
+    if r in TILE_RULES and sequential:
+        units = act.shared_tile_bins if gated else frames * g.row_tiles
+    elif r == "used_columns":
+        units = act.tile_bin_copies if gated else frames * g.windows * g.row_tiles
+    elif r in TILE_RULES:
+        units = act.tile_bins if gated else frames * g.slots * g.row_tiles
+    elif r == "outputs":
+        units = act.window_bins if gated else frames * g.windows
+    elif r == "output_bank" and not sequential:
+        units = act.slot_bins if gated else frames * g.slots
     else:
-        units = act.layer_bins if gated else act.frames
+        units = act.layer_bins if gated else frames
     return units * _per_unit(rule, g)
 
 
@@ -134,7 +142,7 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
         weights = weights[..., 0]
     batch = spikes.shape[0]
     g = layer_geometry(arch, spikes.shape[1:4], weights.shape, stride, padding)
-    key = (g.tile_rows, g.phase_rows)
+    key = (g.tile_rows, g.phase_rows, g.copies_per_tile)
     if activity_cache is not None and key in activity_cache:
         act = activity_cache[key]
     else:
@@ -145,11 +153,13 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
     sequential = arch.conv_mapping == "sequential"
 
     # Current (A) of each column slice summed over all reads: each spike on
-    # row k drives the conductances of row k in every column.
+    # row k drives the conductances of row k in every column, and the level-0
+    # cells of the other weight copies packed in its tile (leak).
     slices, g_reference = conductance_slices(arch, weights)
-    v_read = arch.crossbar.v_read
-    slice_a = [(v_read * float(g_slice.sum(0) @ act.row_drive), s) for g_slice, s in slices]
-    reference_a = v_read * g_reference * g.out_channels * act.spikes_on_rows \
+    v_read, g_empty = arch.crossbar.v_read, arch.crossbar.memory.conductances()[0]
+    leak_a = v_read * g_empty * act.leak_drive * g.out_channels   # per slice (out columns)
+    slice_a = [(v_read * float(g_slice.sum(0) @ act.row_drive) + leak_a, s) for g_slice, s in slices]
+    reference_a = v_read * g_reference * g.out_channels * act.spikes_on_rows + leak_a \
         if arch.crossbar.reference_columns else 0.0
 
     components = {}

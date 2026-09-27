@@ -14,7 +14,8 @@ import torch
 from architectures import crossbars, designs
 from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, compose,
                       evaluate_layer, quantize_weights)
-from hardware.architecture import TILE_RULES, rule_of
+from hardware.architecture import LAYER_RULES, TILE_RULES, rule_of
+from hardware.mapping import layer_geometry
 
 LINEAR_1BIT = Memory(cell_bits=1, r_on=1e3, r_off=1e6)
 NONUNIFORM_2BIT = Memory(cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
@@ -84,18 +85,43 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
                 for s in range(n_slices):
                     columns.append(([levels[(v >> (s * cell)) & top] for v in plane], s))
     used = len(columns)
+
+    # Physical layout. A slot = the windows read together: one window per read
+    # ("sequential"), or the parallel copies packed block-diagonally into one
+    # tile set (as many as fit in a tile, else one copy per tile set). Copy j
+    # of a slot owns slot rows j*K.. and columns j*used..; the rest of its rows
+    # hold level-0 cells in the other copies' columns. Unused columns are off.
+    per_tile = 1
+    if not sequential and k_rows <= rows and used <= xb.cols:
+        while (per_tile + 1) * k_rows <= rows and (per_tile + 1) * used <= xb.cols \
+                and per_tile < len(positions):
+            per_tile += 1
+    slots = [positions[i:i + per_tile] for i in range(0, len(positions), per_tile)]
+    column_tiles = math.ceil(per_tile * used / xb.cols)
+
+    def layout(slot):
+        """Row tiles of the slot -> phases -> rows (slot row q = j * K + k)."""
+        q_rows = len(slot) * k_rows
+        tiles = [range(r, min(r + rows, q_rows)) for r in range(0, q_rows, rows)]
+        return [[t[p:p + active_rows] for p in range(0, len(t), active_rows)] for t in tiles]
+
+    def tile_used_columns(slot, rt):   # used columns of copies with rows in row tile rt
+        return used * sum(1 for j in range(len(slot)) if j * k_rows < (rt + 1) * rows
+                          and (j + 1) * k_rows > rt * rows)
+
+    max_phases = max(len(p) for p in layout(slots[0]))
+    n_slices = max(index for _, index in columns) + 1
     slice_current = [0.0] * n_slices
-    column_tiles = math.ceil(used / xb.cols)
-    tiles = [range(r, min(r + rows, k_rows)) for r in range(0, k_rows, rows)]
-    tile_phases = [[t[p:p + active_rows] for p in range(0, len(t), active_rows)] for t in tiles]
-    max_phases = max(len(p) for p in tile_phases)
 
     def per_unit(rule):
         return {"tiles": column_tiles, "physical_rows": column_tiles * rows,
-                "physical_columns": column_tiles * xb.cols, "used_columns": used,
+                "physical_columns": column_tiles * xb.cols,
                 "column_groups": column_tiles * math.ceil(xb.cols / rule.get("size", 1)),
                 "outputs": out, "output_bank": column_tiles * xb.cols, "one": 1,
                 "fixed": rule.get("value", 0)}[rule["rule"]]
+
+    def tile_units(rule, slot, rt):
+        return tile_used_columns(slot, rt) if rule["rule"] == "used_columns" else per_unit(rule)
 
     def rules(c):
         count = rule_of(c.count)
@@ -109,49 +135,78 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
     for b in range(batch):
         for t in range(bins):
             patches = {w: patch(b, t, *w) for w in positions}
-            for w, p_in in patches.items():
-                for k, s in enumerate(p_in):
-                    for cells, index in columns:
-                        slice_current[index] += s * cells[k] * xb.v_read
-                    reference_current += s * out * g_mid * xb.v_read
-            groups = [[w] for w in positions] if sequential else [positions]
-            for group in groups:
+            # Cell currents: every row of a slot drives all of the slot's used
+            # columns (and reference columns): its own copy's weights, level 0
+            # in the other copies' columns.
+            for slot in slots:
+                for j, w in enumerate(slot):
+                    for k, s in enumerate(patches[w]):
+                        for owner in range(len(slot)):
+                            for cells, index in columns:
+                                g = cells[k] if owner == j else g_min
+                                slice_current[index] += s * g * xb.v_read
+                            reference_current += s * out * (g_mid if owner == j else g_min) * xb.v_read
+            slot_spikes = {tuple(slot): [s for w in slot for s in patches[w]] for slot in slots}
+            for slot in slots:
+                phases = layout(slot)
+                x = slot_spikes[tuple(slot)]
                 for p in range(max_phases):
-                    spike = {(w, r): any(patches[w][k] for k in tile_phases[r][p])
-                             for w in group for r in range(len(tiles)) if p < len(tile_phases[r])}
+                    spike = {r: any(x[q] for q in phases[r][p])
+                             for r in range(len(phases)) if p < len(phases[r])}
+                    window_spike = {w: any(x[q] for r in spike for q in phases[r][p]
+                                           if q // k_rows == j) for j, w in enumerate(slot)}
                     for c in arch.components:
                         rule = rules(c)
                         if rule["rule"] == "spiking_rows":
-                            n = sum(patches[w][k] for (w, r) in spike for k in tile_phases[r][p])
+                            n = sum(x[q] for r in spike for q in phases[r][p])
                             read_powered[c.name] += n * column_tiles
-                            continue
-                        if rule["rule"] in TILE_RULES:
-                            units = [key for key, s in spike.items() if s or not rule["gated"]]
-                        elif rule["rule"] in ("outputs", "output_bank"):
-                            units = [w for w in group if not rule["gated"]
-                                     or any(s for (u, _), s in spike.items() if u == w)]
-                        else:
-                            units = [0] if not rule["gated"] or any(spike.values()) else []
-                        read_powered[c.name] += len(units) * per_unit(rule)
-            # Whole-bin units: a physical row tile / window / bank / layer that
+                        elif rule["rule"] in TILE_RULES:
+                            read_powered[c.name] += sum(tile_units(rule, slot, r) for r, s in spike.items()
+                                                        if s or not rule["gated"])
+                        elif rule["rule"] == "outputs":
+                            read_powered[c.name] += per_unit(rule) * sum(
+                                1 for w in slot if window_spike[w] or not rule["gated"])
+                        elif rule["rule"] == "output_bank":
+                            read_powered[c.name] += per_unit(rule) * (
+                                not rule["gated"] or any(spike.values()))
+            # Layer units: per read, i.e. per sequential window read or per
+            # parallel phase (all slots at once).
+            reads = [([slot], p) for slot in slots for p in range(max_phases)] if sequential else \
+                [(slots, p) for p in range(max_phases)]
+            for together, p in reads:
+                hit = any(slot_spikes[tuple(s)][q] for s in together
+                          for tile in layout(s) if p < len(tile) for q in tile[p])
+                for c in arch.components:
+                    rule = rules(c)
+                    if rule["rule"] in LAYER_RULES:
+                        read_powered[c.name] += per_unit(rule) * (hit or not rule["gated"])
+            # Whole-bin units: a row tile / window / tile set / layer that
             # receives any spike during this time bin.
-            any_tile = {(w, r): any(patches[w][k] for k in tiles[r])
-                        for w in positions for r in range(len(tiles))}
+            any_tile = {(tuple(slot), r): any(slot_spikes[tuple(slot)][q] for q in range(
+                r * rows, min((r + 1) * rows, len(slot) * k_rows)))
+                for slot in slots for r in range(len(layout(slot)))}
             for c in arch.components:
                 rule = rules(c)
                 if rule["rule"] == "spiking_rows":   # counted per read only
                     continue
                 if rule["rule"] in TILE_RULES:
-                    if sequential:
-                        keys = [r for r in range(len(tiles))
-                                if not rule["gated"] or any(any_tile[(w, r)] for w in positions)]
+                    if sequential:   # one shared tile set; a slot = a window
+                        units = [per_unit(rule) if rule["rule"] != "used_columns" else used
+                                 for r in range(len(layout(slots[0])))
+                                 if not rule["gated"] or any(any_tile[(tuple(s), r)] for s in slots)]
                     else:
-                        keys = [k for k, s in any_tile.items() if s or not rule["gated"]]
-                elif rule["rule"] == "outputs" or (rule["rule"] == "output_bank" and not sequential):
-                    keys = [w for w in positions if not rule["gated"] or any(patches[w])]
+                        units = [tile_units(rule, list(s), r) for (s, r), hit in any_tile.items()
+                                 if hit or not rule["gated"]]
+                    bin_powered[c.name] += sum(units)
+                elif rule["rule"] == "outputs":
+                    bin_powered[c.name] += per_unit(rule) * sum(
+                        1 for w in positions if not rule["gated"] or any(patches[w]))
+                elif rule["rule"] == "output_bank" and not sequential:
+                    bin_powered[c.name] += per_unit(rule) * sum(
+                        1 for s in slots if not rule["gated"] or any(slot_spikes[tuple(s)]))
                 else:
-                    keys = [0] if not rule["gated"] or any(any(v) for v in patches.values()) else []
-                bin_powered[c.name] += len(keys) * per_unit(rule)
+                    bin_powered[c.name] += per_unit(rule) * (
+                        not rule["gated"] or any(any(v) for v in patches.values()))
 
     durations = {s.name: s.duration_ns for s in arch.stages}
     read_span = sum(s.duration_ns for s in arch.stages if s.level == "read")
@@ -260,6 +315,28 @@ class ReferenceModelTests(unittest.TestCase):
                         self.check(arch, conv_spikes, w_conv, stride=1, padding=0)
                         self.check(arch, dense_spikes, w_dense)
 
+    def test_parallel_copies_packed_in_shared_tiles(self):
+        """Small kernels: several parallel copies per tile, row phases that
+        cross copy boundaries, and a last tile set holding fewer copies."""
+        g = torch.Generator().manual_seed(2)
+        spikes = (torch.rand(2, 2, 4, 4, 3, generator=g) > 0.6).float()   # 25 windows
+        weights = torch.randint(-3, 4, (2, 2, 2, 2), generator=g)          # K = 8 rows
+        for memory in (NONUNIFORM_2BIT, LINEAR_1BIT):
+            for encoding in ("twos_complement", "differential", "analog"):
+                analog = encoding == "analog"
+                arch = test_arch("parallel", Precision(None if analog else 3, encoding),
+                                 Crossbar(memory, rows=30, cols=20, active_rows=7, reference_columns=analog))
+                if analog:
+                    arch.components.append(Component("reference", model="reference_read",
+                                                     during=["sense"]))
+                w = weights.float() if analog else weights
+                with self.subTest(cell_bits=memory.cell_bits, encoding=encoding):
+                    geometry = layer_geometry(arch, spikes.shape[1:4], w.shape, padding=1)
+                    self.assertGreater(geometry.copies_per_tile, 1)
+                    self.assertNotEqual(geometry.windows % geometry.copies_per_tile, 0)
+                    self.check(arch, spikes, w, stride=1, padding=1)
+                    self.check(arch, spikes, w, stride=2, padding=0)
+
     def test_silent_input_powers_only_ungated_parts(self):
         arch = test_arch("parallel", Precision(4), Crossbar(LINEAR_1BIT, rows=8, cols=8))
         silent = torch.zeros(1, 2, 4, 4, 2)
@@ -337,9 +414,22 @@ class HandCalculationTests(unittest.TestCase):
         seq = evaluate_layer(rram_ota_design("sequential"), spikes, weights, padding=1)
         par = evaluate_layer(rram_ota_design("parallel"), spikes, weights, padding=1)
         self.assertEqual(seq.geometry.windows, 25)
-        self.assertEqual((seq.components["cells"].installed, par.components["cells"].installed), (1, 25))
+        # A copy is 18 rows x 16 columns: 3 fit block-diagonally in a 64x64
+        # tile, so 25 copies take 9 tiles (the last holds one copy).
+        self.assertEqual(par.geometry.copies_per_tile, 3)
+        self.assertEqual((seq.components["cells"].installed, par.components["cells"].installed), (1, 9))
+        self.assertEqual(par.components["sl_ota"].installed, 9 * 64)
         self.assertEqual((seq.latency_ns, par.latency_ns), (25 * 5.0 + 2.0, 5.0 + 2.0))
-        self.assertAlmostEqual(seq.components["cells"].energy_nj, par.components["cells"].energy_nj)
+        # Packed copies leak: a spike on a copy's row drives the level-0 cells
+        # (200 kohm) in the 2 x 16 columns of the other two copies of its tile.
+        per_window = torch.nn.functional.unfold(spikes[..., 0], (3, 3), padding=1).sum((0, 1))
+        leak = 0.2 / 200e3 * float(per_window[:24].sum()) * 2 * 16 * 1.1 * 5.0
+        self.assertAlmostEqual(par.components["cells"].energy_nj,
+                               seq.components["cells"].energy_nj + leak, places=12)
+        # Slice mirrors of every used column: 25 copies x 16, but no mirror of
+        # the empty columns; OTAs likewise only for the used columns.
+        self.assertEqual(par.components["slice_mirrors"].installed, 25 * 16)
+        self.assertAlmostEqual(par.components["sl_ota"].energy_nj, 1.1 * 10e-6 * 25 * 16 * 5.0, places=12)
 
 
 class TimelineTests(unittest.TestCase):

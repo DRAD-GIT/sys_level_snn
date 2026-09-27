@@ -104,7 +104,9 @@ Inputs are binary spikes. Spikes of every time bin are integrated with equal wei
 | `conv_mapping` | Weight copies | Reads per time bin |
 |---|---|---|
 | `sequential` | 1: all kernels once; the windows are applied one after another | windows x row phases |
-| `parallel` | one per window: every window computed at once | row phases |
+| `parallel` | one per window: every window computed at once | row phases of a tile set |
+
+With `parallel`, copies that fit in a tile share it, packed block-diagonally: as many as fit both the tile's rows and its columns (e.g. 18-row x 16-column copies: 3 per 64x64 tile, so 25 windows take 9 tiles). Each copy has its own rows (its window's inputs) and columns (its outputs). The cells of a copy's rows in the other copies' columns hold level 0 and conduct G(level 0) x v_read on every spiking row, which is charged to the array (and to the slice mirrors and reference columns of those columns). Columns without weights are off, with every component counted on them (`used_columns`). A copy larger than a tile gets its own tiles. The windows read together are a **slot**: one window per read with `sequential`, one tile set's copies with `parallel`. With `active_rows`, a packed tile reads the rows of all its copies in phases, so packing can add reads.
 
 **Stages** (timeline): `level="read"` stages repeat every read; `level="timestep"` stages run once per time bin, where the whole block of reads is the pseudo-stage `"reads"` (which the first timestep stage follows by default). Placement: `after=None` follows the previous stage of the level (serial), `after=[]` starts with the level (parallel), `after=["x", "y"]` waits for those, and a negative `offset_ns` overlaps the start with the end of the dependency. `read_interval_ns` / `timestep_interval_ns` pipeline consecutive reads / time bins.
 
@@ -118,12 +120,12 @@ Count and on rules, with the unit each instance belongs to:
 
 | Rule | Unit | Instances per unit |
 |---|---|---|
-| `tiles` | row tile of a weight copy | column tiles |
-| `physical_rows` / `physical_columns` | row tile | column tiles x tile rows / cols |
-| `used_columns` | row tile | out_channels x columns per weight |
-| `column_groups` (`size`) | row tile | column tiles x ceil(cols / size) |
+| `tiles` | row tile of a tile set | column tiles |
+| `physical_rows` / `physical_columns` | row tile of a tile set | column tiles x tile rows / cols |
+| `used_columns` | row tile of a tile set | out_channels x columns per weight, per copy in it |
+| `column_groups` (`size`) | row tile of a tile set | column tiles x ceil(cols / size) |
 | `outputs` | window | out_channels (neurons; installed for every window) |
-| `output_bank` | window (per weight copy) | column tiles x cols |
+| `output_bank` | tile set (slot) | column tiles x cols |
 | `one` / `fixed` (`value`) | layer | 1 / value |
 | `spiking_rows` (on only) | read | word lines carrying a spike, one per column tile |
 
@@ -135,10 +137,10 @@ Leave unknown values at 0 (e.g. areas) and switch the metric off. A different me
 
 For each layer and batch (`hardware/engine.py`):
 
-1. **Mapping**: windows, weight copies, tiles, row phases and reads per time bin (`mapping.layer_geometry`).
-2. **Activity**: every window's input patch is extracted from the spikes; per row, the number of spikes; per read and time bin, which row tiles, windows and the layer receive a spike (`mapping.spike_activity`).
+1. **Mapping**: windows, weight copies, copies per tile, tiles, row phases and reads per time bin (`mapping.layer_geometry`).
+2. **Activity**: every window's input patch is extracted from the spikes; per row, the number of spikes; the spikes that leak into packed copies' columns; per read and time bin, which row tiles, slots, windows and the layer receive a spike (`mapping.spike_activity`).
 3. **Timeline**: stage start/end times, reads per time bin, latency per inference = (T - 1) x timestep interval + timestep span (`timeline.build_timeline`). Latency follows the schedule and does not depend on the data.
-4. **Energy** per component: static energy = supply x current x (powered time per read or time bin) x (powered instances summed over all reads or time bins); event energy; data-driven energy = supply x (for each column slice: v_read x sum over spikes of that row's conductance, times its mirror gain for `slice_mirror`) x stage time.
+4. **Energy** per component: static energy = supply x current x (powered time per read or time bin) x (powered instances summed over all reads or time bins); event energy; data-driven energy = supply x (for each column slice: v_read x sum over spikes of that row's conductance plus the level-0 leak of packed copies, times its mirror gain for `slice_mirror`) x powered time.
 
 Per inference: energy is divided by the number of evaluated samples; area counts installed instances once. Network totals add the layers, which run one after another. Reported metrics: energy (nJ), latency (us), power = energy / latency (mW), area (mm^2), TOPS/W = 2 x dense MACs / energy (every input in every time bin, zeros included), and pJ per synaptic operation (SOP = an input spike reaching one output neuron; the event-driven SNN figure).
 

@@ -16,12 +16,14 @@ window's input patch driving the kernel rows:
   "sequential": one copy of the kernel weights; the windows are applied one
                 after another (column tiles still work in parallel);
   "parallel":   one copy of the kernel weights per window; all windows at once.
+                Copies that fit in a tile share it, packed block-diagonally
+                (see mapping.py); columns without weights stay off.
 """
 from dataclasses import dataclass, field
 
 # Count/activity rules, by the unit an instance belongs to:
 TILE_RULES = ("tiles", "physical_rows", "physical_columns", "used_columns", "column_groups")
-WINDOW_RULES = ("outputs", "output_bank")   # neurons / output positions of a window
+WINDOW_RULES = ("outputs", "output_bank")   # neurons per window / per tile set's columns
 LAYER_RULES = ("one", "fixed")
 DATA_RULES = ("spiking_rows",)              # word lines carrying a spike, per read
 ENCODINGS = ("twos_complement", "offset", "differential", "analog")
@@ -116,8 +118,9 @@ class Component:
 
     count / on: a rule name or {"rule": name, "value": n (fixed),
     "size": n (column_groups), "gated": True}. on="all" repeats `count`.
-    "gated": only instances whose tile (tile rules), window (window rules) or
-    layer receives at least one input spike in that read or time bin.
+    "gated": only instances whose tile (tile rules), window ("outputs"), tile
+    set ("output_bank") or layer receives at least one input spike in that
+    read or time bin.
     """
     name: str
     count: str | dict = "tiles"
