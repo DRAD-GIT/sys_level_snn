@@ -134,6 +134,10 @@ class Component:
     slice_gains: tuple[float, ...] | None = None
     group: str = "periphery"        # reporting label only
 
+    def __post_init__(self):
+        if isinstance(self.during, str):
+            self.during = [self.during]
+
 
 @dataclass
 class Architecture:
@@ -163,11 +167,17 @@ class Block:
     crossbar: Crossbar | None = None
 
 
-def compose(name, precision, blocks, *, conv_mapping="sequential", read_interval_ns=None,
+def compose(name, precision, parts, *, conv_mapping="sequential", read_interval_ns=None,
             timestep_interval_ns=None):
-    """Assemble an Architecture from blocks: exactly one crossbar block, then
-    any periphery and neuron blocks. Stages keep the block order, so by
-    default each stage follows the previous one of its level."""
+    """Assemble an Architecture from parts: exactly one crossbar Block (which
+    brings its read stage and array components), plus any Stages, Components
+    and further Blocks. Stages keep the order given, so by default each stage
+    follows the previous one of its level."""
+    blocks = [p if isinstance(p, Block) else
+              Block(stages=[p]) if isinstance(p, Stage) else
+              Block(components=[p]) if isinstance(p, Component) else None for p in parts]
+    if None in blocks:
+        raise ValueError(f"{name}: parts must be Blocks, Stages or Components")
     crossbars = [b.crossbar for b in blocks if b.crossbar is not None]
     if len(crossbars) != 1:
         raise ValueError(f"{name}: compose needs exactly one crossbar block, got {len(crossbars)}")

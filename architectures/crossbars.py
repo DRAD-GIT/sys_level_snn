@@ -24,8 +24,7 @@ from hardware import Block, Component, Crossbar, Stage
 def conv_xbar(memory, *, rows=64, cols=64, v_read=0.2, active_rows=None, read_ns=5.0,
               cell_supply_v=1.1, reference_columns=False, tile_area_um2=0.0, during="read",
               window=None):
-    powered = dict(during=[] if window else ([during] if isinstance(during, str) else list(during)),
-                   window=window)
+    powered = dict(during=[] if window else during, window=window)
     components = [Component("cells", model="crossbar_read", count="tiles", **powered,
                             supply_v=cell_supply_v, area_um2=tile_area_um2, group="crossbar")]
     if reference_columns:

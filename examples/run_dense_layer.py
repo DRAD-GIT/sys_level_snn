@@ -12,9 +12,9 @@ import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from architectures import crossbars, memories, neurons, periphery  # noqa: E402
+from architectures import crossbars, memories  # noqa: E402
 from evaluation.report import format_results  # noqa: E402
-from hardware import Precision, compose, evaluate_layer  # noqa: E402
+from hardware import Component, Precision, Stage, compose, evaluate_layer  # noqa: E402
 
 # ============================================================================
 # LAYER AND DATA
@@ -34,16 +34,19 @@ UNTIL_LIF_ENDS = ["read", "fire"]           # on from the read through the LIF f
 ARCH = compose(
     "rram_1bit_conv_xbar",
     Precision(weight_bits=WEIGHT_BITS, weight_encoding="twos_complement"),
-    blocks=[
+    [
         # 1-bit RRAM (20k / 200k ohm), 64x64 tiles, 0.2 V read made by the OTA
         # from VDD, 5 ns to settle; the array conducts until the LIF ends.
         crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
                             cell_supply_v=VDD, during=UNTIL_LIF_ENDS),
-        # An OTA per source line, 10 uA static, on until the LIF ends, only
-        # when its tile receives a spike.
-        periphery.source_line_ota(static_ua=10.0, supply_v=VDD, during=UNTIL_LIF_ENDS),
-        # A LIF per output; its comparator draws 10 uA during the 2 ns fire step.
-        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0, supply_v=VDD),
+        # The LIF fire step: 2 ns once per time bin, after the read.
+        Stage("fire", 2.0, level="timestep"),
+        # An OTA per column (source line), 10 uA static, on until the LIF
+        # ends, only when its tile receives a spike.
+        Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
+                  during=UNTIL_LIF_ENDS, supply_v=VDD, static_ua=10.0),
+        # A LIF per output; its comparator draws 10 uA during the fire step.
+        Component("lif", count="outputs", during="fire", supply_v=VDD, static_ua=10.0),
     ],
 )
 

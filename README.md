@@ -6,14 +6,12 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 
 ```text
 run.py                 MAIN SCRIPT: model, architectures to evaluate, metric switches
-architectures/         hardware building blocks
+architectures/         hardware parts
   memories.py          memory technologies: bits per cell, conductance levels
   crossbars.py         crossbar types: conv_xbar (current-mode), c3cim_xbar (constant-current)
-  periphery.py         source-line OTA, slice mirrors, DA, reference subtractor, VI converter
-  neurons.py           LIF neuron
-  designs.py           reference designs (conventional, c3cim) composed from the blocks
+  designs.py           reference designs (conventional, c3cim) composed from these parts
 hardware/              the hardware model
-  architecture.py      Memory, Crossbar, Precision, Stage, Component, Block, compose()
+  architecture.py      Memory, Crossbar, Precision, Stage, Component, compose()
   mapping.py           layer -> windows, tiles, weight slices; spike activity
   timeline.py          stage placement: serial, parallel, overlapping, pipelined
   engine.py            evaluate_layer: energy / latency / area of one layer
@@ -37,7 +35,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Put the datasets in `datasets/` (see `datasets/*/README.md`). Then edit `run.py`:
 
 - `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
-- `ARCHITECTURES`: which designs to evaluate, each composed from building blocks (see section 3).
+- `ARCHITECTURES`: which designs to evaluate, each composed from a memory, a crossbar and your own stages and components (see section 3).
 - `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
 ```bash
@@ -55,31 +53,36 @@ The weight files are plain tensors (`torch.load(weights_only=True)`); `models.lo
 
 ## 3. Defining hardware
 
-An architecture is composed from independent building blocks (`architectures/`), so any memory, crossbar type, periphery and neuron can be combined:
+An architecture is composed from a **memory**, one **crossbar type** and any **Stages** and **Components** you define; nothing else is built in, so every peripheral circuit and neuron is described the same generic way.
 
-| Block | Module | Available |
+| Part | Where | What it is |
 |---|---|---|
-| memory | `memories.py` | bits per cell and the conductance of every level (linear between `1/r_off` and `1/r_on`, or listed in `levels_s`) |
-| crossbar (exactly one) | `crossbars.py` | `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers |
-| periphery | `periphery.py` | `source_line_ota`, `slice_mirrors`, `da_converter`, `reference_subtractor`, `vi_converter` |
-| neuron | `neurons.py` | `lif_neuron`: static current, powered for its fire step or the whole time bin |
+| memory | `architectures/memories.py` | bits per cell and the conductance of every level (linear between `1/r_off` and `1/r_on`, or listed in `levels_s`) |
+| crossbar (exactly one) | `architectures/crossbars.py` | `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers. Each adds the `"read"` stage and the array's own costs |
+| stages | `hardware.Stage` | the timeline: what repeats every read, what runs once per time bin, serial / parallel / overlapping |
+| components | `hardware.Component` | any circuit: your name, how many are installed (`count`), how many are powered (`on`, optionally spike-`gated`), when (`during` stages or a `window` between stage edges), and its static current and/or event energy |
 
-Each block function takes every circuit value as a parameter and returns a `Block` (its components and any stage it adds). `compose` puts them together with the weight precision and the conv mapping. The 1-bit RRAM design in `run.py`:
+`compose` puts them together with the weight precision and the conv mapping. The 1-bit RRAM design in `run.py`:
 
 ```python
 RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
     Precision(weight_bits=4, weight_encoding="twos_complement"),
-    blocks=[
-        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
-        periphery.source_line_ota(static_ua=10.0),         # powered only when spikes arrive
-        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),    # comparator on for the fire step
+    [
+        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
+                            cell_supply_v=VDD),
+        Stage("fire", 2.0, level="timestep"),                  # once per time bin, after the reads
+        Component("sl_ota", count="physical_columns",          # one per column,
+                  on={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
+                  during="read", supply_v=VDD, static_ua=10.0),
+        Component("lif", count="outputs", during="fire",       # one per output neuron
+                  supply_v=VDD, static_ua=10.0),
     ],
     conv_mapping="sequential",
 )
 ```
 
-The same OTA and mirrors could be added to a `c3cim_xbar`, or the memory swapped for another; `designs.py` composes the conventional (analog cells, reference columns, DA) and C3CIM (VI converter) baselines the same way. A new circuit is a new block function returning `Block(stages=[...], components=[Component(...)])`; blocks and components are described below.
+To keep the OTA on until the neuron has fired, write `during=["read", "fire"]`; for an exact interval, `window=(("read", "start", 1.0), ("fire", "end", -1.0))`. The same components can sit on a `c3cim_xbar`, or the memory can be swapped. `designs.py` composes the conventional (analog cells, reference columns, DA) and C3CIM (VI converter) baselines the same way; `examples/run_dense_layer.py` is a complete worked example.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
@@ -111,7 +114,7 @@ Inputs are binary spikes. Spikes of every time bin are integrated with equal wei
 
 - `static_ua` x `supply_v` x powered time, for every powered instance;
 - `event_pj` per event: per powered instance per read (`events="read"`), per time bin (`"timestep"`), or per LIF output spike of the layer (`"output_spike"`);
-- data-driven models, drawn from `supply_v` during their read stage, with currents computed from the spikes and conductances: `"crossbar_read"` (weight columns), `"reference_read"` (G(0) reference columns) and `"slice_mirror"` (current mirrors copying each weight-slice column with gain `slice_gains`; default binary, most significant slice x1, the next x1/2, ...).
+- data-driven models, drawn from `supply_v` while powered (per read in read stages; with one read per time bin they can also stay on through time-bin stages or a window), with currents computed from the spikes and conductances: `"crossbar_read"` (weight columns), `"reference_read"` (G(0) reference columns) and `"slice_mirror"` (current mirrors copying each weight-slice column with gain `slice_gains`; default binary, most significant slice x1, the next x1/2, ...).
 
 Count and on rules, with the unit each instance belongs to:
 
@@ -128,7 +131,7 @@ Count and on rules, with the unit each instance belongs to:
 
 `{"rule": ..., "gated": True}` powers an instance only when its unit receives at least one input spike in that read (read-level components) or time bin (whole-bin components). Without gating, every valid unit is powered: a partially filled row tile stops after its last row phase.
 
-Leave unknown values at 0 (e.g. areas) and switch the metric off. A new memory is one line in `memories.py`; a new circuit is a block function in `crossbars.py`, `periphery.py` or `neurons.py`.
+Leave unknown values at 0 (e.g. areas) and switch the metric off. A new memory is one line in `memories.py`; a new circuit is a `Component` (and a `Stage` if it takes time of its own).
 
 ## 4. How costs are computed
 

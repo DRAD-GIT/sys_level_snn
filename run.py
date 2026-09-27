@@ -2,9 +2,10 @@
 
     python run.py
 
-Hardware is composed from building blocks (architectures/): a memory, one
-crossbar type, any periphery blocks and a neuron. Swap or re-parameterize any
-block here; add new ones to the architectures/ modules. Command-line flags
+Hardware is composed from a memory (architectures/memories.py), one crossbar
+type (architectures/crossbars.py) and any Stages and Components you define:
+each component has a name, how many are installed, how many are powered,
+when (stages or a window) and its current / event energy. Command-line flags
 override the run settings for one run.
 
 Results: printed, and saved under logs/ (a JSON per architecture and the
@@ -13,9 +14,9 @@ comparison table logs/comparison_summary.csv).
 import argparse
 import os
 
-from architectures import crossbars, designs, memories, neurons, periphery
+from architectures import crossbars, designs, memories
 from evaluation.report import export, format_results
-from hardware import Precision, compose
+from hardware import Component, Precision, Stage, compose
 from evaluation.runner import evaluate
 
 # ============================================================================
@@ -28,14 +29,20 @@ MAX_BATCHES = 1        # None = the full test set (slow)
 # ============================================================================
 # HARDWARE: architectures to evaluate (names must be unique)
 # ============================================================================
+VDD = 1.1
 RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
     Precision(weight_bits=4, weight_encoding="twos_complement"),
-    blocks=[
+    [
+        # Crossbar: 1-bit RRAM, 64x64 tiles, 0.2 V read made from VDD, 5 ns read stage.
         crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
-                            cell_supply_v=1.1),                # v_read made by the OTA from VDD
-        periphery.source_line_ota(static_ua=10.0),            # powered only when spikes arrive
-        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),       # comparator on for the fire step
+                            cell_supply_v=VDD),
+        Stage("fire", 2.0, level="timestep"),                  # once per time bin, after the reads
+        Component("sl_ota", count="physical_columns",          # one per column,
+                  on={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
+                  during="read", supply_v=VDD, static_ua=10.0),
+        Component("lif", count="outputs", during="fire",       # one per output neuron
+                  supply_v=VDD, static_ua=10.0),
     ],
     conv_mapping="sequential",                                 # or "parallel"
 )

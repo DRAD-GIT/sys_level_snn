@@ -11,23 +11,25 @@ import unittest
 import numpy as np
 import torch
 
-from architectures import crossbars, designs, memories, neurons, periphery
+from architectures import crossbars, designs, memories
 from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, compose,
                       evaluate_layer, quantize_weights)
+from hardware.architecture import TILE_RULES, rule_of
 
 LINEAR_1BIT = Memory("linear_1bit", cell_bits=1, r_on=1e3, r_off=1e6)
+NONUNIFORM_2BIT = Memory("nonuniform_2bit", cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
 
 
 def rram_ota_design(conv_mapping="sequential"):
-    """The 1-bit RRAM current-mode design of run.py, composed from blocks."""
+    """The 1-bit RRAM current-mode design of run.py, with slice mirrors."""
     return compose("rram_ota", Precision(4, "twos_complement"), [
         crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
-        periphery.source_line_ota(static_ua=10.0),
-        periphery.slice_mirrors(),
-        neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),
+        Stage("fire", 2.0, level="timestep"),
+        Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
+                  during="read", static_ua=10.0),
+        Component("slice_mirrors", model="slice_mirror", count="used_columns", during="read"),
+        Component("lif", count="outputs", during="fire", static_ua=10.0),
     ], conv_mapping=conv_mapping)
-NONUNIFORM_2BIT = Memory("nonuniform_2bit", cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
-from hardware.architecture import TILE_RULES, rule_of
 
 
 def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
@@ -304,7 +306,8 @@ class HandCalculationTests(unittest.TestCase):
         def cells(during, **crossbar):
             arch = compose("x", Precision(4), [
                 crossbars.conv_xbar(LINEAR_1BIT, read_ns=5.0, during=during, **crossbar),
-                neurons.lif_neuron(1.0, 2.0)])
+                Stage("fire", 2.0, level="timestep"),
+                Component("lif", count="outputs", during="fire", static_ua=1.0)])
             return evaluate_layer(arch, spikes, weights).components["cells"].energy_nj
 
         # One read per time bin: the bin's current flows for 5 + 2 ns instead of 5.
@@ -398,25 +401,22 @@ class TimelineTests(unittest.TestCase):
 
 
 class CompositionTests(unittest.TestCase):
-    def test_blocks_compose_in_order(self):
+    def test_parts_compose_in_order(self):
         arch = rram_ota_design()
-        self.assertEqual([s.name for s in arch.stages], ["read", "fire"])
+        self.assertEqual([(s.name, s.level) for s in arch.stages],
+                         [("read", "read"), ("fire", "timestep")])
         self.assertEqual([c.name for c in arch.components],
                          ["cells", "sl_ota", "slice_mirrors", "lif"])
-        extra = compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT),
-                                             periphery.vi_converter(1.0, 3.0),
-                                             neurons.lif_neuron(1.0, 1.0)])
-        self.assertEqual([(s.name, s.level) for s in extra.stages],
-                         [("read", "read"), ("vi", "read"), ("fire", "timestep")])
+        self.assertEqual(arch.components[1].during, ["read"])   # a single stage name is a list
 
     def test_compose_needs_one_crossbar(self):
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
-            compose("x", Precision(4), [periphery.slice_mirrors()])
+            compose("x", Precision(4), [Stage("read", 1.0)])
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
             compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT),
                                          crossbars.c3cim_xbar(LINEAR_1BIT)])
-        with self.assertRaises(ValueError):
-            neurons.lif_neuron(1.0, 1.0, powered="always")
+        with self.assertRaisesRegex(ValueError, "Blocks, Stages or Components"):
+            compose("x", Precision(4), [crossbars.conv_xbar(LINEAR_1BIT), "lif"])
 
 
 class ValidationTests(unittest.TestCase):
