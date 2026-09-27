@@ -54,7 +54,7 @@ class KernelTests(unittest.TestCase):
     def test_kernels_regenerate_trained_kernels_exactly(self):
         for name in ("nmnist", "gesture"):
             spec = models.get_spec(name)
-            state = torch.load(spec.path(spec.checkpoint), weights_only=True)["state_dict"]
+            state = models.load_tensors(spec.path(spec.checkpoint))["state_dict"]
             params = models.load_params(spec.path(spec.params_yaml))
             layer = SRMLayer(params["neuron"], params["simulation"])
             self.assertTrue(torch.equal(layer.srmKernel, state["slayer.srmKernel"]))

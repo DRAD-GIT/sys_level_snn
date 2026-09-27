@@ -44,7 +44,7 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
 
 
 def compare(path, full=False, data_dir=None, architectures=None, log=print):
-    reference = torch.load(path, map_location="cpu", weights_only=True)
+    reference = models.load_tensors(path)
     if reference.get("format") != FORMAT:
         raise ValueError(f"{path}: unsupported reference format {reference.get('format')}")
     spec = models.get_spec(reference["model"])

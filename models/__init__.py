@@ -13,6 +13,15 @@ from .base import load_params
 MODEL_MODULES = {"nmnist": "models.nmnist", "gesture": "models.gesture"}
 
 
+def load_tensors(path):
+    """torch.load for files holding only tensors, safely (weights_only) where
+    PyTorch supports it (>= 1.13)."""
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:  # older PyTorch: no weights_only argument
+        return torch.load(path, map_location="cpu")
+
+
 def get_spec(name):
     if name not in MODEL_MODULES:
         raise ValueError(f"Unknown model {name!r}; choose from {sorted(MODEL_MODULES)}")
@@ -28,7 +37,7 @@ def load_pretrained(spec, device="cpu", backend=None):
     """
     params = load_params(spec.path(spec.params_yaml))
     net = spec.network_class(params, backend=backend)
-    checkpoint = torch.load(spec.path(spec.checkpoint), map_location="cpu", weights_only=True)
+    checkpoint = load_tensors(spec.path(spec.checkpoint))
     state = checkpoint["state_dict"]
     for name in ("srmKernel", "refKernel"):
         generated, trained = getattr(net.slayer, name).cpu(), state[f"slayer.{name}"]

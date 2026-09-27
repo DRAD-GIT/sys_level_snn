@@ -19,6 +19,8 @@ window's input patch driving the kernel rows:
                 Copies that fit in a tile share it, packed block-diagonally
                 (see mapping.py); columns without weights stay off.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 # Count/activity rules, by the unit an instance belongs to:

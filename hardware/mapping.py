@@ -184,7 +184,7 @@ def spike_activity(spikes, geometry, max_elements=2 ** 24):
     k_rows, rows, per_phase, per_tile = g.rows_needed, g.tile_rows, g.phase_rows, g.copies_per_tile
     slots, phases = g.slots, g.phases
     slot_rows = per_tile * k_rows
-    copies = torch.full((slots,), per_tile)                      # copies per slot
+    copies = torch.full((slots,), per_tile, dtype=torch.int64)                      # copies per slot
     copies[-1] = g.windows - (slots - 1) * per_tile
     # Row q of a slot belongs to window slot q // K and is read in phase
     # (q % tile_rows) // phase_rows (of its row tile).

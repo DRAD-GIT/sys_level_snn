@@ -29,7 +29,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 
 ## 2. Quick start
 
-Install Python 3.10+, PyTorch, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Then edit `run.py`:
+Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Then edit `run.py`:
 
 - `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
 - `DATASET_DIR`: where the datasets are (see below).

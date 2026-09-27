@@ -1,5 +1,7 @@
 """Shared base classes for the SNN models and datasets, plus the ModelSpec
 that tells the evaluation pipeline how to run each model."""
+from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 
