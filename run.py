@@ -14,7 +14,7 @@ comparison table logs/comparison_summary.csv).
 import argparse
 import os
 
-from architectures import crossbars, designs
+from architectures import crossbars
 from evaluation.report import export, format_results
 from hardware import Component, Precision, Stage, compose
 from evaluation.runner import evaluate
@@ -48,7 +48,7 @@ RRAM_1BIT_XBAR = compose(
     conv_mapping="sequential",                                 # or "parallel"
 )
 
-ARCHITECTURES = [RRAM_1BIT_XBAR, designs.conventional(), designs.c3cim()]
+ARCHITECTURES = [RRAM_1BIT_XBAR]
 
 # ============================================================================
 # METRICS: switch each reported metric on or off

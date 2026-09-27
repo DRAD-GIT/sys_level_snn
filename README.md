@@ -8,7 +8,6 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 run.py                 MAIN SCRIPT: model, architectures to evaluate, metric switches
 architectures/         hardware parts
   crossbars.py         crossbar types: conv_xbar (current-mode), c3cim_xbar (constant-current)
-  designs.py           reference designs (conventional, c3cim) composed from these parts
 hardware/              the hardware model
   architecture.py      Memory, Crossbar, Precision, Stage, Component, compose()
   mapping.py           layer -> windows, tiles, weight slices; spike activity
@@ -80,7 +79,7 @@ RRAM_1BIT_XBAR = compose(
 )
 ```
 
-To keep the OTA on until the neuron has fired, write `during=["read", "fire"]`; for an exact interval, `window=(("read", "start", 1.0), ("fire", "end", -1.0))`. The same components can sit on a `c3cim_xbar`, and the cells are changed in the crossbar call. `designs.py` composes the conventional (analog cells, reference columns, DA) and C3CIM (VI converter) baselines the same way; `examples/run_dense_layer.py` is a complete worked example.
+To keep the OTA on until the neuron has fired, write `during=["read", "fire"]`; for an exact interval, `window=(("read", "start", 1.0), ("fire", "end", -1.0))`. The same components can sit on a `c3cim_xbar`, and the cells are changed in the crossbar call. `examples/run_dense_layer.py` is a complete worked example.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
@@ -146,7 +145,7 @@ Per inference: energy is divided by the number of evaluated samples; area counts
 
 ## 5. Verification
 
-`tests/test_hardware.py` holds a deliberately literal reference model: it builds every window's patch by hand, walks every sample, time bin, window, row tile and row phase, decides for each unit whether it is powered, and sums every cell's current. The engine must match it for both conv mappings, stride and padding, partial tiles, row phases, linear 1-bit and nonuniform 2-bit memories, all four encodings, slice mirrors with binary and custom gains, and every rule (gated or not). Hand calculations cover the 1-bit RRAM design's dense layer cell by cell (cells, gated OTAs, binary mirrors, comparators on for the fire step), and the `conventional` and `c3cim` designs reproduce this project's earlier worked examples exactly (K = 96 rows, 2 outputs, 8 active rows, one time bin):
+`tests/test_hardware.py` holds a deliberately literal reference model: it builds every window's patch by hand, walks every sample, time bin, window, row tile and row phase, decides for each unit whether it is powered, and sums every cell's current. The engine must match it for both conv mappings, stride and padding, partial tiles, row phases, linear 1-bit and nonuniform 2-bit memories, all four encodings, slice mirrors with binary and custom gains, and every rule (gated or not). Hand calculations cover the 1-bit RRAM design's dense layer cell by cell (cells, gated OTAs, binary mirrors, comparators on for the fire step), and two compositions defined in the test (a conventional analog crossbar with reference columns and DAs, and a C3CIM crossbar with VI converters) reproduce this project's earlier worked examples exactly (K = 96 rows, 2 outputs, 8 active rows, one time bin):
 
 | Architecture | Energy (nJ) | Latency (ns) | Area (um^2) |
 |---|---:|---:|---:|

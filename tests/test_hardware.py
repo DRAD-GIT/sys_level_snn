@@ -2,7 +2,7 @@
 
 ReferenceModel re-derives every cost by literally enumerating samples, time
 bins, windows, row tiles, phases and cells; the vectorized engine must match
-it. Plus hand calculations, the README examples, timeline placement and
+it. Plus hand calculations, earlier worked examples, timeline placement and
 validation.
 """
 import math
@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 import torch
 
-from architectures import crossbars, designs
+from architectures import crossbars
 from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stage, compose,
                       evaluate_layer, quantize_weights)
 from hardware.architecture import LAYER_RULES, TILE_RULES, rule_of
@@ -32,6 +32,33 @@ def rram_ota_design(conv_mapping="sequential"):
         Component("slice_mirrors", model="slice_mirror", count="used_columns", during="read"),
         Component("lif", count="outputs", during="fire", static_ua=10.0),
     ], conv_mapping=conv_mapping)
+
+
+def conventional_example():
+    """Worked example: current-mode crossbar with analog cells and G(0)
+    reference columns, a DA per column and LIFs on for the whole time bin."""
+    return compose("conventional", Precision(None, "analog"), [
+        crossbars.conv_xbar(r_on=2e3, r_off=200e3, v_read=0.1, active_rows=8, read_ns=4.5,
+                            cell_supply_v=1.1, reference_columns=True, tile_area_um2=136.67),
+        Stage("subtract", 0.0),
+        Stage("fire", 2.0, level="timestep"),
+        Component("da", count="physical_columns", on="used_columns", during="read",
+                  static_ua=6.1, area_um2=30.22),
+        Component("reference_subtractor", count="output_bank", on="outputs", during="subtract"),
+        Component("lif", count="output_bank", on="outputs", during="timestep",
+                  static_ua=6.0, area_um2=86.79)])
+
+
+def c3cim_example():
+    """Worked example: C3CIM crossbar with a VI converter per column."""
+    return compose("c3cim", Precision(None, "analog"), [
+        crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, column_area_um2=4.27, driver_area_um2=86.36),
+        Stage("vi", 10.0),
+        Stage("fire", 2.0, level="timestep"),
+        Component("vi", count="physical_columns", on="used_columns", during="vi",
+                  supply_v=1.0, static_ua=24.3, area_um2=29.79),
+        Component("lif", count="output_bank", on="outputs", during="timestep",
+                  static_ua=6.0, area_um2=86.79)])
 
 
 def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
@@ -393,15 +420,15 @@ class HandCalculationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one read per time bin"):
             cells(["read", "fire"], rows=8, active_rows=4)   # 3 row tiles x 2 phases
 
-    def test_readme_examples(self):
+    def test_worked_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
-        r = evaluate_layer(designs.c3cim(), x, w)
+        r = evaluate_layer(c3cim_example(), x, w)
         for name, energy in dict(column_source=.000132, column_driver=.0156684, vi=.005832,
                                  lif=.0063624).items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=12)
         self.assertAlmostEqual(r.latency_ns, 482.0)
         self.assertAlmostEqual(r.area_um2, 10259.68, places=6)
-        r = evaluate_layer(designs.conventional(), x, w)
+        r = evaluate_layer(conventional_example(), x, w)
         for name, energy in dict(cells=.04752, reference_cells=.0239976, da=.00072468,
                                  reference_subtractor=0.0, lif=.0005016).items():
             self.assertAlmostEqual(r.components[name].energy_nj, energy, places=12)

@@ -10,13 +10,19 @@ import torch
 
 import models
 import models.nmnist
-from architectures import designs
-from run import RRAM_1BIT_XBAR
-
-ARCHITECTURES = [RRAM_1BIT_XBAR, designs.c3cim()]
+from architectures import crossbars
 from evaluation.probes import LayerProbe
 from evaluation.report import export, format_results
 from evaluation.runner import evaluate
+from hardware import Component, Precision, Stage, compose
+from run import RRAM_1BIT_XBAR
+
+# run.py's design plus one with analog weights, for a second precision group.
+ANALOG = compose("analog_c3cim", Precision(None, "analog"), [
+    crossbars.c3cim_xbar(r_on=2e3, r_off=20e3),
+    Stage("fire", 2.0, level="timestep"),
+    Component("lif", count="outputs", during="fire", static_ua=6.0)])
+ARCHITECTURES = [RRAM_1BIT_XBAR, ANALOG]
 
 
 class RandomSpikes(torch.utils.data.Dataset):
@@ -62,7 +68,7 @@ class PipelineTests(unittest.TestCase):
         self.spec_patch.stop()
 
     def test_results_per_architecture_and_layer(self):
-        self.assertEqual(set(self.results), {"rram_1bit_conv_xbar", "c3cim"})
+        self.assertEqual(set(self.results), {"rram_1bit_conv_xbar", "analog_c3cim"})
         for accuracy, costs in self.results.values():
             self.assertEqual(list(costs), list(models.get_spec("nmnist").layers))
             self.assertTrue(0 <= accuracy <= 100)
