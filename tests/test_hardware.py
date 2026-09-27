@@ -16,8 +16,8 @@ from hardware import (Architecture, Component, Crossbar, Memory, Precision, Stag
                       evaluate_layer, quantize_weights)
 from hardware.architecture import TILE_RULES, rule_of
 
-LINEAR_1BIT = Memory("linear_1bit", cell_bits=1, r_on=1e3, r_off=1e6)
-NONUNIFORM_2BIT = Memory("nonuniform_2bit", cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
+LINEAR_1BIT = Memory(cell_bits=1, r_on=1e3, r_off=1e6)
+NONUNIFORM_2BIT = Memory(cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
 
 
 def rram_ota_design(conv_mapping="sequential"):
@@ -255,7 +255,7 @@ class ReferenceModelTests(unittest.TestCase):
                                      crossbar, gains)
                     w_conv = conv_weights.float() if analog else conv_weights
                     w_dense = dense_weights.float() if analog else dense_weights
-                    with self.subTest(mapping=mapping, memory=memory.name, encoding=encoding):
+                    with self.subTest(mapping=mapping, cell_bits=memory.cell_bits, encoding=encoding):
                         self.check(arch, conv_spikes, w_conv, stride=2, padding=1)
                         self.check(arch, conv_spikes, w_conv, stride=1, padding=0)
                         self.check(arch, dense_spikes, w_dense)
@@ -358,8 +358,8 @@ class TimelineTests(unittest.TestCase):
         r = self.run_arch(stages, comps)
         self.assertEqual(r.timeline.read, {"a": (0, 4), "b": (4, 10), "c": (0, 3), "d": (8, 13)})
         self.assertEqual(r.latency_ns, 3 * 13.0)
-        self.assertEqual(r.components["ac"].active_ns, 3 * 4.0)  # union of a and c
-        self.assertEqual(r.components["bd"].active_ns, 3 * 9.0)  # 4..13
+        self.assertEqual(r.timeline.read_on_time(["a", "c"]), 4.0)  # union of a and c
+        self.assertEqual(r.timeline.read_on_time(["b", "d"]), 9.0)  # 4..13
 
     def test_pipelined_reads_and_overlapping_bins(self):
         stages = [Stage("drive", 2.0), Stage("sense", 3.0), Stage("fire", 1.0, level="timestep")]
@@ -370,8 +370,11 @@ class TimelineTests(unittest.TestCase):
                           read_interval_ns=3.0, timestep_interval_ns=10.0)
         self.assertEqual(r.timeline.timestep["fire"], (14.0, 15.0))  # 3*3 + 5, then fire
         self.assertEqual(r.latency_ns, 25.0)                         # next bin starts at 10
-        self.assertEqual(r.components["amp"].active_ns, 2 * 4 * 3.0)
-        self.assertEqual(r.components["neuron"].active_ns, 2 * 15.0)
+        self.assertEqual(r.timeline.read_on_time(["sense"]), 3.0)
+        self.assertEqual(r.timeline.timestep_on_time(["timestep"]), 15.0)
+        # 1 uA from 1.1 V: 4 reads x 3 ns and 15 ns per bin, over 2 bins.
+        self.assertAlmostEqual(r.components["amp"].energy_nj, 1.1e-6 * 2 * 4 * 3.0, places=15)
+        self.assertAlmostEqual(r.components["neuron"].energy_nj, 1.1e-6 * 2 * 15.0, places=15)
 
     def test_component_cannot_serve_overlapping_reads(self):
         with self.assertRaisesRegex(ValueError, "two reads at once"):
@@ -388,7 +391,8 @@ class TimelineTests(unittest.TestCase):
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=16))
         self.assertEqual(r.timeline.anchor("sense", "start"), 2.0)
         self.assertEqual(r.timeline.anchor("sense", "end"), 20.0)
-        self.assertEqual(r.components["ota"].active_ns, 3 * (21.0 - 1.0 - 3.0))
+        self.assertEqual(r.timeline.window_on_time(window), 21.0 - 1.0 - 3.0)
+        self.assertAlmostEqual(r.components["ota"].energy_nj, 1.1e-6 * 3 * 17.0, places=15)
         with self.assertRaisesRegex(ValueError, "ends before it starts"):
             self.run_arch([Stage("read", 5.0)],
                           [Component("x", window=(("read", "end", 0.0), ("read", "start", 0.0)),

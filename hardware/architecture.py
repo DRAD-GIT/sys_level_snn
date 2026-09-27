@@ -39,7 +39,6 @@ class Memory:
     (top level), unless `levels_s` lists every level's conductance (siemens,
     ascending) for nonuniform devices. Analog cells use the continuous range.
     """
-    name: str
     cell_bits: int = 1
     r_on: float | None = None       # lowest resistance (top level)
     r_off: float | None = None      # highest resistance (level 0)
@@ -217,21 +216,21 @@ def _number(value, label, positive=False):
         raise ValueError(f"{label} must be a {'positive' if positive else 'nonnegative'} number")
 
 
-def validate_memory(memory):
-    _positive_int(memory.cell_bits, f"memory {memory.name}: cell_bits")
+def _validate_memory(memory):
+    _positive_int(memory.cell_bits, "memory: cell_bits")
     if memory.levels_s is None:
         for label in ("r_on", "r_off"):
-            _number(getattr(memory, label), f"memory {memory.name}: {label}", positive=True)
+            _number(getattr(memory, label), f"memory: {label}", positive=True)
         if memory.r_off <= memory.r_on:
-            raise ValueError(f"memory {memory.name}: r_off must exceed r_on")
+            raise ValueError("memory: r_off must exceed r_on")
     else:
         levels = list(memory.levels_s)
         if len(levels) != 2 ** memory.cell_bits:
-            raise ValueError(f"memory {memory.name}: levels_s needs 2^cell_bits entries")
+            raise ValueError("memory: levels_s needs 2^cell_bits entries")
         for level in levels:
-            _number(level, f"memory {memory.name}: levels_s")
+            _number(level, "memory: levels_s")
         if levels != sorted(levels) or levels[0] == levels[-1]:
-            raise ValueError(f"memory {memory.name}: levels_s must ascend")
+            raise ValueError("memory: levels_s must ascend")
 
 
 def slices_per_group(arch):
@@ -259,7 +258,7 @@ def validate(arch):
     xb, pr = arch.crossbar, arch.precision
     if not isinstance(xb.memory, Memory):
         raise ValueError("crossbar.memory must be a Memory")
-    validate_memory(xb.memory)
+    _validate_memory(xb.memory)
     for label in ("rows", "cols"):
         _positive_int(getattr(xb, label), f"crossbar.{label}")
     if xb.active_rows is not None:
@@ -312,14 +311,13 @@ def validate(arch):
         read_level = bool(c.during) and set(c.during) <= arch.read_stages
         if c.window is not None:
             _validate_window(c, names)
-        if c.static_ua and not (c.during or c.window):
-            raise ValueError(f"{c.name}: static current needs 'during' stages or a 'window'")
+        if (c.static_ua or c.model != "static") and not (c.during or c.window):
+            raise ValueError(f"{c.name}: static or data-driven current needs 'during' stages "
+                             "or a 'window'")
         if on["rule"] in DATA_RULES and c.during and not read_level:
             raise ValueError(f"{c.name}: {on['rule']} counts spikes per read; use read-level stages")
         if on["rule"] in DATA_RULES and c.event_pj and c.events == "timestep":
             raise ValueError(f"{c.name}: {on['rule']} events are counted per read")
-        if c.model != "static" and not (c.during or c.window):
-            raise ValueError(f"{c.name}: {c.model} needs 'during' stages or a 'window'")
         if c.model == "reference_read" and not xb.reference_columns:
             raise ValueError(f"{c.name}: reference_read needs crossbar.reference_columns")
         if c.slice_gains is not None:

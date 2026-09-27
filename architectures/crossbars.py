@@ -8,7 +8,7 @@ levels_s, every level's conductance in siemens, ascending (nonuniform cells).
 conv_xbar   current-mode crossbar: binary spikes on the word lines, each cell
             conducts G x v_read into its column. The cell current (computed
             from the spikes and conductances) is charged as
-            cell_supply_v x current x read time, where cell_supply_v is the
+            cell_supply_v x current x powered time, where cell_supply_v is the
             rail the current is drawn from:
               an OTA/regulator derives v_read from VDD -> cell_supply_v = VDD
                 (supply-side energy; the cells dissipate v_read x I and the
@@ -36,7 +36,7 @@ def conv_xbar(*, cell_bits=1, r_on=None, r_off=None, levels_s=None, rows=64, col
                                     **powered, supply_v=cell_supply_v,
                                     area_um2=tile_area_um2, group="crossbar"))
     return Block(stages=[Stage("read", read_ns)], components=components,
-                 crossbar=Crossbar(Memory("cell", cell_bits, r_on, r_off, levels_s), rows=rows,
+                 crossbar=Crossbar(Memory(cell_bits, r_on, r_off, levels_s), rows=rows,
                                    cols=cols, v_read=v_read, active_rows=active_rows,
                                    reference_columns=reference_columns))
 
@@ -54,5 +54,5 @@ def c3cim_xbar(*, cell_bits=1, r_on=None, r_off=None, levels_s=None, rows=64, co
             Component("column_driver", count=group, during=["read"], supply_v=supply_v,
                       static_ua=driver_ua, area_um2=driver_area_um2, group="input_periphery"),
         ],
-        crossbar=Crossbar(Memory("cell", cell_bits, r_on, r_off, levels_s), rows=rows,
+        crossbar=Crossbar(Memory(cell_bits, r_on, r_off, levels_s), rows=rows,
                           cols=cols, active_rows=active_rows))

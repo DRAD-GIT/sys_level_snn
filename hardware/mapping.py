@@ -32,6 +32,7 @@ class Geometry:
     tile_phases: tuple       # row phases of each row tile
     tile_rows: int
     tile_cols: int
+    phase_rows: int          # rows enabled per read (active_rows)
     reads_per_timestep: int
 
     @property
@@ -68,7 +69,7 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
     copies = windows if arch.conv_mapping == "parallel" else 1
     return Geometry(in_ch, out_ch, (kh, kw), stride, padding, windows, per_weight, copies,
                     len(phases), math.ceil(out_ch * per_weight / xb.cols), phases,
-                    xb.rows, xb.cols, (windows // copies) * max(phases))
+                    xb.rows, xb.cols, active, (windows // copies) * max(phases))
 
 
 def quantize_weights(weights, bits):
@@ -143,13 +144,11 @@ class Activity:
         return float(self.row_drive.sum())
 
 
-def spike_activity(spikes, geometry, active_rows=None, max_elements=2 ** 24):
+def spike_activity(spikes, geometry, max_elements=2 ** 24):
     """spikes: [batch, channels, height, width, time bins]; nonzero = spike."""
     g = geometry
-    batch, channels, height, width, bins = spikes.shape
-    frames = (spikes != 0).permute(0, 4, 1, 2, 3).reshape(-1, channels, height, width)
-    k_rows, rows = g.rows_needed, g.tile_rows
-    per_phase = active_rows or rows
+    frames = (spikes != 0).permute(0, 4, 1, 2, 3).reshape(-1, *spikes.shape[1:4])
+    k_rows, rows, per_phase = g.rows_needed, g.tile_rows, g.phase_rows
     phases_per_tile = math.ceil(rows / per_phase)
     row_drive = torch.zeros(k_rows, dtype=torch.float64)
     totals = dict.fromkeys(("tile_reads", "window_reads", "layer_reads", "tile_bins",

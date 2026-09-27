@@ -69,13 +69,21 @@ def format_results(results, metrics):
     return "\n".join(lines)
 
 
+def _components(cost, metrics):
+    """Per-inference values of each component of a layer."""
+    return {name: {"group": c.group, "installed": c.installed,
+                   "energy_nj": c.energy_nj / cost.inferences,
+                   **({"area_um2": c.area_um2} if metrics.get("area") else {})}
+            for name, c in cost.components.items()}
+
+
 def _component_lines(cost, metrics):
-    header = f"    {'component':<18}{'group':<18}{'installed':>10}{'energy nJ':>13}"
-    header += f"{'area um^2':>12}" if metrics.get("area") else ""
-    rows = [header]
-    for name, c in cost.components.items():
-        row = f"    {name:<18}{c.group:<18}{c.installed:>10}{c.energy_nj / cost.inferences:>13.6g}"
-        rows.append(row + (f"{c.area_um2:>12.6g}" if metrics.get("area") else ""))
+    area = metrics.get("area")
+    rows = [f"    {'component':<18}{'group':<18}{'installed':>10}{'energy nJ':>13}"
+            + (f"{'area um^2':>12}" if area else "")]
+    for name, c in _components(cost, metrics).items():
+        rows.append(f"    {name:<18}{c['group']:<18}{c['installed']:>10}{c['energy_nj']:>13.6g}"
+                    + (f"{c['area_um2']:>12.6g}" if area else ""))
     return rows
 
 
@@ -91,11 +99,7 @@ def _enabled(values, metrics):
 def _layer_report(cost, metrics):
     entry = _enabled(totals({"layer": cost}), metrics)
     if metrics.get("components"):
-        entry["components"] = {
-            name: {"group": c.group, "installed": c.installed,
-                   "energy_nj": c.energy_nj / cost.inferences,
-                   **({"area_um2": c.area_um2} if metrics.get("area") else {})}
-            for name, c in cost.components.items()}
+        entry["components"] = _components(cost, metrics)
     return entry
 
 
