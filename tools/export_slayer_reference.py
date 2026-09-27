@@ -61,6 +61,7 @@ def main():
                 "index": index, "label": int(label),
                 "slayer_input": pack(reference), "our_input": pack(ours),
                 "layer_inputs": {name: pack(probe.inputs[name]) for name in spec.layers},
+                "output_spikes": dict(probe.output_spikes),
                 "output": pack(output),
                 "predicted": int(snn.predict.getClass(output)[0]),
             })

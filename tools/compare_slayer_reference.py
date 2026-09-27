@@ -27,8 +27,9 @@ from hardware import evaluate_layer, quantize_weights  # noqa: E402
 from tools.slayer_reference import FORMAT, unpack  # noqa: E402
 
 
-def _hardware_energy(architectures, net, layer_names, inputs):
-    """Network energy (nJ) per architecture for one set of layer inputs."""
+def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
+    """Network energy (nJ) per architecture for one set of layer inputs and
+    LIF output spike counts."""
     energy = {}
     for arch in architectures:
         total = 0.0
@@ -36,7 +37,8 @@ def _hardware_energy(architectures, net, layer_names, inputs):
             module = getattr(net, name)
             codes, _ = quantize_weights(module.weight.detach()[..., 0], arch.precision.weight_bits)
             total += evaluate_layer(arch, inputs[name], codes, stride=module.stride[0],
-                                    padding=module.padding[0]).energy_nj
+                                    padding=module.padding[0],
+                                    output_spikes=output_spikes.get(name, 0)).energy_nj
         energy[arch.name] = total
     return energy
 
@@ -77,8 +79,10 @@ def compare(path, full=False, architectures=None, log=print):
         report["output_differ"] += int((output != unpack(sample["output"])).sum())
         if int(predict_class(output)[0]) != sample["predicted"]:
             report["prediction_mismatches"] += 1
-        for key, inputs in (("energy_ours", store), ("energy_slayer", slayer_layers)):
-            for arch, value in _hardware_energy(architectures, net, layer_names, inputs).items():
+        for key, inputs, spikes in (("energy_ours", store, probe.output_spikes),
+                                    ("energy_slayer", slayer_layers, sample["output_spikes"])):
+            for arch, value in _hardware_energy(architectures, net, layer_names, inputs,
+                                                spikes).items():
                 report[key][arch] = report[key].get(arch, 0.0) + value
 
     log(f"Model {spec.name}: {report['samples']} samples recorded on {reference.get('device')}")
