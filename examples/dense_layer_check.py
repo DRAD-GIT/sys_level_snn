@@ -29,7 +29,7 @@ ARCH = compose(
     Precision(weight_bits=4, weight_encoding="twos_complement"),
     blocks=[
         crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
-                            supply_v=1.1),
+                            cell_supply_v=1.1),        # v_read made by an OTA from VDD
         periphery.source_line_ota(static_ua=10.0, supply_v=1.1),   # on only when spikes arrive
         neurons.lif_neuron(static_ua=10.0, fire_ns=2.0, supply_v=1.1),
     ],

@@ -2,9 +2,16 @@
 costs of the array itself. Every value is a parameter; areas default to 0.
 
 conv_xbar   current-mode crossbar: binary spikes on the word lines, each cell
-            conducts G x v_read into its column; the cell current (computed
-            from the spikes and conductances) is drawn from supply_v during
-            the read. Optional G(0) reference columns for analog weights.
+            conducts G x v_read into its column. The cell current (computed
+            from the spikes and conductances) is charged as
+            cell_supply_v x current x read time, where cell_supply_v is the
+            rail the current is drawn from:
+              an OTA/regulator derives v_read from VDD -> cell_supply_v = VDD
+                (supply-side energy; the cells dissipate v_read x I and the
+                regulator the rest);
+              the source line is driven directly by a v_read supply ->
+                cell_supply_v = v_read (energy of the cells alone).
+            Optional G(0) reference columns for analog weights.
 c3cim_xbar  C3CIM crossbar: columns driven by constant current sources (a
             fixed current per active column) with drivers shared by groups of
             columns; the MAC happens in the voltage domain (not simulated).
@@ -13,13 +20,13 @@ from hardware import Block, Component, Crossbar, Stage
 
 
 def conv_xbar(memory, *, rows=64, cols=64, v_read=0.2, active_rows=None, read_ns=5.0,
-              supply_v=1.1, reference_columns=False, tile_area_um2=0.0):
+              cell_supply_v=1.1, reference_columns=False, tile_area_um2=0.0):
     components = [Component("cells", model="crossbar_read", count="tiles", during=["read"],
-                            supply_v=supply_v, area_um2=tile_area_um2, group="crossbar")]
+                            supply_v=cell_supply_v, area_um2=tile_area_um2, group="crossbar")]
     if reference_columns:
         components.append(Component("reference_cells", model="reference_read", count="tiles",
-                                    during=["read"], supply_v=supply_v, area_um2=tile_area_um2,
-                                    group="crossbar"))
+                                    during=["read"], supply_v=cell_supply_v,
+                                    area_um2=tile_area_um2, group="crossbar"))
     return Block(stages=[Stage("read", read_ns)], components=components,
                  crossbar=Crossbar(memory, rows=rows, cols=cols, v_read=v_read,
                                    active_rows=active_rows, reference_columns=reference_columns))

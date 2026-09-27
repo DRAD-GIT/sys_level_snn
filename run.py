@@ -32,7 +32,8 @@ RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
     Precision(weight_bits=4, weight_encoding="twos_complement"),
     blocks=[
-        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0),
+        crossbars.conv_xbar(memories.RRAM_1BIT, rows=64, cols=64, v_read=0.2, read_ns=5.0,
+                            cell_supply_v=1.1),                # v_read made by the OTA from VDD
         periphery.source_line_ota(static_ua=10.0),            # powered only when spikes arrive
         neurons.lif_neuron(static_ua=10.0, fire_ns=2.0),       # comparator on for the fire step
     ],

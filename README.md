@@ -60,7 +60,7 @@ An architecture is composed from independent building blocks (`architectures/`),
 | Block | Module | Available |
 |---|---|---|
 | memory | `memories.py` | bits per cell and the conductance of every level (linear between `1/r_off` and `1/r_on`, or listed in `levels_s`) |
-| crossbar (exactly one) | `crossbars.py` | `conv_xbar`: current-mode, cell current G x v_read into each column; `c3cim_xbar`: constant-current columns with shared drivers |
+| crossbar (exactly one) | `crossbars.py` | `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers |
 | periphery | `periphery.py` | `source_line_ota`, `slice_mirrors`, `da_converter`, `reference_subtractor`, `vi_converter` |
 | neuron | `neurons.py` | `lif_neuron`: static current, powered for its fire step or the whole time bin |
 
