@@ -107,7 +107,7 @@ Inputs are binary spikes. Spikes of every time bin are integrated with equal wei
 
 **Stages** (timeline): `level="read"` stages repeat every read; `level="timestep"` stages run once per time bin, where the whole block of reads is the pseudo-stage `"reads"` (which the first timestep stage follows by default). Placement: `after=None` follows the previous stage of the level (serial), `after=[]` starts with the level (parallel), `after=["x", "y"]` waits for those, and a negative `offset_ns` overlaps the start with the end of the dependency. `read_interval_ns` / `timestep_interval_ns` pipeline consecutive reads / time bins.
 
-**Components**: each has an installed `count` (area), a powered `on` rule (default `"all"` = the count rule), the stages it is powered `during` (or `"timestep"` for the whole time bin), and costs:
+**Components**: each has an installed `count` (area), a powered `on` rule (default `"all"` = the count rule), when it is powered, and costs. When it is powered is either the stages it is powered `during` (one or several; overlaps counted once; `"timestep"` = the whole time bin) or a `window` between two stage edges, e.g. `window=(("read", "start", 1.0), ("fire", "end", -1.0))` = from 1 ns after the read starts to 1 ns before the fire step ends (a read-level stage starts with the first read of the time bin and ends with the last). Costs:
 
 - `static_ua` x `supply_v` x powered time, for every powered instance;
 - `event_pj` per event: per powered instance per read (`events="read"`), per time bin (`"timestep"`), or per LIF output spike of the layer (`"output_spike"`);

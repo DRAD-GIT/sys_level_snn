@@ -106,6 +106,13 @@ class Component:
                         significant first; default binary: most significant
                         slice 1, the next 1/2, ...) into its neuron.
 
+    window: instead of `during`, power the component from one stage edge to
+    another within each time bin, ((stage, "start"|"end", offset_ns), (stage,
+    "start"|"end", offset_ns)); e.g. (("read", "start", 1.0), ("fire", "end",
+    -1.0)) = from 1 ns after the read starts to 1 ns before the fire step
+    ends. A read-level stage's start is the first read's, its end the last
+    read's of the time bin.
+
     count / on: a rule name or {"rule": name, "value": n (fixed),
     "size": n (column_groups), "gated": True}. on="all" repeats `count`.
     "gated": only instances whose tile (tile rules), window (window rules) or
@@ -115,6 +122,7 @@ class Component:
     count: str | dict = "tiles"
     on: str | dict = "all"
     during: list[str] = field(default_factory=list)
+    window: tuple | None = None
     supply_v: float = 1.1
     static_ua: float = 0.0
     event_pj: float = 0.0
@@ -223,6 +231,18 @@ def slices_per_group(arch):
     return -(-bits // cell)
 
 
+def _validate_window(c, stage_names):
+    if c.during:
+        raise ValueError(f"{c.name}: give either 'during' or 'window', not both")
+    if not isinstance(c.window, (tuple, list)) or len(c.window) != 2:
+        raise ValueError(f"{c.name}: window needs two (stage, 'start'|'end', offset_ns) anchors")
+    for anchor in c.window:
+        if (not isinstance(anchor, (tuple, list)) or len(anchor) != 3
+                or anchor[0] not in stage_names | {"reads"} or anchor[1] not in ("start", "end")
+                or isinstance(anchor[2], bool) or not isinstance(anchor[2], (int, float))):
+            raise ValueError(f"{c.name}: bad window anchor {anchor!r}")
+
+
 def validate(arch):
     xb, pr = arch.crossbar, arch.precision
     if not isinstance(xb.memory, Memory):
@@ -278,8 +298,10 @@ def validate(arch):
             if stage != "timestep" and stage not in names:
                 raise ValueError(f"{c.name}: unknown stage {stage!r}")
         read_level = bool(c.during) and set(c.during) <= arch.read_stages
-        if c.static_ua and not c.during:
-            raise ValueError(f"{c.name}: static current needs 'during' stages")
+        if c.window is not None:
+            _validate_window(c, names)
+        if c.static_ua and not (c.during or c.window):
+            raise ValueError(f"{c.name}: static current needs 'during' stages or a 'window'")
         if on["rule"] in DATA_RULES and c.during and not read_level:
             raise ValueError(f"{c.name}: {on['rule']} counts spikes per read; use read-level stages")
         if on["rule"] in DATA_RULES and c.event_pj and c.events == "timestep":

@@ -56,6 +56,23 @@ class Timeline:
         """Powered time per read of read-level stages (overlaps counted once)."""
         return _union_length([self.read[s] for s in stage_names])
 
+    def anchor(self, stage, edge):
+        """Time within a time bin of a stage edge; a read-level stage starts
+        with the first read and ends with the last."""
+        if stage in self.read:
+            start, end = self.read[stage]
+            return start if edge == "start" else (self.reads - 1) * self.read_interval + end
+        start, end = self.timestep[stage]
+        return start if edge == "start" else end
+
+    def window_on_time(self, window):
+        """Powered time per time bin of a (start anchor, end anchor) window."""
+        (s0, e0, o0), (s1, e1, o1) = window
+        start, end = self.anchor(s0, e0) + o0, self.anchor(s1, e1) + o1
+        if end <= start:
+            raise ValueError(f"window {window} ends before it starts ({start} -> {end} ns)")
+        return end - start
+
     def timestep_on_time(self, stage_names):
         """Powered time per time bin; read-level stages repeat for every read."""
         if "timestep" in stage_names:

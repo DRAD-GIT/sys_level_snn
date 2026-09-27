@@ -167,8 +167,8 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
                                  "(it would serve two reads at once)")
             energy += c.supply_v * c.static_ua * 1e-6 * per_read * powered_per_read(on, g, act, sequential)
             active = per_read * tl.reads * tl.timesteps
-        elif c.during:
-            per_bin = tl.timestep_on_time(c.during)
+        elif c.during or c.window:
+            per_bin = tl.window_on_time(c.window) if c.window else tl.timestep_on_time(c.during)
             energy += c.supply_v * c.static_ua * 1e-6 * per_bin * powered_per_bin(on, g, act, sequential)
             active = per_bin * tl.timesteps
         if c.model != "static":  # data-driven current drawn from supply_v for the stage

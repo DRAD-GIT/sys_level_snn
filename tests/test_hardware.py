@@ -152,6 +152,16 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
 
     durations = {s.name: s.duration_ns for s in arch.stages}
     read_span = sum(s.duration_ns for s in arch.stages if s.level == "read")
+    # Serial stage edges within a time bin: read stages repeat reads_per_bin times,
+    # then the time-bin stages follow.
+    edges, t = {}, 0.0
+    for stage in (s for s in arch.stages if s.level == "read"):
+        edges[stage.name] = (t, (reads_per_bin - 1) * read_span + t + stage.duration_ns)
+        t += stage.duration_ns
+    t = reads_per_bin * read_span
+    for stage in (s for s in arch.stages if s.level == "timestep"):
+        edges[stage.name] = (t, t + stage.duration_ns)
+        t += stage.duration_ns
     bin_span = reads_per_bin * read_span + sum(s.duration_ns for s in arch.stages if s.level == "timestep")
     energy = {}
     for c in arch.components:
@@ -159,6 +169,11 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
         if c.during and set(c.during) <= arch.read_stages:
             e += c.supply_v * c.static_ua * 1e-6 * sum(durations[s] for s in c.during) * read_powered[c.name]
             events = read_powered[c.name] if c.events == "read" else bin_powered[c.name]
+        elif c.window:
+            (s0, e0, o0), (s1, e1, o1) = c.window
+            span = edges[s1][e1 == "end"] + o1 - edges[s0][e0 == "end"] - o0
+            e += c.supply_v * c.static_ua * 1e-6 * span * bin_powered[c.name]
+            events = bin_powered[c.name] if c.events == "timestep" else read_powered[c.name]
         else:
             e += c.supply_v * c.static_ua * 1e-6 * bin_span * bin_powered[c.name] if c.during else 0.0
             events = bin_powered[c.name] if c.events == "timestep" else read_powered[c.name]
@@ -202,7 +217,9 @@ def test_arch(mapping, precision, crossbar, custom_gains=None):
          Component("sense_amp", count="output_bank", on=gated("output_bank"), during=["sense"],
                    static_ua=0.7),
          Component("controller", count="one", on=gated("one"), during=["sense"], event_pj=1.0),
-         Component("clock", count={"rule": "fixed", "value": 5}, during=["timestep"], static_ua=0.2)],
+         Component("clock", count={"rule": "fixed", "value": 5}, during=["timestep"], static_ua=0.2),
+         Component("windowed", count="physical_columns", on=gated("used_columns"),
+                   window=(("sense", "start", 0.5), ("fire", "end", -0.25)), static_ua=6.0)],
         conv_mapping=mapping)
 
 
@@ -246,7 +263,7 @@ class ReferenceModelTests(unittest.TestCase):
         result = evaluate_layer(arch, silent, torch.ones(3, 2, 3, 3, dtype=torch.int64),
                                 output_spikes=0)
         for name in ("cells", "mirrors", "mirrors_custom", "ota", "driver", "wl_driver",
-                     "tile_ctrl", "neuron", "sense_amp", "controller"):
+                     "tile_ctrl", "neuron", "sense_amp", "controller", "windowed"):
             self.assertEqual(result.components[name].energy_nj, 0.0, name)
         for name in ("bias", "bank", "clock"):
             self.assertGreater(result.components[name].energy_nj, 0.0, name)
@@ -342,6 +359,21 @@ class TimelineTests(unittest.TestCase):
                           [Component("both", during=["drive", "sense"], static_ua=1.0)],
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=32), read_interval_ns=3.0)
 
+    def test_power_window_between_stage_edges(self):
+        # 4 reads per bin of drive 2 + sense 3 ns, then fire 1 ns: sense starts
+        # at 2 in the first read; fire ends at 4 * 5 + 1 = 21.
+        window = (("sense", "start", 1.0), ("fire", "end", -1.0))
+        r = self.run_arch([Stage("drive", 2.0), Stage("sense", 3.0), Stage("fire", 1.0, level="timestep")],
+                          [Component("ota", window=window, static_ua=1.0)],
+                          crossbar=Crossbar(LINEAR_1BIT, active_rows=16))
+        self.assertEqual(r.timeline.anchor("sense", "start"), 2.0)
+        self.assertEqual(r.timeline.anchor("sense", "end"), 20.0)
+        self.assertEqual(r.components["ota"].active_ns, 3 * (21.0 - 1.0 - 3.0))
+        with self.assertRaisesRegex(ValueError, "ends before it starts"):
+            self.run_arch([Stage("read", 5.0)],
+                          [Component("x", window=(("read", "end", 0.0), ("read", "start", 0.0)),
+                                     static_ua=1.0)])
+
     def test_timestep_stage_before_reads(self):
         r = self.run_arch([Stage("read", 5.0), Stage("precharge", 1.0, level="timestep", after=[]),
                            Stage("fire", 2.0, level="timestep", after=["reads"])], [])
@@ -397,7 +429,11 @@ class ValidationTests(unittest.TestCase):
                dict(components=[Component("x", on="spiking_rows", during=["timestep"], static_ua=1.0)]),
                dict(components=[Component("x", count="spiking_rows")]),
                dict(precision=Precision(None, "twos_complement")),
-               dict(conv_mapping="diagonal")]
+               dict(conv_mapping="diagonal"),
+               dict(components=[Component("x", during=["read"],
+                                          window=(("read", "start", 0), ("read", "end", 0)))]),
+               dict(components=[Component("x", window=(("missing", "start", 0), ("read", "end", 0)))]),
+               dict(components=[Component("x", window=(("read", "middle", 0), ("read", "end", 0)))])]
         for kwargs in bad:
             with self.subTest(**{k: str(v) for k, v in kwargs.items()}), self.assertRaises(ValueError):
                 Architecture("x", Crossbar(LINEAR_1BIT), kwargs.pop("precision", Precision()),
