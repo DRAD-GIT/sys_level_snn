@@ -17,8 +17,9 @@ inference, TOPS/W. A value of this work that is the best of its column
 (lowest power, latency and energy, highest TOPS/W) is set in bold (BOLD).
 
 Include the output with \\input{comparison_table}; the preamble needs
-booktabs, multirow, makecell, adjustbox, colortbl (xcolor with [table]) and
-\\definecolor{nmband}{gray}{0.92}.
+booktabs, multirow, makecell, adjustbox and xcolor with [table] (colortbl).
+The table defines its N-MNIST shade itself (\\providecolor{nmband}), so an
+earlier \\definecolor{nmband}{...} in the preamble still takes precedence.
 """
 import argparse
 import csv
@@ -67,7 +68,8 @@ LABEL = "table:comp"
 # The best value per column: min for power, latency, energy; max for TOPS/W.
 BEST = (min, min, min, max)
 
-HEADER = r"""\begin{table*}[t]
+HEADER = r"""\providecolor{nmband}{gray}{0.92}  %% N-MNIST column shade (kept if already defined)
+\begin{table*}[t]
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
