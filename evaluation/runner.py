@@ -26,7 +26,7 @@ def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None,
     data_dir: the dataset folder, or a folder holding it (models.find_dataset);
     only read when a recording has to be made.
     recording_dir: where recordings are kept; rerecord=True makes new ones.
-    max_samples: evaluate only the first samples of the test set (None = all).
+    max_samples: evaluate only the first samples of the test set (None or -1 = all).
     parallel: samples run at once when recording (default: the model's batch_size).
     Progress is logged every `log_every` samples and at the end.
     Returns {architecture name: (software accuracy %, {layer: LayerCost})}.
@@ -35,6 +35,7 @@ def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None,
     if not architectures or len(set(names)) != len(names):
         raise ValueError("define at least one architecture, with unique names")
     spec = models.get_spec(model)
+    max_samples = models.sample_limit(max_samples)
 
     by_precision = {}  # (weight bits, scaling): architectures storing weights that way
     for arch in architectures:
@@ -92,7 +93,7 @@ def accuracy_sweep(model, configs, *, data_dir, max_samples=None, parallel=None,
     """Test accuracy (%) of `model` for each weight quantization in `configs`,
     {label: (bits, scaling)}, with bits and scaling as in quantized_network
     (bits=None: the trained float weights). The test set (its first
-    max_samples, if given) is read once; every batch runs through all
+    max_samples, if given; None or -1 = all) is read once; every batch runs through all
     configurations, `parallel` samples at once (default: the model's
     batch_size). No hardware evaluation. The accuracy so far is logged every
     `log_every` samples and at the end. Returns {label: accuracy}."""

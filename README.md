@@ -35,7 +35,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 
 Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. `run.py` follows the flow of an evaluation, top to bottom:
 
-1. **Model and data**: `MODEL`, `DATASET_DIR` (see below), `MAX_SAMPLES` (the first test samples, `None` = all), `PARALLEL` (samples run at once, `None` = the model's default), `RECORDING_DIR`.
+1. **Model and data**: `MODEL`, `DATASET_DIR` (see below), `MAX_SAMPLES` (the first test samples, `-1` = all), `PARALLEL` (samples run at once, `None` = the model's default), `RECORDING_DIR`.
 2. **Weight quantization**: `WEIGHT_BITS`, `WEIGHT_SCALING`.
 3. **Hardware**: `ARCHITECTURES`, each a crossbar (with its memory cells) and then its components (section 3), mapped with the weight quantization of step 2.
 4. **Forward pass**: the network runs once per weight quantization and every weighted layer's input spikes and output spikes (all channels, pixels, time bins and samples) are **recorded** (see below). Later runs reuse the recording instead of rerunning inference.
@@ -45,11 +45,13 @@ Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requiremen
 python run.py                                   # settings in run.py
 python run.py --data /data/neuromorphic         # dataset location for this run
 python run.py --model gesture                   # override the model once
-python run.py --model nmnist --samples -1       # full N-MNIST test set
+python run.py --model nmnist --samples 1000     # first 1000 N-MNIST test samples (-1 or no flag: all)
 python run.py --rerecord                        # record the forward pass again
 python tools/record.py --data /data/neuromorphic  # record both test sets ahead, at run.py's quantization
 python -m unittest discover -s tests            # all tests
 ```
+
+`--samples` means the same in every script: a positive N evaluates or records the first N test samples, `-1` all of them, and leaving it out means all (except `tools/export_slayer_reference.py`, whose layer-by-layer dumps default to 20).
 
 **Datasets** are not stored in the repository. Set `DATASET_DIR` (or `--data`) to a folder holding them. The dataset folder is found by its name, ignoring case, hyphens, underscores and spaces: the one folder starting with `N-MNIST` (e.g. `N_MNIST`, `nmnist_v2`) for N-MNIST, and with `Gesture` or `DVS-Gesture` (e.g. `DVS_Gesture`) for DVS-Gesture. `DATASET_DIR` may also be the dataset folder itself. Inside it, the paths in `models/<model>.yaml` apply:
 

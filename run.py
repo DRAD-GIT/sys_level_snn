@@ -21,6 +21,7 @@ import argparse
 import os
 
 import crossbars
+import models
 from evaluation.report import export, format_results
 from evaluation.runner import evaluate
 from hardware import Component, Mapping, compose
@@ -34,7 +35,7 @@ MODEL = "nmnist"       # "nmnist" or "gesture" (pretrained weights in pretrained
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = None     # e.g. "/data/neuromorphic"
-MAX_SAMPLES = 100      # first test samples to evaluate; None = the full test set
+MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 PARALLEL = None        # samples run at once; None = the model's default (N-MNIST 50, gesture 2)
 # Recorded forward passes (layer inputs and outputs), reused across runs.
 RECORDING_DIR = os.path.join(ROOT, "recordings")
@@ -96,8 +97,8 @@ def main():
     parser = argparse.ArgumentParser(description="SNN inference + CIM hardware metrics")
     parser.add_argument("--model", default=MODEL, choices=["nmnist", "gesture"])
     parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
-    parser.add_argument("--samples", type=int, default=MAX_SAMPLES,
-                        help="first test samples to evaluate; -1 = the full test set")
+    parser.add_argument("--samples", type=models.samples_argument, default=MAX_SAMPLES,
+                        help="first N test samples to evaluate; -1 = all (default: MAX_SAMPLES)")
     parser.add_argument("--every", type=int, default=1000,
                         help="print progress every N samples (default 1000)")
     parser.add_argument("--parallel", type=int, default=PARALLEL,
@@ -108,7 +109,7 @@ def main():
 
     results = evaluate(args.model, ARCHITECTURES, data_dir=args.data,
                        recording_dir=args.recordings,
-                       max_samples=None if args.samples in (None, -1) else args.samples,
+                       max_samples=args.samples,
                        parallel=args.parallel, rerecord=args.rerecord, log_every=args.every)
     print(format_results(results, METRICS))
     for row in export(results, ARCHITECTURES, args.model, METRICS, LOG_DIR):

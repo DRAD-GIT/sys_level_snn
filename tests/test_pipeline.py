@@ -190,6 +190,13 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "parallel"):
             models.test_loader(spec, params, None, parallel=0)
         self.assertEqual(len(everything.dataset), 2)            # capped at the test set
+        with tempfile.TemporaryDirectory() as data:
+            os.mkdir(os.path.join(data, "N-MNIST"))
+            self.assertEqual(len(models.test_loader(spec, params, data, max_samples=-1,
+                                                    num_workers=0).dataset), 2)   # -1 = all
+        self.assertIsNotNone(open_recording(self.recordings.name, "nmnist", 6, "std3", -1))
+        with self.assertRaisesRegex(ValueError, "samples"):
+            models.sample_limit(-2)
         with self.assertRaisesRegex(ValueError, "max_samples"):
             models.test_loader(spec, params, data, max_samples=0)
 

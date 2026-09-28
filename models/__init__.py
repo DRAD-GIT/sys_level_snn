@@ -77,12 +77,35 @@ def find_dataset(spec, data_dir):
     return os.path.join(data_dir, found[0])
 
 
+ALL_SAMPLES = -1
+
+
+def sample_limit(value):
+    """A sample count as given by the user: None or -1 = the whole test set
+    (returned as None), a positive integer = the first that many samples."""
+    if value is None or value == ALL_SAMPLES:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"samples must be a positive integer, or -1 for all, got {value!r}")
+    return value
+
+
+def samples_argument(text):
+    """argparse type for --samples: -1 = all (None), else a positive count."""
+    import argparse
+    try:
+        return sample_limit(int(text))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a positive number of samples, or -1 for all, got {text!r}") from None
+
+
 def test_loader(spec, net_params, data_dir, max_samples=None, parallel=None, num_workers=4):
-    """The test set (its first max_samples, if given) in groups of `parallel`
-    samples evaluated at once (default: spec.batch_size)."""
-    for label, value in (("max_samples", max_samples), ("parallel", parallel)):
-        if value is not None and value <= 0:
-            raise ValueError(f"{label} must be positive")
+    """The test set (its first max_samples, if given; None or -1 = all) in
+    groups of `parallel` samples evaluated at once (default: spec.batch_size)."""
+    max_samples = sample_limit(max_samples)
+    if parallel is not None and parallel <= 0:
+        raise ValueError("parallel must be positive")
     dataset = test_dataset(spec, net_params, data_dir)
     if max_samples is not None:
         dataset = Subset(dataset, range(min(max_samples, len(dataset))))

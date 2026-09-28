@@ -134,8 +134,9 @@ class Recording:
         return self.meta["samples"]
 
     def chunks(self, max_samples=None, device=None):
-        """The recorded batches in order, up to max_samples samples, with the
-        spikes unpacked on `device`."""
+        """The recorded batches in order, up to max_samples samples (None or
+        -1: all), with the spikes unpacked on `device`."""
+        max_samples = models.sample_limit(max_samples)
         remaining = self.samples if max_samples is None else min(max_samples, self.samples)
         for entry in self.meta["chunks"]:
             if remaining <= 0:
@@ -147,7 +148,9 @@ class Recording:
 
 
 def open_recording(recording_dir, model, bits, scaling, max_samples=None, full_outputs=False):
-    """An existing, matching recording with enough samples, else None."""
+    """An existing, matching recording with enough samples (max_samples None
+    or -1: the whole test set), else None."""
+    max_samples = models.sample_limit(max_samples)
     path = recording_path(recording_dir, model, bits, scaling)
     try:
         recording = Recording(path)
@@ -164,11 +167,12 @@ def open_recording(recording_dir, model, bits, scaling, max_samples=None, full_o
 
 def record(model, precisions, *, data_dir, recording_dir, max_samples=None, parallel=None,
            full_outputs=False, num_workers=4, log_every=1000, log=print):
-    """Run the test set (its first max_samples, if given) once through the
+    """Run the test set (its first max_samples, if given; None or -1 = all) once through the
     network quantized as each of `precisions` [(bits, scaling), ...], all in
     one pass over the data, and save a recording for each.
     Returns {(bits, scaling): Recording}."""
     spec = models.get_spec(model)
+    max_samples = models.sample_limit(max_samples)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = models.load_pretrained(spec, device).eval()
     params = models.load_params(spec.path(spec.params_yaml))

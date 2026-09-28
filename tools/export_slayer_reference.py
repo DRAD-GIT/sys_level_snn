@@ -38,7 +38,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", required=True, choices=sorted(models.MODEL_MODULES))
     parser.add_argument("--data", required=True, help="dataset folder, or a folder holding it")
-    parser.add_argument("--samples", type=int, default=20)
+    parser.add_argument("--samples", type=models.samples_argument, default=20,
+                        help="samples recorded layer by layer (large); -1 = all (default: 20)")
     parser.add_argument("--full", action="store_true", help="also record predictions for the whole test set")
     parser.add_argument("--out", help="default: reference/<model>_slayer.pt")
     args = parser.parse_args()
@@ -54,7 +55,7 @@ def main():
 
     samples = []
     with torch.no_grad():
-        for index in range(min(args.samples, len(dataset))):
+        for index in range(len(dataset) if args.samples is None else min(args.samples, len(dataset))):
             _, ours, _, label = dataset[index]
             reference = slayer_input(snn, dataset, index)
             probe.clear()

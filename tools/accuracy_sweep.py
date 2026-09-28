@@ -79,7 +79,8 @@ def main():
     parser.add_argument("--sensitivity", action="store_true",
                         help="also quantize one layer at a time (the rest float)")
     parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
-    parser.add_argument("--samples", type=int, help="first test samples to evaluate (default: all)")
+    parser.add_argument("--samples", type=models.samples_argument, default=None,
+                        help="first N test samples to evaluate; -1 = all (default: all)")
     parser.add_argument("--parallel", type=int,
                         help="samples evaluated at once (default: N-MNIST 50, gesture 2); "
                              "only speed and GPU memory depend on it")

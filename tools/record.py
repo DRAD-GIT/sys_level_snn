@@ -16,6 +16,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+import models  # noqa: E402
 import run  # noqa: E402
 from evaluation.recording import record  # noqa: E402
 from hardware.architecture import scaling_std  # noqa: E402
@@ -32,7 +33,8 @@ def main():
                         help="quantization ranges (default: run.py's WEIGHT_SCALING)")
     parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
     parser.add_argument("--recordings", default=run.RECORDING_DIR, help="where to save the recordings")
-    parser.add_argument("--samples", type=int, help="first test samples to record (default: all)")
+    parser.add_argument("--samples", type=models.samples_argument, default=None,
+                        help="first N test samples to record; -1 = all (default: all)")
     parser.add_argument("--parallel", type=int, help="samples run at once (default: N-MNIST 50, gesture 2)")
     parser.add_argument("--full-outputs", action="store_true",
                         help="also save every layer's output spikes (not only their counts)")
