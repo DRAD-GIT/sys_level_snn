@@ -36,8 +36,8 @@ class LatexTableTests(unittest.TestCase):
         runs = summary([["gesture", "ours", "a", 20, 1, 1, 1, 1]])
         latex_table.pick_run(runs, "gesture", "ours", warnings.append)
         self.assertIn("20 of 264", warnings[0])
-        with self.assertRaisesRegex(ValueError, "no results"):
-            latex_table.pick_run(runs, "nmnist", "ours")
+        self.assertIsNone(latex_table.pick_run(runs, "nmnist", "ours", warnings.append))
+        self.assertIn("no results for ours on nmnist", warnings[-1])
 
     def test_number_format(self):
         self.assertEqual([latex_table.number(v) for v in (396, 22.94, 93.0, 0.0234, 0)],
@@ -58,6 +58,29 @@ class LatexTableTests(unittest.TestCase):
         self.assertIn("Empty % placeholder\n" + " &" * 16 + " \\\\\n", table)
         self.assertIn("\\midrule\nOurs\n", table)
         self.assertNotIn(" \n", table)
+
+
+    def test_one_row_per_architecture(self):
+        import crossbars
+        from hardware import Component, Mapping, compose
+        rram = compose("rram_xbar", Mapping(), [
+            crossbars.conv_xbar(r_on=20e3, r_off=200e3), Component("lif", count="outputs", time_ns=2.0)])
+        c3cim = compose("c3cim_op_xbar", Mapping(), [
+            crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=16),
+            Component("lif", count="outputs", time_ns=2.0)])
+        rows = latex_table.architecture_rows(
+            [rram, c3cim], {"c3cim_op_xbar": {"work": "This work", "tech": "40", "sensing": "Voltage"}})
+        self.assertEqual([(r["work"], r["specs"], r["midrule"]) for r in rows],
+                         [("rram\\_xbar", ["", "", "", "1", "", "200/20", "", "64"], True),
+                          ("This work", ["40", "", "", "1", "", "20/2", "Voltage", "16"], False)])
+        with self.assertRaisesRegex(ValueError, "unknown keys"):
+            latex_table.architecture_rows([rram], {"rram_xbar": {"voltage": "1"}})
+        runs = summary([["nmnist", "rram_xbar", "c", 10000, 1400, 93, 15.3, 161.7]])
+        warnings = []
+        table = latex_table.build_table(rows, runs, warn=warnings.append)
+        self.assertIn("rram\\_xbar\n & & & & 1 & & 200/20 & & 64\n & 15.3 & 93 & 1.4 & 161.7\n"
+                      " & & & & \\\\\n", table)
+        self.assertEqual(len(warnings), 3)          # rram on gesture, c3cim on both
 
 
 if __name__ == "__main__":
