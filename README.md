@@ -177,17 +177,17 @@ The networks were trained with the slayerSNN (SLAYER PyTorch) framework, which i
 
 The kernels generated from the YAMLs match the kernels stored in the trained weights bit for bit. `tests/test_srm.py` checks the layers against literal transcriptions of slayerSNN's CUDA loops. This is an inference implementation only: it has no surrogate gradients, so it cannot train.
 
-**Verification against the original framework.** slayerSNN (built from source with CUDA 12.8 and PyTorch 2.8 on an RTX 2080 Ti) ran the N-MNIST network on the first 20 test samples and classified the whole test set; `SRMLayer` was then run on the same inputs:
+**Verification against the original framework.** slayerSNN (built from source with CUDA 12.8 and PyTorch 2.8 on an RTX 2080 Ti) ran both networks (N-MNIST: the first 20 test samples and the whole test set; DVS-Gesture: the first 5 test samples); `SRMLayer` was then run on the same inputs:
 
-| N-MNIST check | Result |
-|---|---|
-| input spikes from the event readers (20 samples) | identical, 20/20 |
-| every layer's input spikes (SC1, SC2, SC3, SF1, SF2; 24.5 M entries) | 0 differ |
-| output spikes and predicted classes (20 samples) | identical, 20/20 |
-| hardware energy from either set of spikes | identical |
-| full test set (10,000 samples, batched on the GPU) | 97.77% vs 97.77%, same prediction on 10000/10000 |
+| Check | N-MNIST | DVS-Gesture |
+|---|---|---|
+| input spikes from the event readers | identical, 20/20 | identical, 5/5 |
+| every layer's input spikes | 0 of 24.5 M differ (SC1-SC3, SF1, SF2) | 0 of 63.1 M differ (SC1, SC2, SF1, SF2) |
+| output spikes and predicted classes | identical, 20/20 | identical, 5/5 |
+| hardware energy from either set of spikes | identical | identical |
+| full test set, batched on the GPU | 97.77% vs 97.77%, same prediction on 10000/10000 | not run |
 
-DVS-Gesture has not been compared yet. To repeat or extend the check on a machine with slayerSNN:
+To repeat or extend the check on a machine with slayerSNN:
 
 ```bash
 python tools/export_slayer_reference.py --model nmnist --data /path/to/datasets --samples 20 --full
