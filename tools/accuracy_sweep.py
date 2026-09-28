@@ -53,7 +53,7 @@ def config_label(key):
 
 def configurations(layers, args):
     """{(quantized layers, bits, scaling): (bits per layer, scaling)} for one model."""
-    configs = {("float", None, None): (None, "max")}
+    configs = {("float", None, None): (None, "max")} if None in args.bits else {}
     for scaling in args.scaling:
         for bits in args.bits:
             if bits is None:
@@ -105,7 +105,9 @@ def main():
         result = {key: accuracy[config_label(key)] for key in configs}
         bit_widths = [b for b in args.bits if b is not None]
         fixed = {layer: b for layer, b in args.layer_bits.items() if layer in layers}
-        print(f"\n{model} test accuracy (%); float weights: {result[('float', None, None)]:.2f}")
+        reference = result.get(("float", None, None))
+        print(f"\n{model} test accuracy (%)"
+              + ("" if reference is None else f"; float weights: {reference:.2f}"))
         if fixed:
             print("  'all' = every layer at the column's bits, except "
                   + ", ".join(f"{layer} {bits_label(b)}" for layer, b in fixed.items()))
