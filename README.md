@@ -25,7 +25,8 @@ evaluation/            pipeline used by run.py
   report.py            metric switches, text report, JSON and CSV export
   software.py          prediction, loss, accuracy
 examples/              run_dense_layer.py: run.py for one random dense layer, checked by hand
-tools/                 record.py (record forward passes ahead), accuracy_sweep.py (accuracy vs weight bits);
+tools/                 record.py (record forward passes ahead), accuracy_sweep.py (accuracy vs weight bits),
+                       latex_table.py (the paper's comparison table from the results);
                        checkpoint conversion and slayerSNN verification
 recordings/            recorded forward passes (created on first use; not in git)
 tests/                 reference-model, hand-calculation and pipeline tests
@@ -64,6 +65,8 @@ N-MNIST.../                        Gesture.../
 Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without extension>/<class>.npy` for every trial listed in `trials_to_test.txt`.
 
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
+
+**Paper table**: `python tools/latex_table.py` writes `logs/comparison_table.tex` (the hardware comparison table, `\input` it in the paper). Its `ROWS` hold the literature rows with their published numbers; a row with `"architecture": "<name in run.py>"` is filled from `comparison_summary.csv` for N-MNIST and DVS-Gesture (the architecture's latest configuration, its run with the most samples; a warning if that is not the full test set). Units: power mW, latency us and energy uJ per inference, TOPS/W; this work's values that are the best of their column are set in bold (`BOLD = "all"` bolds the best of any row). Run `run.py` for both models first (with power, latency, energy and TOPS/W switched on).
 
 **Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `--samples 1000`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Mapping**). `--sensitivity` also quantizes one layer at a time (the others float) to show which layers limit the accuracy, and `--layer-bits SF1=8 SF2=float` fixes named layers' bit widths for mixed precision. The accuracy so far is printed every `--every` samples (default 1000) and at the end.
 
