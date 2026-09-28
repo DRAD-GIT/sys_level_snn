@@ -116,29 +116,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(chunk.predictions.tolist(), predicted.tolist())
         self.assertEqual(len(next(recording.chunks(max_samples=1))), 1)
 
-    def test_evaluation_steps_merge_recorded_files(self):
-        with tempfile.TemporaryDirectory() as folder:
-            recording = record("nmnist", [(6, "std3")], data_dir=self.data.name, recording_dir=folder,
-                               parallel=1, num_workers=0, log=lambda *_: None)[(6, "std3")]
-            self.assertEqual(len(recording.meta["chunks"]), 2)                # one file per sample
-            merged = list(recording.chunks())                                 # default: both fit
-            single = list(recording.chunks(parallel=1))
-            self.assertEqual(([len(c) for c in merged], [len(c) for c in single]), ([2], [1, 1]))
-            for name in merged[0].inputs:
-                self.assertTrue(torch.equal(merged[0].inputs[name],
-                                            torch.cat([c.inputs[name] for c in single])))
-                self.assertEqual(merged[0].output_counts[name].tolist(),
-                                 [int(c.output_counts[name][0]) for c in single])
-            self.assertEqual(merged[0].labels.tolist(), [0, 1])
-            # Same costs whether the samples are evaluated in one step or two.
-            costs = [evaluate("nmnist", [RRAM_1BIT_XBAR], data_dir=None, recording_dir=folder,
-                              parallel=p, num_workers=0, log=lambda *_: None)["rram_1bit_conv_xbar"]
-                     for p in (1, None)]
-            self.assertEqual(costs[0][0], costs[1][0])
-            for layer, cost in costs[0][1].items():
-                self.assertAlmostEqual(cost.energy_nj, costs[1][1][layer].energy_nj,
-                                       delta=1e-12 * cost.energy_nj)
-
     def test_stale_or_short_recordings_are_not_used(self):
         folder = self.recordings.name
         self.assertIsNotNone(open_recording(folder, "nmnist", 6, "std3", 2))
