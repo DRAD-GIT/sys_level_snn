@@ -37,7 +37,7 @@ Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requiremen
 
 1. **Model and data**: `MODEL`, `DATASET_DIR` (see below), `MAX_SAMPLES` (the first test samples, `-1` = all), `PARALLEL` (samples run at once, `None` = the model's default), `RECORDING_DIR`.
 2. **Weight quantization**: `WEIGHT_BITS`, `WEIGHT_SCALING`.
-3. **Hardware**: `ARCHITECTURES`, each a crossbar (with its memory cells) and then its components (section 3), mapped with the weight quantization of step 2.
+3. **Hardware**: `ARCHITECTURES`, each a crossbar (with its memory cells) and then its components, mapped with the weight quantization of step 2. Start with the **Rules of thumb** in section 3.
 4. **Forward pass**: the network runs once per weight quantization and every weighted layer's input spikes and output spikes (all channels, pixels, time bins and samples) are **recorded** (see below). Later runs reuse the recording instead of rerunning inference.
 5. **Metrics**: estimated from the recording; `METRICS` switches each one on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
@@ -80,10 +80,43 @@ An architecture is composed from one **crossbar type** (with its memory cells as
 | Part | Where | What it is |
 |---|---|---|
 | crossbar (exactly one) | `crossbars/` | memory cells: `cell_bits` and `r_on`/`r_off` (levels linear in conductance) or `levels_s` (every level's conductance, for nonuniform cells). `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers. Each brings the array's per-activation step (`time_ns`; `"cells"` for `conv_xbar`, `"column_source"` for `c3cim_xbar`) and its own costs |
-| mapping | `hardware.Mapping` | how the network goes onto the crossbars: `weight_bits`, `weight_scaling`, `weight_encoding`, `conv` |
+| mapping | `hardware.Mapping` | how the network goes onto the crossbars: `weight_bits`, `weight_scaling`, `weight_encoding`, `conv`, `columns` |
 | components | `hardware.Component` | any circuit: your name, how many are installed (`count`), how many are powered (`powered`, optionally spike-`gated`), optionally its time (`time_ns`, which makes it a step of the timeline; `serial`, `at`, `per`), when it draws current (`when`; default: during its own step), and its static current and/or event energy |
 
-The 1-bit RRAM design in `run.py`:
+### Rules of thumb
+
+**Building a design**
+- One crossbar, then your components, in a list: `compose(name, Mapping(...), [crossbar, Component(...), ...])`. The crossbar brings its own components: `conv_xbar` the array `"cells"`, `c3cim_xbar` the `"column_source"`s and `"column_driver"`s.
+- Every circuit you add is a `Component` with a unique name; `count` is how many are installed (area), `powered` how many draw current.
+
+**Time: `time_ns` or not?**
+- A component that **takes time others must wait for** (a read, an ADC conversion, a neuron update) gets `time_ns`. It becomes a **step** of the timeline, named after the component, and sets the latency.
+- A component that is **just switched on while other steps run** (a bias, an OTA, a driver) gets **no** `time_ns`, only `when`. It has no window of its own, so `when` must name real steps; with a current but neither `time_ns` nor `when`, the engine stops with an error.
+- Steps run **one after another** in the order given. To run one **alongside** another, place it: `at="cells.start"`. Adding a step without `at` makes every time bin longer.
+- `serial=True` (ADC-like, `column_groups` count): each instance converts its group's weight columns one by one, so the step lasts `time_ns` x the fullest group.
+- How often a step runs is inferred from `count`: columns, rows, column groups, tiles **per activation**; neurons and layer-wide parts **once per time bin**. `per=` overrides it.
+
+**Power: `when`**
+- Default: the component's own step. Otherwise `when="cells"` (during that step), `when="bin"` (the whole time bin) or `when=("cells.start", "lif.end")` (from one point to another).
+- `when` only changes **energy**, never the timeline; `time_ns` and `at` decide the timeline. A step's `time_ns` still matters with a wider `when`: it moves the anchors the window is built from.
+- A window inside the per-activation steps is charged **in every activation**; one reaching a time-bin step or the bin's edges is charged **once per time bin**.
+- The array's data-driven current (`"cells"`) can only stay on past its own step with **one activation per time bin**.
+
+**Names and anchors (one rule)**
+- A **bare name is a window**: `"cells"`, `"bin"`, `"activations"`.
+- A **point always carries its edge**: `"cells.start"`, `"lif.end"`, `"bin.end"`, optionally with an offset in ns (`"cells.start+1"`). Only steps (components with `time_ns`) and `bin` / `activations` have edges.
+- Prefer the step you mean over `bin.end`: `"lif.end"` stays right when steps are added after the neuron.
+
+**How many are powered: `powered`**
+- `"all"` (default): every installed instance; `"used_columns"`: only columns holding weights; `"used_column_groups"`: only the groups (ADCs, drivers) holding a weight column; add `"gated": True` to power an instance only when its tile / window receives a spike.
+- `Mapping(columns=...)` decides where weight columns sit among shared groups: `"interleaved"` spreads them (short serial steps, every group used), `"contiguous"` packs them (empty groups can stay off, longer serial steps).
+- `active_rows` (crossbar) splits a tile's rows into row phases, one activation each; the default drives all rows at once.
+
+**Running**
+- Inference runs once per weight quantization (`weight_bits`, `weight_scaling`) and is recorded; changing hardware, `columns`, timing or power only re-runs the fast hardware evaluation. Designs with the same quantization share a recording.
+- `--samples N` = the first N test samples, `-1` or no flag = all; `--parallel N` = samples processed at once (recording batch, evaluation step).
+
+A 1-bit RRAM design:
 
 ```python
 RRAM_1BIT_XBAR = compose(
