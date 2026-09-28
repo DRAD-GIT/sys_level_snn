@@ -446,6 +446,10 @@ class HandCalculationTests(unittest.TestCase):
         self.assertEqual(par.geometry.copies_per_tile, 3)
         self.assertEqual((seq.components["cells"].installed, par.components["cells"].installed), (1, 9))
         self.assertEqual(par.components["sl_ota"].installed, 9 * 64)
+        # Used: only the 16 weight columns of each of the 25 copies can be powered.
+        self.assertEqual(par.components["sl_ota"].used, 25 * 16)
+        self.assertEqual((seq.components["sl_ota"].installed, seq.components["sl_ota"].used), (64, 16))
+        self.assertEqual(par.components["lif"].used, par.components["lif"].installed)
         self.assertEqual((seq.latency_ns, par.latency_ns), (25 * 5.0 + 2.0, 5.0 + 2.0))
         # Packed copies leak: a spike on a copy's row drives the level-0 cells
         # (200 kohm) in the 2 x 16 columns of the other two copies of its tile.

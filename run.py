@@ -48,7 +48,7 @@ RRAM_1BIT_XBAR = compose(
         Component("lif", count="outputs", during="fire",       # one per output neuron
                   supply_v=VDD, static_ua=10.0),
     ],
-    conv_mapping="sequential",                                 # or "parallel"
+    conv_mapping="parallel",                                   # or "sequential"
 )
 
 ARCHITECTURES = [RRAM_1BIT_XBAR]

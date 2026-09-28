@@ -16,7 +16,7 @@ Powered instances follow the component's `on` rule: all valid instances, or
 import math
 from dataclasses import dataclass
 
-from hardware.architecture import TILE_RULES, rule_of
+from hardware.architecture import DATA_RULES, TILE_RULES, rule_of
 from hardware.mapping import (Geometry, conductance_slices, default_slice_gains, layer_geometry,
                               spike_activity)
 from hardware.timeline import Timeline, build_timeline
@@ -28,6 +28,7 @@ class ComponentCost:
     installed: int
     area_um2: float
     energy_nj: float = 0.0   # summed over all evaluated inferences
+    used: int = 0            # installed instances its `on` rule can power
 
 
 @dataclass
@@ -168,6 +169,9 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
         on = rule_of(c.on, activity=True)
         on = dict(count, gated=on["gated"]) if on["rule"] == "all" else on
         n = installed(count, g)
+        # Instances the on-rule can ever power (e.g. used columns of the
+        # installed columns); data rules (spiking rows) can reach all.
+        used = n if on["rule"] in DATA_RULES else min(n, installed(on, g))
         # Powered time per read (read-level stages) or per time bin (time-bin
         # stages or a window), and the powered instances summed over them.
         read_level = bool(c.during) and set(c.during) <= arch.read_stages
@@ -205,7 +209,7 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
             else:
                 events = float(output_spikes)
             energy += c.event_pj * 1e-3 * events
-        components[c.name] = ComponentCost(c.group, n, n * c.area_um2, energy)
+        components[c.name] = ComponentCost(c.group, n, n * c.area_um2, energy, used)
 
     return LayerCost(g, tl, components, batch,
                      macs=g.rows_needed * g.outputs * spikes.shape[4],

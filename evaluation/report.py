@@ -75,7 +75,7 @@ def format_results(results, metrics):
 
 def _components(cost, metrics):
     """Per-inference values of each component of a layer."""
-    return {name: {"group": c.group, "installed": c.installed,
+    return {name: {"group": c.group, "installed": c.installed, "used": c.used,
                    "energy_nj": c.energy_nj / cost.inferences,
                    **({"area_um2": c.area_um2} if metrics.get("area") else {})}
             for name, c in cost.components.items()}
@@ -83,10 +83,11 @@ def _components(cost, metrics):
 
 def _component_lines(cost, metrics):
     area = metrics.get("area")
-    rows = [f"    {'component':<18}{'group':<18}{'installed':>10}{'energy nJ':>13}"
+    rows = [f"    {'component':<18}{'group':<18}{'installed':>10}{'used':>10}{'energy nJ':>13}"
             + (f"{'area um^2':>12}" if area else "")]
     for name, c in _components(cost, metrics).items():
-        rows.append(f"    {name:<18}{c['group']:<18}{c['installed']:>10}{c['energy_nj']:>13.6g}"
+        rows.append(f"    {name:<18}{c['group']:<18}{c['installed']:>10}{c['used']:>10}"
+                    f"{c['energy_nj']:>13.6g}"
                     + (f"{c['area_um2']:>12.6g}" if area else ""))
     return rows
 
