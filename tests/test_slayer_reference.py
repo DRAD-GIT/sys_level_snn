@@ -38,8 +38,8 @@ class CompareToolTests(unittest.TestCase):
         import models
         from evaluation.probes import LayerProbe
         from evaluation.software import predict_class
-        from hardware import Component, Precision, Stage, compose
-        from architectures import crossbars
+        import crossbars
+        from hardware import Component, Mapping, compose
         from tools.compare_slayer_reference import compare
         from tools.slayer_reference import FORMAT
 
@@ -55,10 +55,9 @@ class CompareToolTests(unittest.TestCase):
                   "predicted": int(predict_class(output)[0])}
         probe.remove()
         # An architecture charging every LIF output spike.
-        arch = compose("spike_events", Precision(4), [
+        arch = compose("spike_events", Mapping(4), [
             crossbars.conv_xbar(r_on=2e4, r_off=2e5),
-            Stage("fire", 2.0, level="timestep"),
-            Component("lif", count="outputs", during="fire", static_ua=1.0,
+            Component("lif", count="outputs", stage="fire", stage_ns=2.0, static_ua=1.0,
                       event_pj=1.0, events="output_spike")])
         with tempfile.TemporaryDirectory() as folder:
             # A 5-sample test set (random events) and the predictions SRMLayer

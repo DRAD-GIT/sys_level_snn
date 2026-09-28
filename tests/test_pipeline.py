@@ -10,22 +10,21 @@ import torch
 
 import models
 import models.nmnist
-from architectures import crossbars
+import crossbars
 from evaluation.probes import LayerProbe
 from evaluation.report import export, format_results
 from evaluation.runner import accuracy_sweep, evaluate, quantized_network
-from hardware import Component, Precision, Stage, compose
+from hardware import Component, Mapping, compose
 from run import RRAM_1BIT_XBAR
 
 # run.py's design plus one with analog weights, for a second precision group.
-ANALOG = compose("analog_c3cim", Precision(None, "analog"), [
+ANALOG = compose("analog_c3cim", Mapping(None, "max", "analog", "sequential"), [
     crossbars.c3cim_xbar(r_on=2e3, r_off=20e3),
-    Stage("fire", 2.0, level="timestep"),
-    Component("lif", count="outputs", during="fire", static_ua=6.0)])
+    Component("lif", count="outputs", stage="fire", stage_ns=2.0, static_ua=6.0)])
 # Same design with weights quantized by the least-squared-error clip.
 RRAM_MSE = dataclasses.replace(
     RRAM_1BIT_XBAR, name="rram_mse",
-    precision=dataclasses.replace(RRAM_1BIT_XBAR.precision, weight_scaling="mse"))
+    mapping=dataclasses.replace(RRAM_1BIT_XBAR.mapping, weight_scaling="mse"))
 ARCHITECTURES = [RRAM_1BIT_XBAR, ANALOG, RRAM_MSE]
 
 

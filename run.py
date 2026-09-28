@@ -2,11 +2,12 @@
 
     python run.py
 
-Hardware is composed from one crossbar type (architectures/crossbars.py, with
-its memory cells given directly) and any Stages and Components you define:
-each component has a name, how many are installed, how many are powered,
-when (stages or a window) and its current / event energy. Command-line flags
-override the run settings for one run.
+Hardware is composed from one crossbar type (crossbars/, with its memory cells
+given directly), the Mapping of the network onto it, and any Components you
+define: each has a name, how many are installed and powered, optionally a
+stage of the timeline it defines, when it draws current (start / end), and
+its current / event energy. Command-line flags override the run settings for
+one run.
 
 Results: printed, and saved under logs/ (a JSON per architecture and the
 comparison table logs/comparison_summary.csv).
@@ -14,10 +15,10 @@ comparison table logs/comparison_summary.csv).
 import argparse
 import os
 
-from architectures import crossbars
+import crossbars
 from evaluation.report import export, format_results
-from hardware import Component, Precision, Stage, compose
 from evaluation.runner import evaluate
+from hardware import Component, Mapping, compose
 
 # ============================================================================
 # RUN SETTINGS
@@ -35,23 +36,24 @@ DATASET_DIR = None     # e.g. "/data/neuromorphic"
 VDD = 1.1
 RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
-    Precision(weight_bits=6, weight_encoding="twos_complement", weight_scaling="std3"),
+    # conv="parallel": one weight copy per output position (copies that fit
+    # share a tile), so every analog LIF has its own columns; it cannot store
+    # and restore its membrane potential to serve several pixels.
+    Mapping(weight_bits=6, weight_scaling="std3", weight_encoding="twos_complement",
+            conv="parallel"),
     [
-        # Crossbar: 64x64 tiles, 0.2 V read made from VDD, 5 ns read stage.
-        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3,   # 1-bit RRAM cells
-                            rows=64, cols=64, v_read=0.2, read_ns=5.0,
-                            cell_supply_v=VDD),
-        Stage("fire", 2.0, level="timestep"),                  # once per time bin, after the reads
+        # Crossbar: 64x64 tiles of 1-bit RRAM, 0.2 V read made from VDD; its
+        # "read" stage (5 ns) runs in every activation.
+        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64,
+                            v_read=0.2, cell_supply_v=VDD, stage="read", stage_ns=5.0),
         Component("sl_ota", count="physical_columns",          # one per column,
                   on={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
-                  during="read", supply_v=VDD, static_ua=10.0),
-        Component("lif", count="outputs", during="fire",       # one per output neuron
+                  start="read", end="read",                    # powered during the read
                   supply_v=VDD, static_ua=10.0),
+        Component("lif", count="outputs",                      # one per output neuron
+                  stage="fire", stage_ns=2.0,                  # once per time bin, after the reads
+                  supply_v=VDD, static_ua=10.0),               # powered during fire
     ],
-    # One weight copy per output position (copies that fit share a tile): every
-    # analog LIF has its own columns, since it cannot store and restore its
-    # membrane potential to serve several pixels ("sequential" would need that).
-    conv_mapping="parallel",
 )
 
 ARCHITECTURES = [RRAM_1BIT_XBAR]

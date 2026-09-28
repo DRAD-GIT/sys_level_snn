@@ -43,9 +43,9 @@ class Geometry:
     tile_phases: tuple       # row phases of each row tile of a full tile set
     tile_rows: int
     tile_cols: int
-    phase_rows: int          # rows enabled per read (active_rows)
-    reads_per_timestep: int
-    # Slots: the windows read together, copies_per_tile at a time (the last
+    phase_rows: int          # rows driven per activation (active_rows)
+    activations_per_bin: int
+    # Slots: the windows activated together, copies_per_tile at a time (the last
     # slot may hold fewer); (number of slots, copies, row phases per row tile).
     slot_kinds: tuple
     input_size: tuple        # (height, width) of the layer input
@@ -85,11 +85,11 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
         raise ValueError(f"input has {channels} channels, weights expect {in_ch}")
     out_h, out_w = (height + 2 * padding - kh) // stride + 1, (width + 2 * padding - kw) // stride + 1
     windows = out_h * out_w
-    groups = 2 if arch.precision.weight_encoding == "differential" else 1
+    groups = 2 if arch.mapping.weight_encoding == "differential" else 1
     per_weight = groups * slices_per_group(arch)
     k_rows, used = in_ch * kh * kw, out_ch * per_weight
     active = xb.active_rows or xb.rows
-    parallel = arch.conv_mapping == "parallel"
+    parallel = arch.mapping.conv == "parallel"
     per_tile = min(xb.rows // k_rows, xb.cols // used, windows) \
         if parallel and k_rows <= xb.rows and used <= xb.cols else 1
     full, rest = divmod(windows, per_tile)
@@ -143,7 +143,7 @@ def _quantize(weights, top, scale):
 def conductance_slices(arch, weights):
     """Every physical column slice as (conductance [out, K] in S, slice index
     within its sign group), plus the reference conductance G(0) for analog."""
-    memory, pr = arch.crossbar.memory, arch.precision
+    memory, pr = arch.crossbar.memory, arch.mapping
     w = weights.reshape(weights.shape[0], -1)
     levels = torch.tensor(memory.conductances(), dtype=torch.float64)
     if pr.weight_encoding == "analog":

@@ -78,8 +78,8 @@ def evaluate(model, architectures, *, data_dir, max_samples=None, parallel=None,
 
     by_precision = {}  # (weight bits, scaling): architectures storing weights that way
     for arch in architectures:
-        by_precision.setdefault(_precision_key(arch.precision.weight_bits,
-                                               arch.precision.weight_scaling), []).append(arch)
+        by_precision.setdefault(_precision_key(arch.mapping.weight_bits,
+                                               arch.mapping.weight_scaling), []).append(arch)
     groups = [_PrecisionGroup(net, spec.layers, bits, scaling, archs)
               for (bits, scaling), archs in by_precision.items()]
     log(f"{spec.display_name}: evaluating {', '.join(names)}; "

@@ -3,9 +3,9 @@
 evaluate_layer(arch, spikes, weights) maps the layer (mapping.py), extracts
 the spike activity, places the stages on the timeline (timeline.py) and
 charges every component:
-  static   supply_v * static_ua * (powered time per read or time bin)
-           * powered instances, summed over all reads or time bins
-  events   event_pj * (powered instances per read or time bin, or output spikes)
+  static   supply_v * static_ua * (powered time per activation or time bin)
+           * powered instances, summed over all activations or time bins
+  events   event_pj * (powered instances per activation or time bin, or output spikes)
   data     supply_v * (current computed from spikes and conductances)
            * powered time,
            for the array ("crossbar_read", "reference_read") and the
@@ -90,19 +90,19 @@ def installed(rule, g):
     return _per_unit(rule, g)
 
 
-def powered_per_read(rule, g, act, sequential):
-    """Sum over all reads of the powered instances."""
+def powered_per_activation(rule, g, act, sequential):
+    """Sum over all activations of the powered instances."""
     r, gated, frames = rule["rule"], rule["gated"], act.frames
     if r == "spiking_rows":  # every word-line segment (one per column tile) with a spike
         return act.spikes_on_rows * g.column_tiles
-    if r == "used_columns":  # the used columns of every tile read
+    if r == "used_columns":  # the used columns of every tile activated
         units = act.tile_read_copies if gated else \
             frames * sum(n * c * sum(p) for n, c, p in g.slot_kinds)
     elif r in TILE_RULES:
         units = act.tile_reads if gated else frames * sum(n * sum(p) for n, _, p in g.slot_kinds)
     elif r == "output_bank":
         units = act.slot_reads if gated else frames * g.slots * g.phases
-    elif r == "outputs" or sequential:  # a sequential read = one window
+    elif r == "outputs" or sequential:  # a sequential activation = one window
         units = act.window_reads if gated else frames * g.windows * g.phases
     else:
         units = act.layer_reads if gated else frames * g.phases
@@ -150,8 +150,8 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
         act = spike_activity(spikes, g)
         if activity_cache is not None:
             activity_cache[key] = act
-    tl = build_timeline(arch, g.reads_per_timestep, spikes.shape[4])
-    sequential = arch.conv_mapping == "sequential"
+    tl = build_timeline(arch, g.activations_per_bin, spikes.shape[4])
+    sequential = arch.mapping.conv == "sequential"
 
     # Current (A) of each column slice summed over all reads: each spike on
     # row k drives the conductances of row k in every column, and the level-0
@@ -172,25 +172,27 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
         # Instances the on-rule can ever power (e.g. used columns of the
         # installed columns); data rules (spiking rows) can reach all.
         used = n if on["rule"] in DATA_RULES else min(n, installed(on, g))
-        # Powered time per read (read-level stages) or per time bin (time-bin
-        # stages or a window), and the powered instances summed over them.
-        read_level = bool(c.during) and set(c.during) <= arch.read_stages
-        if read_level:
-            on_ns = tl.read_on_time(c.during)
-            if on_ns > tl.read_interval and tl.reads > 1:
-                raise ValueError(f"{c.name} is powered longer than the read interval "
-                                 "(it would serve two reads at once)")
-            powered = powered_per_read(on, g, act, sequential)
-        elif c.during or c.window:
-            on_ns = tl.window_on_time(c.window) if c.window else tl.timestep_on_time(c.during)
+        # Powered time per activation or per time bin, and the powered
+        # instances summed over all activations or time bins.
+        power = arch.power[c.name]
+        per_activation = power is not None and power.level == "activation"
+        if per_activation:
+            on_ns = tl.on_time(power)
+            if on_ns > tl.activation_interval and tl.activations > 1:
+                raise ValueError(f"{c.name} is powered longer than the activation interval "
+                                 "(it would serve two activations at once)")
+            powered = powered_per_activation(on, g, act, sequential)
+        elif power is not None:
+            on_ns = tl.on_time(power)
             powered = powered_per_bin(on, g, act, sequential)
         else:
             on_ns = powered = 0.0
         energy = c.supply_v * c.static_ua * 1e-6 * on_ns * powered
-        if c.model != "static":  # data-driven current (summed over reads) drawn while powered
-            if not read_level and tl.reads > 1:
-                raise ValueError(f"{c.name}: {c.model} powered beyond its reads is only defined "
-                                 f"with one read per time bin (this layer has {tl.reads})")
+        if c.model != "static":  # data-driven current (summed over activations) while powered
+            if not per_activation and tl.activations > 1:
+                raise ValueError(f"{c.name}: {c.model} powered beyond its activation is only "
+                                 f"defined with one activation per time bin (this layer has "
+                                 f"{tl.activations})")
             if c.model == "crossbar_read":
                 current = sum(a for a, _ in slice_a)
             elif c.model == "reference_read":
@@ -200,9 +202,9 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
                 current = sum(gains[s] * a for a, s in slice_a)
             energy += c.supply_v * current * on_ns  # A * V * ns = nJ
         if c.event_pj:
-            if c.events == "read":
-                events = powered_per_read(on, g, act, sequential)
-            elif c.events == "timestep":
+            if c.events == "activation":
+                events = powered_per_activation(on, g, act, sequential)
+            elif c.events == "time_bin":
                 events = powered_per_bin(on, g, act, sequential)
             elif output_spikes is None:
                 raise ValueError(f"{c.name} counts output spikes: pass output_spikes")
