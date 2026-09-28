@@ -138,7 +138,8 @@ def accuracy_sweep(model, configs, *, data_dir, batch_size=None, max_batches=Non
     nets = {label: quantized_network(net, spec.layers, bits, scaling)[0]
             for label, (bits, scaling) in configs.items()}
     correct, total = dict.fromkeys(configs, 0), 0
-    log(f"{spec.display_name}: accuracy of {len(configs)} weight configurations")
+    log(f"{spec.display_name}: accuracy of {len(configs)} weight configuration"
+        f"{'' if len(configs) == 1 else 's'}, {batch_size} samples per batch")
     with torch.no_grad():
         for batch_index, (_, spikes, _, label) in enumerate(loader):
             if max_batches is not None and batch_index == max_batches:
