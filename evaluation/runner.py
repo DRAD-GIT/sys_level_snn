@@ -122,12 +122,13 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
 
 
 def accuracy_sweep(model, configs, *, data_dir, batch_size=None, max_batches=None,
-                   num_workers=4, log_every=2, log=print):
+                   num_workers=4, log_every=1000, log=print):
     """Test accuracy (%) of `model` for each weight quantization in `configs`,
     {label: (bits, scaling)}, with bits and scaling as in quantized_network
     (bits=None: the trained float weights). The test set is read once; every
-    batch runs through all configurations. No hardware evaluation. Progress is
-    logged every `log_every` batches. Returns {label: accuracy}."""
+    batch runs through all configurations. No hardware evaluation. The accuracy
+    so far is logged every `log_every` samples and at the end.
+    Returns {label: accuracy}."""
     spec = models.get_spec(model)
     batch_size = min(batch_size or 32, spec.max_batch_size or batch_size or 32)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -137,9 +138,13 @@ def accuracy_sweep(model, configs, *, data_dir, batch_size=None, max_batches=Non
                         shuffle=False, num_workers=num_workers)
     nets = {label: quantized_network(net, spec.layers, bits, scaling)[0]
             for label, (bits, scaling) in configs.items()}
-    correct, total = dict.fromkeys(configs, 0), 0
+    correct, total, logged = dict.fromkeys(configs, 0), 0, 0
     log(f"{spec.display_name}: accuracy of {len(configs)} weight configuration"
         f"{'' if len(configs) == 1 else 's'}, {batch_size} samples per batch")
+
+    def progress():
+        log(f"  {total} samples: " + ", ".join(
+            f"{name} {100 * c / total:.2f}%" for name, c in correct.items()))
     with torch.no_grad():
         for batch_index, (_, spikes, _, label) in enumerate(loader):
             if max_batches is not None and batch_index == max_batches:
@@ -148,9 +153,11 @@ def accuracy_sweep(model, configs, *, data_dir, batch_size=None, max_batches=Non
             for name, quantized in nets.items():
                 correct[name] += int((predict_class(quantized(spikes)) == label).sum())
             total += len(label)
-            if (batch_index + 1) % log_every == 0:
-                log(f"  after {batch_index + 1} batches ({total} samples): " + ", ".join(
-                    f"{name} {100 * c / total:.2f}%" for name, c in correct.items()))
+            if total // log_every > logged // log_every:
+                progress()
+                logged = total
+    if total != logged:
+        progress()
     return {name: 100 * c / total for name, c in correct.items()}
 
 

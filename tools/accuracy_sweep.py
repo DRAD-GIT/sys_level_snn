@@ -79,9 +79,12 @@ def main():
     parser.add_argument("--sensitivity", action="store_true",
                         help="also quantize one layer at a time (the rest float)")
     parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
-    parser.add_argument("-b", "--batch-size", type=int, help="default 32 (gesture: 2)")
+    parser.add_argument("-b", "--batch-size", type=int,
+                        help="samples the GPU processes at once (default 32; gesture: 2); "
+                             "only speed and memory, not the result")
     parser.add_argument("--batches", type=int, help="max batches (default: whole test set)")
-    parser.add_argument("--every", type=int, default=2, help="print accuracy every N batches (default 2)")
+    parser.add_argument("--every", type=int, default=1000,
+                        help="print the accuracy so far every N samples (default 1000)")
     args = parser.parse_args()
     args.layer_bits = dict(args.layer_bits)
 
