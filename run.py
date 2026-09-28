@@ -66,7 +66,7 @@ RRAM_1BIT_XBAR = compose(
                             v_read=0.2, cell_supply_v=1.1, time_ns=5.0,when=("cells.start", "lif.end")),
         Component("sl_ota", count="physical_columns",               # one per column,
                   powered={"rule": "used_columns"},  # on when its tile gets a spike
-                 when=("sl_ota.start", "lif.end"),                                     # during the read
+                  when=("sl_ota.start", "lif.end"),                                     # during the read
                   supply_v=1.1, static_ua=10.0),
         Component("lif", count="outputs",                           # one per output neuron
                   time_ns=2.0,                                      # step: once per time bin, after the reads
