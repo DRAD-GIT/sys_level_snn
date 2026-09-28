@@ -92,14 +92,14 @@ class PipelineTests(unittest.TestCase):
     def test_accuracy_sweep_matches_pipeline(self):
         with tempfile.TemporaryDirectory() as data:
             os.mkdir(os.path.join(data, "N-MNIST"))
-            sweep = accuracy_sweep("nmnist", [4, None], ["max", "mse"], data_dir=data,
-                                   batch_size=2, max_batches=1, num_workers=0,
+            sweep = accuracy_sweep("nmnist", {"4 max": (4, "max"), "4 mse": (4, "mse"),
+                                              "float": (None, "max")},
+                                   data_dir=data, batch_size=2, max_batches=1, num_workers=0,
                                    log=lambda *_: None)
-        self.assertEqual(set(sweep), {(4, "max"), (4, "mse"), (None, None)})
         # Same quantization as the pipeline's architectures.
-        self.assertEqual(sweep[(4, "max")], self.results["rram_1bit_conv_xbar"][0])
-        self.assertEqual(sweep[(4, "mse")], self.results["rram_mse"][0])
-        self.assertEqual(sweep[(None, None)], self.results["analog_c3cim"][0])
+        self.assertEqual(sweep["4 max"], self.results["rram_1bit_conv_xbar"][0])
+        self.assertEqual(sweep["4 mse"], self.results["rram_mse"][0])
+        self.assertEqual(sweep["float"], self.results["analog_c3cim"][0])
 
     def test_quantized_network_is_a_copy(self):
         spec = models.get_spec("nmnist")
@@ -110,6 +110,13 @@ class PipelineTests(unittest.TestCase):
         for name in spec.layers:
             self.assertLessEqual(len(torch.unique(getattr(quantized, name).weight)), 7)  # +/-3
             self.assertLessEqual(int(codes[name].abs().max()), 3)
+        # Per-layer bit widths: listed layers quantized, the others float.
+        mixed, codes = quantized_network(net, spec.layers, {"SF2": 3, "SC1": None})
+        self.assertLessEqual(len(torch.unique(mixed.SF2.weight)), 7)
+        self.assertTrue(torch.equal(mixed.SC1.weight, net.SC1.weight))
+        self.assertTrue(torch.equal(mixed.SF1.weight, net.SF1.weight))
+        with self.assertRaisesRegex(ValueError, "unknown layers"):
+            quantized_network(net, spec.layers, {"SC9": 4})
 
     def test_metric_switches(self):
         metrics = {"energy": True, "latency": True, "area": False, "layers": True, "components": False}
