@@ -13,7 +13,9 @@ import models.nmnist
 import crossbars
 from evaluation.probes import LayerProbe
 from evaluation.report import export, format_results
+from evaluation.recording import open_recording, record
 from evaluation.runner import accuracy_sweep, evaluate, quantized_network
+from evaluation.software import predict_class
 from hardware import Component, Mapping, compose
 from run import RRAM_1BIT_XBAR
 
@@ -59,19 +61,85 @@ class ProbeTests(unittest.TestCase):
         self.assertNotIn("spike", vars(net.slayer))
 
 
+class Unreadable(RandomSpikes):
+    def __getitem__(self, index):
+        raise AssertionError("the dataset was read although a recording exists")
+
+
 class PipelineTests(unittest.TestCase):
     def setUp(self):
         spec = dataclasses.replace(models.get_spec("nmnist"), dataset_class=RandomSpikes,
                                    batch_size=2)
         self.spec_patch = patch.object(models.nmnist, "SPEC", spec)
         self.spec_patch.start()
-        with tempfile.TemporaryDirectory() as data:
-            os.mkdir(os.path.join(data, "N-MNIST"))
-            self.results = evaluate("nmnist", ARCHITECTURES, data_dir=data, max_samples=2,
-                                    num_workers=0, log=lambda *_: None)
+        self.recordings = tempfile.TemporaryDirectory()
+        self.data = tempfile.TemporaryDirectory()
+        os.mkdir(os.path.join(self.data.name, "N-MNIST"))
+        self.results = evaluate("nmnist", ARCHITECTURES, data_dir=self.data.name,
+                                recording_dir=self.recordings.name, max_samples=2,
+                                num_workers=0, log=lambda *_: None)
 
     def tearDown(self):
         self.spec_patch.stop()
+        self.recordings.cleanup()
+        self.data.cleanup()
+
+    def test_recording_is_reused_with_identical_results(self):
+        # One recording per weight quantization (6-bit std3, 6-bit mse, float).
+        self.assertEqual(sorted(os.listdir(self.recordings.name)),
+                         ["nmnist_6b_mse", "nmnist_6b_std3", "nmnist_float"])
+        spec = dataclasses.replace(models.get_spec("nmnist"), dataset_class=Unreadable)
+        with patch.object(models.nmnist, "SPEC", spec):
+            again = evaluate("nmnist", ARCHITECTURES, data_dir=self.data.name,
+                             recording_dir=self.recordings.name, max_samples=2,
+                             num_workers=0, log=lambda *_: None)
+        for name, (accuracy, costs) in self.results.items():
+            self.assertEqual(again[name][0], accuracy)
+            for layer, cost in costs.items():
+                for component, c in cost.components.items():
+                    self.assertEqual(again[name][1][layer].components[component].energy_nj,
+                                     c.energy_nj)
+
+    def test_recording_round_trip_is_exact(self):
+        spec = models.get_spec("nmnist")
+        recording = open_recording(self.recordings.name, "nmnist", 6, "std3", 2)
+        chunk = next(recording.chunks())
+        net = quantized_network(models.load_pretrained(spec).eval(), spec.layers, 6, "std3")[0]
+        probe = LayerProbe(net, spec.layers)
+        spikes = next(iter(models.test_loader(spec, models.load_params(spec.path(spec.params_yaml)),
+                                              self.data.name, num_workers=0)))[1]
+        with torch.no_grad():
+            predicted = predict_class(net(spikes))
+        for name in spec.layers:
+            self.assertTrue(torch.equal(chunk.inputs[name], probe.inputs[name]), name)
+            self.assertEqual(chunk.output_counts[name].tolist(), probe.output_counts[name].tolist())
+        self.assertEqual(chunk.predictions.tolist(), predicted.tolist())
+        self.assertEqual(len(next(recording.chunks(max_samples=1))), 1)
+
+    def test_stale_or_short_recordings_are_not_used(self):
+        folder = self.recordings.name
+        self.assertIsNotNone(open_recording(folder, "nmnist", 6, "std3", 2))
+        self.assertIsNotNone(open_recording(folder, "nmnist", 6, "std3", None))  # the whole (2-sample) set
+        self.assertIsNone(open_recording(folder, "nmnist", 5, "std3", 2))        # never recorded
+        self.assertIsNone(open_recording(folder, "nmnist", 6, "std3", 2, full_outputs=True))
+        meta_path = os.path.join(folder, "nmnist_6b_std3", "meta.json")
+        with open(meta_path) as file:
+            meta = json.load(file)
+        meta["fingerprint"] = "changed checkpoint"
+        with open(meta_path, "w") as file:
+            json.dump(meta, file)
+        self.assertIsNone(open_recording(folder, "nmnist", 6, "std3", 2))
+
+    def test_full_outputs(self):
+        spec = models.get_spec("nmnist")
+        with tempfile.TemporaryDirectory() as folder:
+            recording = record("nmnist", [(6, "std3")], data_dir=self.data.name, recording_dir=folder,
+                               full_outputs=True, num_workers=0, log=lambda *_: None)[(6, "std3")]
+            chunk = next(recording.chunks())
+            for name in spec.layers:
+                self.assertEqual(chunk.outputs[name].shape[0], 2)
+                self.assertEqual([int((o != 0).sum()) for o in chunk.outputs[name]],
+                                 chunk.output_counts[name].tolist())
 
     def test_results_per_architecture_and_layer(self):
         self.assertEqual(set(self.results), {"rram_1bit_conv_xbar", "analog_c3cim", "rram_mse"})

@@ -1,16 +1,20 @@
-"""Main script: pick the model, the hardware architectures and the metrics, then
+"""Main script. The flow, top to bottom:
+
+  1. the model, its pretrained weights and the dataset;
+  2. the weight quantization;
+  3. the hardware: one crossbar type (crossbars/, with its memory cells given
+     directly), then its Components: each has a name, how many are installed
+     and powered, optionally a stage of the timeline it defines, when it draws
+     current (start / end), and its current / event energy;
+  4. the forward pass: every weighted layer's input spikes and output spikes,
+     for every time bin and sample, recorded once per weight quantization
+     under recordings/ and reused by later runs (--rerecord to redo);
+  5. the metrics, estimated from the recording.
 
     python run.py
 
-Hardware is composed from one crossbar type (crossbars/, with its memory cells
-given directly), the Mapping of the network onto it, and any Components you
-define: each has a name, how many are installed and powered, optionally a
-stage of the timeline it defines, when it draws current (start / end), and
-its current / event energy. Command-line flags override the run settings for
-one run.
-
-Results: printed, and saved under logs/ (a JSON per architecture and the
-comparison table logs/comparison_summary.csv).
+Command-line flags override the settings for one run. Results: printed, and
+saved under logs/ (a JSON per architecture and logs/comparison_summary.csv).
 """
 import argparse
 import os
@@ -20,18 +24,28 @@ from evaluation.report import export, format_results
 from evaluation.runner import evaluate
 from hardware import Component, Mapping, compose
 
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
 # ============================================================================
-# RUN SETTINGS
+# 1. MODEL, PRETRAINED WEIGHTS AND DATASET
 # ============================================================================
-MODEL = "nmnist"       # "nmnist" or "gesture"
-MAX_SAMPLES = 100      # first test samples to evaluate; None = the full test set
-PARALLEL = None        # samples evaluated at once; None = the model's default (N-MNIST 50, gesture 2)
+MODEL = "nmnist"       # "nmnist" or "gesture" (pretrained weights in pretrained/)
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = None     # e.g. "/data/neuromorphic"
+MAX_SAMPLES = 100      # first test samples to evaluate; None = the full test set
+PARALLEL = None        # samples run at once; None = the model's default (N-MNIST 50, gesture 2)
+# Recorded forward passes (layer inputs and outputs), reused across runs.
+RECORDING_DIR = os.path.join(ROOT, "recordings")
 
 # ============================================================================
-# HARDWARE: architectures to evaluate (names must be unique)
+# 2. WEIGHT QUANTIZATION
+# ============================================================================
+WEIGHT_BITS = 6        # None = float weights (analog encoding only)
+WEIGHT_SCALING = "std3"  # "std<k>", "max" or "mse" (see README, Mapping)
+
+# ============================================================================
+# 3. HARDWARE: the crossbar first, then its components (names must be unique)
 # ============================================================================
 VDD = 1.1
 RRAM_1BIT_XBAR = compose(
@@ -39,8 +53,8 @@ RRAM_1BIT_XBAR = compose(
     # conv="parallel": one weight copy per output position (copies that fit
     # share a tile), so every analog LIF has its own columns; it cannot store
     # and restore its membrane potential to serve several pixels.
-    Mapping(weight_bits=6, weight_scaling="std3", weight_encoding="twos_complement",
-            conv="parallel"),
+    Mapping(weight_bits=WEIGHT_BITS, weight_scaling=WEIGHT_SCALING,
+            weight_encoding="twos_complement", conv="parallel"),
     [
         # Crossbar: 64x64 tiles of 1-bit RRAM, 0.2 V read made from VDD; its
         # "read" stage (5 ns) runs in every activation.
@@ -59,7 +73,7 @@ RRAM_1BIT_XBAR = compose(
 ARCHITECTURES = [RRAM_1BIT_XBAR]
 
 # ============================================================================
-# METRICS: switch each reported metric on or off
+# 4. METRICS: switch each reported metric on or off
 # ============================================================================
 METRICS = {
     "accuracy": True,      # software accuracy at the architecture's weight precision
@@ -73,24 +87,28 @@ METRICS = {
     "components": True,    # per-component breakdown within each layer
 }
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LOG_DIR = os.path.join(ROOT, "logs")
 
 
 def main():
+    """4. Record the forward pass (or reuse the recording), 5. estimate the metrics."""
     parser = argparse.ArgumentParser(description="SNN inference + CIM hardware metrics")
     parser.add_argument("--model", default=MODEL, choices=["nmnist", "gesture"])
     parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
     parser.add_argument("--samples", type=int, default=MAX_SAMPLES,
                         help="first test samples to evaluate; -1 = the full test set")
     parser.add_argument("--every", type=int, default=1000,
-                        help="print the accuracy so far every N samples (default 1000)")
+                        help="print progress every N samples (default 1000)")
     parser.add_argument("--parallel", type=int, default=PARALLEL,
-                        help="samples evaluated at once (default: N-MNIST 50, gesture 2)")
+                        help="samples run at once when recording (default: N-MNIST 50, gesture 2)")
+    parser.add_argument("--recordings", default=RECORDING_DIR, help="folder of recorded forward passes")
+    parser.add_argument("--rerecord", action="store_true", help="record the forward pass again")
     args = parser.parse_args()
 
     results = evaluate(args.model, ARCHITECTURES, data_dir=args.data,
+                       recording_dir=args.recordings,
                        max_samples=None if args.samples in (None, -1) else args.samples,
-                       parallel=args.parallel, log_every=args.every)
+                       parallel=args.parallel, rerecord=args.rerecord, log_every=args.every)
     print(format_results(results, METRICS))
     for row in export(results, ARCHITECTURES, args.model, METRICS, LOG_DIR):
         print(f"saved {row['result_json']}")

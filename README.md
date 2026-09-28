@@ -5,7 +5,7 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 ## 1. Repository layout
 
 ```text
-run.py                 MAIN SCRIPT: model, architectures to evaluate, metric switches
+run.py                 MAIN SCRIPT: model and data, weight quantization, hardware, metric switches
 crossbars/             crossbar types, one per file
   conv_xbar.py         current-mode crossbar (cell current G x v_read into each column)
   c3cim_xbar.py        constant-current crossbar with shared column drivers
@@ -19,29 +19,35 @@ models/                SNN networks, dataset readers and their neuron/simulation
   events.py            event-file readers and spike binning
 pretrained/            trained weights (nmnist_lenet.pth, gesture.pth)
 evaluation/            pipeline used by run.py
-  runner.py            inference per weight precision, per-layer hardware evaluation
-  probes.py            layer input spikes and LIF output spike counts
+  runner.py            evaluate(): recordings -> per-layer hardware evaluation; accuracy sweep
+  recording.py         the recorded forward pass: layer inputs and outputs, compressed
+  probes.py            layer input spikes and LIF output spikes
   report.py            metric switches, text report, JSON and CSV export
   software.py          prediction, loss, accuracy
 examples/              run_dense_layer.py: run.py for one random dense layer, checked by hand
-tools/                 accuracy_sweep.py (accuracy vs weight bits); checkpoint conversion and slayerSNN verification
+tools/                 record.py (record forward passes ahead), accuracy_sweep.py (accuracy vs weight bits);
+                       checkpoint conversion and slayerSNN verification
+recordings/            recorded forward passes (created on first use; not in git)
 tests/                 reference-model, hand-calculation and pipeline tests
 ```
 
 ## 2. Quick start
 
-Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Then edit `run.py`:
+Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. `run.py` follows the flow of an evaluation, top to bottom:
 
-- `MODEL`, `MAX_SAMPLES`, `PARALLEL`: what to run (the first `MAX_SAMPLES` test samples, `None` = all; `PARALLEL` samples evaluated at once, `None` = the model's default).
-- `DATASET_DIR`: where the datasets are (see below).
-- `ARCHITECTURES`: which designs to evaluate, each composed from a crossbar (with its memory cells), the mapping of the network onto it, and your own components (see section 3).
-- `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
+1. **Model and data**: `MODEL`, `DATASET_DIR` (see below), `MAX_SAMPLES` (the first test samples, `None` = all), `PARALLEL` (samples run at once, `None` = the model's default), `RECORDING_DIR`.
+2. **Weight quantization**: `WEIGHT_BITS`, `WEIGHT_SCALING`.
+3. **Hardware**: `ARCHITECTURES`, each a crossbar (with its memory cells) and then its components (section 3), mapped with the weight quantization of step 2.
+4. **Forward pass**: the network runs once per weight quantization and every weighted layer's input spikes and output spikes (all channels, pixels, time bins and samples) are **recorded** (see below). Later runs reuse the recording instead of rerunning inference.
+5. **Metrics**: estimated from the recording; `METRICS` switches each one on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
 
 ```bash
 python run.py                                   # settings in run.py
 python run.py --data /data/neuromorphic         # dataset location for this run
 python run.py --model gesture                   # override the model once
-python run.py --model nmnist --samples -1       # full N-MNIST test set (slow)
+python run.py --model nmnist --samples -1       # full N-MNIST test set
+python run.py --rerecord                        # record the forward pass again
+python tools/record.py --data /data/neuromorphic  # record both test sets ahead, at run.py's quantization
 python -m unittest discover -s tests            # all tests
 ```
 
@@ -58,6 +64,8 @@ Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without 
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
 
 **Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `--samples 1000`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Mapping**). `--sensitivity` also quantizes one layer at a time (the others float) to show which layers limit the accuracy, and `--layer-bits SF1=8 SF2=float` fixes named layers' bit widths for mixed precision. The accuracy so far is printed every `--every` samples (default 1000) and at the end.
+
+**Recordings** (`recordings/<model>_<bits>b_<scaling>/`, one per model and weight quantization): every weighted layer's input spikes, bit-packed (1 bit per entry, time innermost) and zlib-compressed, which shrinks them about 7x (about 20 KiB per N-MNIST sample, so a few hundred MB for its whole test set); each layer's output spike count per sample (full output spikes too with `tools/record.py --full-outputs`); the predictions and labels. Hardware only needs the output counts: a layer's output is not the next layer's input (pooling and another spiking step lie between), and no metric uses the full output trains. A recording stores a fingerprint of the checkpoint, the neuron YAML, the SNN code and the quantization; if any of them changes, or more samples are asked for than were recorded, it is recorded again instead of reused. The hardware evaluation reads only the recording, never the dataset.
 
 Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits` and `weight_scaling`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Samples are evaluated in parallel in batches set per model (`batch_size` in the model's `SPEC`: N-MNIST 50, DVS-Gesture 2, which needs about 0.5 GB of GPU memory per sample); `--parallel N` (or `PARALLEL` in `run.py`) overrides it for one run. It only affects speed and memory, not the results; lower it if a GPU runs out of memory.
 

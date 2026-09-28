@@ -1,19 +1,21 @@
 """Forward probes on a network: the input spikes of each profiled layer and
-the number of spikes its LIF neurons emit."""
+the spikes its LIF neurons emit."""
 import torch
 
 
 class LayerProbe:
     """Records, for the named weighted layers, their input tensor and the
-    spike count of the neuron stage that follows them.
+    spikes of the neuron stage that follows them: the batch total
+    (`output_spikes`), per sample (`output_counts`), and with keep_outputs the
+    spike tensor itself (`outputs`).
 
     A layer's neurons are the first ``net.slayer.spike`` call after the
     layer runs; any other conv-like module (e.g. pooling) in between resets
     the attribution.
     """
 
-    def __init__(self, net, layer_names):
-        self.inputs, self.output_spikes = {}, {}
+    def __init__(self, net, layer_names, keep_outputs=False):
+        self.inputs, self.output_spikes, self.output_counts, self.outputs = {}, {}, {}, {}
         self._current = None
         self._handles = []
         self._net = net
@@ -26,7 +28,11 @@ class LayerProbe:
         def counting_spike(membrane):
             spikes = spike(membrane)
             if self._current is not None:
-                self.output_spikes[self._current] = int(torch.count_nonzero(spikes))
+                per_sample = (spikes != 0).reshape(len(spikes), -1).sum(1)
+                self.output_counts[self._current] = per_sample.cpu()
+                self.output_spikes[self._current] = int(per_sample.sum())
+                if keep_outputs:
+                    self.outputs[self._current] = spikes.detach()
                 self._current = None
             return spikes
         net.slayer.spike = counting_spike
@@ -39,8 +45,8 @@ class LayerProbe:
         return record
 
     def clear(self):
-        self.inputs.clear()
-        self.output_spikes.clear()
+        for store in (self.inputs, self.output_spikes, self.output_counts, self.outputs):
+            store.clear()
 
     def remove(self):
         for handle in self._handles:

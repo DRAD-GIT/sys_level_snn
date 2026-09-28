@@ -1,128 +1,88 @@
-"""Software SNN inference with per-layer CIM hardware evaluation.
+"""Software SNN inference and per-layer CIM hardware evaluation.
 
-Runs the pretrained network on the test set and feeds each profiled layer's
-input spikes to hardware.evaluate_layer for every architecture. Architectures
-are grouped by weight precision: each group runs the network with the weights
-quantized as that hardware stores them, so accuracy and spike activity match
-the hardware. Hardware evaluation does not simulate analog nonidealities.
+1. The network runs once over the test set per weight quantization; each
+   weighted layer's input spikes and output spike counts, the predictions and
+   the labels are saved as a recording (evaluation/recording.py). An existing
+   recording that matches is reused, so inference is not repeated.
+2. The hardware of every architecture is evaluated from the recording of its
+   weight quantization: accuracy from the recorded predictions, costs from the
+   recorded spikes (hardware.evaluate_layer). Analog nonidealities are not
+   simulated.
 """
-import copy
-
 import torch
 
 import models
-from evaluation.probes import LayerProbe
-from evaluation.software import TestStats, num_spikes_loss, predict_class
-from hardware import evaluate_layer, quantize_weights
+from evaluation.recording import open_recording, precision_label, quantized_network, record
+from evaluation.software import predict_class
+from hardware import evaluate_layer
+
+__all__ = ["evaluate", "accuracy_sweep", "quantized_network"]
 
 
-def quantized_network(net, layer_names, bits, scaling="std3"):
-    """A copy of `net` whose weighted layers compute with quantized weights
-    (symmetric uniform per layer, range from `scaling`, see
-    hardware.quantize_weights), and each layer's stored values: integer codes,
-    or the float weights where unquantized.
-
-    bits: one bit width (None = float) for every layer in layer_names, or
-    {layer: bits} per layer (layers not listed stay float).
-    """
-    per_layer = bits if isinstance(bits, dict) else dict.fromkeys(layer_names, bits)
-    unknown = set(per_layer) - set(layer_names)
-    if unknown:
-        raise ValueError(f"unknown layers {sorted(unknown)}; the weighted layers are {list(layer_names)}")
-    net = copy.deepcopy(net)
-    codes = {}
-    with torch.no_grad():
-        for name in layer_names:
-            module = getattr(net, name)
-            layer_bits = per_layer.get(name)
-            codes[name], scale = quantize_weights(module.weight.detach(), layer_bits, scaling)
-            if layer_bits is not None:
-                module.weight.copy_(codes[name] * scale)
-    return net, codes
-
-
-class _PrecisionGroup:
-    """A copy of the network with weights quantized to `bits` with `scaling`,
-    the integer codes (or floats) the hardware stores, and its evaluation state."""
-
-    def __init__(self, net, layer_names, bits, scaling, architectures):
-        self.net, codes = quantized_network(net, layer_names, bits, scaling)
-        self.architectures = architectures
-        self.codes = {name: c[..., 0].cpu() for name, c in codes.items()}
-        self.stride_padding = {name: (getattr(self.net, name).stride[0],
-                                      getattr(self.net, name).padding[0]) for name in layer_names}
-        self.probe = LayerProbe(self.net, layer_names)
-        self.stats = TestStats()
-        self.costs = {arch.name: {} for arch in architectures}
-
-
-def evaluate(model, architectures, *, data_dir, max_samples=None, parallel=None, num_workers=4,
-             log_every=1000, log=print):
+def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None, parallel=None,
+             rerecord=False, full_outputs=False, num_workers=4, log_every=1000, log=print):
     """Evaluate `architectures` (hardware.Architecture) on `model`.
 
-    data_dir: the dataset folder, or a folder holding it (models.find_dataset).
+    data_dir: the dataset folder, or a folder holding it (models.find_dataset);
+    only read when a recording has to be made.
+    recording_dir: where recordings are kept; rerecord=True makes new ones.
     max_samples: evaluate only the first samples of the test set (None = all).
-    parallel: samples evaluated at once (default: the model's batch_size).
-    The accuracy so far is logged every `log_every` samples and at the end.
+    parallel: samples run at once when recording (default: the model's batch_size).
+    Progress is logged every `log_every` samples and at the end.
     Returns {architecture name: (software accuracy %, {layer: LayerCost})}.
     """
     names = [a.name for a in architectures]
     if not architectures or len(set(names)) != len(names):
         raise ValueError("define at least one architecture, with unique names")
-
     spec = models.get_spec(model)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    net = models.load_pretrained(spec, device).eval()
-    params = models.load_params(spec.path(spec.params_yaml))
-    loader = models.test_loader(spec, params, data_dir, max_samples, parallel, num_workers)
 
     by_precision = {}  # (weight bits, scaling): architectures storing weights that way
     for arch in architectures:
         by_precision.setdefault(_precision_key(arch.mapping.weight_bits,
                                                arch.mapping.weight_scaling), []).append(arch)
-    groups = [_PrecisionGroup(net, spec.layers, bits, scaling, archs)
-              for (bits, scaling), archs in by_precision.items()]
-    log(f"{spec.display_name}: evaluating {', '.join(names)}; "
-        f"{loader.batch_size} samples in parallel")
+    recordings = {key: None if rerecord else open_recording(recording_dir, model, *key, max_samples,
+                                                            full_outputs)
+                  for key in by_precision}
+    missing = [key for key, found in recordings.items() if found is None]
+    for key, found in recordings.items():
+        if found is not None:
+            log(f"{spec.display_name}: using the recorded forward pass {found.path}")
+    if missing:
+        recordings.update(record(model, missing, data_dir=data_dir, recording_dir=recording_dir,
+                                 max_samples=max_samples, parallel=parallel,
+                                 full_outputs=full_outputs, num_workers=num_workers,
+                                 log_every=log_every, log=log))
 
-    total = logged = 0
-
-    def progress():
-        log(f"  {total} samples: accuracy " + ", ".join(
-            f"{_label(*key)} {g.stats.accuracy:.2f}%" for key, g in zip(by_precision, groups)))
-    for _, spikes, target, label in loader:
-        spikes, target = spikes.to(device), target.to(device)
-        for group in groups:
-            group.probe.clear()
-            with torch.no_grad():
-                output = group.net(spikes)
-            loss = num_spikes_loss(output, target, params, group.net.slayer.psp).item()
-            group.stats.update(predict_class(output), label, loss)
-            for name in spec.layers:
-                layer_input = group.probe.inputs[name].cpu()
-                stride, padding = group.stride_padding[name]
-                shared = {}  # spike activity, reused across architectures
-                for arch in group.architectures:
-                    cost = evaluate_layer(arch, layer_input, group.codes[name], stride=stride,
-                                          padding=padding, activity_cache=shared,
-                                          output_spikes=group.probe.output_spikes.get(name, 0))
-                    costs = group.costs[arch.name]
-                    if name in costs:
-                        costs[name].add(cost)
-                    else:
-                        costs[name] = cost
-        total += len(label)
-        if _passed(total, logged, log_every):
-            progress()
-            logged = total
-    if total != logged:
-        progress()
-
+    net = models.load_pretrained(spec).eval()
+    layers = {name: getattr(net, name) for name in spec.layers}
     results = {}
-    for group in groups:
-        group.probe.remove()
-        for arch in group.architectures:
-            results[arch.name] = (group.stats.accuracy, group.costs[arch.name])
+    for key, archs in by_precision.items():
+        codes = {name: c[..., 0] for name, c in quantized_network(net, spec.layers, *key)[1].items()}
+        costs = {arch.name: {} for arch in archs}
+        correct = total = logged = 0
+        log(f"{spec.display_name}: hardware of {', '.join(a.name for a in archs)} "
+            f"({precision_label(*key)} weights)")
+        for chunk in recordings[key].chunks(max_samples):
+            correct += int((chunk.predictions == chunk.labels).sum())
+            total += len(chunk)
+            for name, module in layers.items():
+                shared = {}  # spike activity, reused across architectures
+                for arch in archs:
+                    cost = evaluate_layer(arch, chunk.inputs[name], codes[name],
+                                          stride=module.stride[0], padding=module.padding[0],
+                                          activity_cache=shared,
+                                          output_spikes=int(chunk.output_counts[name].sum()))
+                    if name in costs[arch.name]:
+                        costs[arch.name][name].add(cost)
+                    else:
+                        costs[arch.name][name] = cost
+            if _passed(total, logged, log_every):
+                log(f"  {total} samples evaluated")
+                logged = total
+        if total != logged:
+            log(f"  {total} samples evaluated")
+        for arch in archs:
+            results[arch.name] = (100 * correct / total, costs[arch.name])
     return results
 
 

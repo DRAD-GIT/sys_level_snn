@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 
 import models
-from evaluation.software import num_spikes_loss, predict_class
+from evaluation.software import predict_class
 from models.srm import Dense, Pool, SRMLayer, alpha_kernel
 
 NEURON = {"type": "SRMALPHA", "theta": 10, "tauSr": 10.0, "tauRef": 1.0,
@@ -150,20 +150,6 @@ class SoftwareMetricTests(unittest.TestCase):
         out[0, 2, ..., :3] = 1
         out[1, 0, ..., :1] = 1
         self.assertEqual(predict_class(out).tolist(), [2, 0])
-
-    def test_num_spikes_loss_zero_at_target_counts(self):
-        params = {"simulation": {"Ts": 1.0},
-                  "training": {"error": {"tgtSpikeRegion": {"start": 0, "stop": 10},
-                                         "tgtSpikeCount": {True: 4, False: 1}}}}
-        target = torch.zeros(1, 2, 1, 1, 1)
-        target[0, 0] = 1
-        out = torch.zeros(1, 2, 1, 1, 10)
-        out[0, 0, ..., :4] = 1
-        out[0, 1, ..., :1] = 1
-        psp = SRMLayer(NEURON, SIMULATION).psp
-        self.assertEqual(num_spikes_loss(out, target, params, psp).item(), 0.0)
-        out[0, 1, ..., 1] = 1  # one surplus spike: error 1/10 over 10 steps
-        self.assertAlmostEqual(num_spikes_loss(out, target, params, psp).item(), 0.5 * 10 * 0.01)
 
 
 if __name__ == "__main__":
