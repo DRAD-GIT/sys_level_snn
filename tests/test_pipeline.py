@@ -197,7 +197,7 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNotNone(open_recording(self.recordings.name, "nmnist", 6, "std3", -1))
         with self.assertRaisesRegex(ValueError, "samples"):
             models.sample_limit(-2)
-        with self.assertRaisesRegex(ValueError, "max_samples"):
+        with self.assertRaisesRegex(ValueError, "or -1 for all"):
             models.test_loader(spec, params, data, max_samples=0)
 
     def test_quantized_network_is_a_copy(self):
