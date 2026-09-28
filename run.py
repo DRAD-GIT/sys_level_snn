@@ -133,7 +133,10 @@ C3CIM_OP_XBAR = compose(
 
 # Designs evaluated and compared side by side (same weight quantization:
 # they share one recorded forward pass).
-ARCHITECTURES = [RRAM_1BIT_XBAR,C3CIM_XBAR, C3CIM_OP_XBAR]
+ARCHITECTURES = [RRAM_1BIT_XBAR, C3CIM_XBAR, C3CIM_OP_XBAR]
+# Our work: listed last in the paper table (tools/latex_table.py), where its
+# values that beat every other row are bold.
+OURWORK = [C3CIM_XBAR, C3CIM_OP_XBAR]
 
 # ============================================================================
 # 4. METRICS: switch each reported metric on or off

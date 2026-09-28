@@ -43,22 +43,44 @@ class LatexTableTests(unittest.TestCase):
         self.assertEqual([latex_table.number(v) for v in (396, 22.94, 93.0, 0.0234, 0)],
                          ["396", "22.9", "93", "0.023", "0"])
 
-    def test_rows_and_bold(self):
+    def test_red_best_and_bold_wins(self):
         runs = summary([["nmnist", "ours", "c", 10000, 1400, 93, 15.3, 161.7],
                         ["gesture", "ours", "c", 264, 25900, 359.6, 72, 172.3]])
         rows = [{"work": "A", "specs": ["40"], "nmnist": (396, 22.9, 9.1, 25.4),
                  "gesture": (1970.4, 88.5, 174.3, 25.6)},
                 {"work": "Empty", "comment": "placeholder"},
-                {"work": "Ours", "midrule": True, "specs": ["40"], "architecture": "ours"}]
+                {"work": "Ours", "midrule": True, "specs": ["40"], "architecture": "ours",
+                 "ours": True}]
         table = latex_table.build_table(rows, runs, warn=lambda _: None)
-        self.assertIn(" & \\textbf{15.3} & 93 & \\textbf{1.4} & \\textbf{161.7}\n", table)
-        self.assertIn(" & 396 & \\textbf{22.9}", latex_table.build_table(rows, runs, bold="all",
-                                                                        warn=lambda _: None))
-        self.assertIn(" & 396 & 22.9 & 9.1 & 25.4\n", table)       # literature: never bold
+        # Ours beats A in power, energy and TOPS/W (bold, and best: red), not latency.
+        self.assertIn(" & \\textcolor{red}{\\textbf{15.3}} & 93 & \\textcolor{red}{\\textbf{1.4}}"
+                      " & \\textcolor{red}{\\textbf{161.7}}\n", table)
+        self.assertIn(" & 396 & \\textcolor{red}{22.9} & 9.1 & 25.4\n", table)   # best, not ours
         self.assertIn("Empty % placeholder\n" + " &" * 16 + " \\\\\n", table)
         self.assertIn("\\midrule\nOurs\n", table)
         self.assertNotIn(" \n", table)
+        self.assertNotIn("\\midrule\n\\midrule", table)
 
+    def test_our_work_last_and_bold_only_against_others(self):
+        import crossbars
+        from hardware import Component, Mapping, compose
+
+        def arch(name):
+            return compose(name, Mapping(), [crossbars.conv_xbar(r_on=1e3, r_off=1e4),
+                                             Component("lif", count="outputs", time_ns=2.0)])
+        base, a, b = arch("base"), arch("a"), arch("b")
+        rows = latex_table.architecture_rows([a, base, b], ourwork=[a, b])
+        self.assertEqual([(r["work"], r["ours"], r["midrule"]) for r in rows],
+                         [("base", False, True), ("a", True, True), ("b", True, False)])
+        runs = summary([["nmnist", "base", "c", 10000, 3000, 10, 30, 20],
+                        ["nmnist", "a", "c", 10000, 2000, 20, 20, 30],     # beats base in 3
+                        ["nmnist", "b", "c", 10000, 1000, 30, 10, 40]])    # the best in 3
+        table = latex_table.build_table(rows, runs, warn=lambda _: None)
+        self.assertIn("base\n & & & & 1 & & 10/1 & & 64\n & 30 & \\textcolor{red}{10} & 3 & 20\n",
+                      table)
+        self.assertIn(" & \\textbf{20} & 20 & \\textbf{2} & \\textbf{30}\n", table)
+        self.assertIn(" & \\textcolor{red}{\\textbf{10}} & 30 & \\textcolor{red}{\\textbf{1}}"
+                      " & \\textcolor{red}{\\textbf{40}}\n", table)
 
     def test_one_row_per_architecture(self):
         import crossbars
@@ -69,12 +91,14 @@ class LatexTableTests(unittest.TestCase):
             crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=16),
             Component("lif", count="outputs", time_ns=2.0)])
         rows = latex_table.architecture_rows(
-            [rram, c3cim], {"c3cim_op_xbar": {"work": "This work", "tech": "40", "sensing": "Voltage"}})
+            [rram, c3cim], specs={"c3cim_op_xbar": {"work": "This work", "tech": "40",
+                                                    "sensing": "Voltage"}})
         self.assertEqual([(r["work"], r["specs"], r["midrule"]) for r in rows],
                          [("rram\\_xbar", ["", "", "", "1", "", "200/20", "", "64"], True),
                           ("This work", ["40", "", "", "1", "", "20/2", "Voltage", "16"], False)])
+        self.assertEqual(latex_table.LITERATURE, [])                 # none by default
         with self.assertRaisesRegex(ValueError, "unknown keys"):
-            latex_table.architecture_rows([rram], {"rram_xbar": {"voltage": "1"}})
+            latex_table.architecture_rows([rram], specs={"rram_xbar": {"voltage": "1"}})
         runs = summary([["nmnist", "rram_xbar", "c", 10000, 1400, 93, 15.3, 161.7]])
         warnings = []
         table = latex_table.build_table(rows, runs, warn=warnings.append)

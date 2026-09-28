@@ -3,18 +3,21 @@
     python tools/latex_table.py                       # -> logs/comparison_table.tex
     python tools/latex_table.py --out paper/table.tex --logs logs
 
-The table holds the LITERATURE rows (published numbers) and then, after a
-rule, one row per architecture of run.py's ARCHITECTURES (or --architectures),
-named after it, with its N-MNIST and DVS-Gesture results from
+The table holds the LITERATURE rows (published numbers; none by default),
+then one row per architecture of run.py's ARCHITECTURES (or --architectures),
+named after it, and last, after a rule, the architectures of run.py's
+OURWORK. Every architecture row gets its N-MNIST and DVS-Gesture results from
 logs/comparison_summary.csv, written by run.py. For each model it uses the
 architecture's latest configuration (the last run of it, so a design changed
 since then is not mixed in) and, of that, the run with the most samples; a
 run on fewer samples than the whole test set, or a missing run (empty cells),
 is reported with a warning. Of an architecture's hardware specifications,
 cell precision, R_High/R_Low and accumulation (rows summed per read) are
-read from it; the others stay empty unless set in OURS. Units: power mW, latency us and energy uJ per
-inference, TOPS/W. A value of this work that is the best of its column
-(lowest power, latency and energy, highest TOPS/W) is set in bold (BOLD).
+read from it; the others stay empty unless set in SPECS. Units: power mW,
+latency us and energy uJ per inference, TOPS/W. In every result column the
+best value of any row (lowest power, latency and energy, highest TOPS/W) is
+red, and a value of our work is bold where it beats every row that is not
+our work (literature and other architectures).
 
 Include the output with \\input{comparison_table}; the preamble needs
 booktabs, multirow, makecell, adjustbox and xcolor with [table] (colortbl).
@@ -32,35 +35,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ============================================================================
 # THE TABLE
 # ============================================================================
-# Literature rows. specs: Tech. (nm), Supply (V), Storage device,
-# Cell/precision, Bit-cell, R_High/R_Low (kOhm), Sensing mode, Accumulation
-# (LaTeX allowed, e.g. \textbf{...}); "nmnist" / "gesture" = (power mW,
-# latency us, energy uJ, TOPS/W); None = empty cells.
-LITERATURE = [
-    {"work": r"ISSCC'22~\cite{khwa_40-nm_2022}",
-     "specs": ["40", "0.9", "PCM", "1", "1T1R", "--", "Voltage", "8"],
-     "nmnist": (396, 22.9, 9.1, 25.4), "gesture": (1970.4, 88.5, 174.3, 25.6)},
-    {"work": r"AICAS'23~\cite{singh_1151_2023}",
-     "specs": ["40", "1.1", "Resistive", "1", "1T1R", "200/2", "Current", "64"],
-     "nmnist": (531.6, 9.8, 5.2, 44.4), "gesture": (1040.2, 37.7, 39.2, 113.8)},
-    {"work": r"Venue'YY~[X]", "comment": "placeholder work 1"},
-    {"work": r"Venue'YY~[Y]", "comment": "placeholder work 2"},
-]
+# Literature rows (none by default). specs: Tech. (nm), Supply (V), Storage
+# device, Cell/precision, Bit-cell, R_High/R_Low (kOhm), Sensing mode,
+# Accumulation (LaTeX allowed); "nmnist" / "gesture" = (power mW, latency us,
+# energy uJ, TOPS/W); None = empty cells. For example:
+#   {"work": r"ISSCC'22~\cite{khwa_40-nm_2022}",
+#    "specs": ["40", "0.9", "PCM", "1", "1T1R", "--", "Voltage", "8"],
+#    "nmnist": (396, 22.9, 9.1, 25.4), "gesture": (1970.4, 88.5, 174.3, 25.6)},
+#   {"work": r"AICAS'23~\cite{singh_1151_2023}",
+#    "specs": ["40", "1.1", "Resistive", "1", "1T1R", "200/2", "Current", "64"],
+#    "nmnist": (531.6, 9.8, 5.2, 44.4), "gesture": (1040.2, 37.7, 39.2, 113.8)},
+LITERATURE = []
 
-# Your architectures follow, one row each, named after the architecture.
-# Per architecture you may set its row's name ("work") and any specification
+# Per architecture (by name): its row's name ("work") and any specification
 # the architecture does not tell: "tech", "supply", "device", "bitcell",
-# "sensing" (and override the derived "cell", "r_ratio", "accumulation").
-OURS = {
+# "sensing" (or override the derived "cell", "r_ratio", "accumulation").
+SPECS = {
     # "c3cim_op_xbar": {"work": r"\textbf{This work}", "tech": "40", "supply": "1.1",
-    #                   "device": "Resistive", "bitcell": r"\textbf{2T1R}", "sensing": "Voltage"},
+    #                   "device": "Resistive", "bitcell": "2T1R", "sensing": "Voltage"},
 }
 SPEC_KEYS = ("tech", "supply", "device", "cell", "bitcell", "r_ratio", "sensing", "accumulation")
 MODELS = ("nmnist", "gesture")
 FULL_TEST_SET = {"nmnist": 10000, "gesture": 264}
-# Bold the best value of each result column: "results" = only in your
-# architectures' rows, "all" = in any row, None = never.
-BOLD = "results"
 # ============================================================================
 
 CAPTION = "Hardware comparison of deploying SNN models trained on the N-MNIST and IBM-Gesture datasets"
@@ -156,20 +152,29 @@ def derived_specs(arch):
     return specs
 
 
-def architecture_rows(architectures, ours=None):
+def architecture_rows(architectures, ourwork=(), specs=None):
     """One table row per Architecture, named after it (LaTeX-escaped), with
-    derived specifications, overridden or completed by ours[name]."""
+    derived specifications, overridden or completed by specs[name]: first the
+    others, then (after a rule) those in `ourwork` (Architectures or names)."""
+    ours = {a if isinstance(a, str) else a.name for a in ourwork}
+    names = {a.name for a in architectures}
+    architectures = list(architectures) + [a for a in ourwork
+                                           if not isinstance(a, str) and a.name not in names]
+    ordered = [a for a in architectures if a.name not in ours] + \
+              [a for a in architectures if a.name in ours]
     rows = []
-    for i, arch in enumerate(architectures):
-        extra = dict((ours or {}).get(arch.name, {}))
+    for i, arch in enumerate(ordered):
+        extra = dict((specs or {}).get(arch.name, {}))
         unknown = set(extra) - set(SPEC_KEYS) - {"work"}
         if unknown:
-            raise ValueError(f"OURS[{arch.name!r}]: unknown keys {sorted(unknown)}; use 'work' "
+            raise ValueError(f"SPECS[{arch.name!r}]: unknown keys {sorted(unknown)}; use 'work' "
                              f"or {', '.join(SPEC_KEYS)}")
-        specs = {**derived_specs(arch), **extra}
+        values = {**derived_specs(arch), **extra}
+        first_ours = arch.name in ours and (i == 0 or ordered[i - 1].name not in ours)
         rows.append({"work": extra.get("work", arch.name.replace("_", r"\_")),
-                     "specs": [specs.get(key, "") for key in SPEC_KEYS],
-                     "architecture": arch.name, "midrule": i == 0})
+                     "specs": [values.get(key, "") for key in SPEC_KEYS],
+                     "architecture": arch.name, "ours": arch.name in ours,
+                     "midrule": i == 0 or first_ours})
     return rows
 
 
@@ -183,26 +188,31 @@ def row_values(row, runs, warn=print):
     return values
 
 
-def build_table(rows, runs, bold=BOLD, warn=print):
-    """The LaTeX table for `rows` with results from `runs` (load_results)."""
+def build_table(rows, runs, warn=print):
+    """The LaTeX table for `rows` with results from `runs` (load_results).
+    Per result column: the best value of any row in red; a value of a row
+    with "ours" in bold where it beats every row without it."""
     values = [row_values(row, runs, warn) for row in rows]
-    # Best per result column (as printed, so ties in the table are all bold).
-    best = {}
+    # Compared as printed, so equal printed values are marked alike.
+    best, best_other = {}, {}
     for m in range(len(MODELS)):
         for k, pick in enumerate(BEST):
             column = [float(number(v[m][k])) for v in values if v[m] is not None]
+            others = [float(number(v[m][k])) for row, v in zip(rows, values)
+                      if v[m] is not None and not row.get("ours")]
             if len(column) > 1:
                 best[m, k] = pick(column)
+            if others:
+                best_other[m, k] = pick(others)
     lines = [HEADER % {"caption": CAPTION, "label": LABEL}]
-    for row, row_vals in zip(rows, values):
-        if row.get("midrule"):
+    for i, (row, row_vals) in enumerate(zip(rows, values)):
+        if row.get("midrule") and i > 0:        # the header already ends with a rule
             lines.append("\\midrule\n")
         comment = f" % {row['comment']}" if row.get("comment") else ""
         if not row.get("specs") and all(v is None for v in row_vals):   # an empty row
             lines.append(f"{row['work']}{comment}\n{' &' * 16} \\\\\n")
             continue
         specs = list(row.get("specs") or []) + [""] * (8 - len(row.get("specs") or []))
-        bold_row = bold == "all" or (bold == "results" and row.get("architecture"))
         cells = []
         for m, v in enumerate(row_vals):
             for k in range(4):
@@ -210,8 +220,12 @@ def build_table(rows, runs, bold=BOLD, warn=print):
                     cells.append("")
                     continue
                 text = number(v[k])
-                if bold_row and best.get((m, k)) == float(text):
+                value, other = float(text), best_other.get((m, k))
+                if row.get("ours") and other is not None and value != other \
+                        and BEST[k](value, other) == value:        # beats every other row
                     text = f"\\textbf{{{text}}}"
+                if best.get((m, k)) == value:                    # best of the column
+                    text = f"\\textcolor{{red}}{{{text}}}"
                 cells.append(text)
         lines.append(f"{row['work']}{comment}\n"
                      f" & {' & '.join(specs)}\n"
@@ -229,7 +243,8 @@ def main():
                         help="folder of run.py's results (comparison_summary.csv)")
     parser.add_argument("--out", help="output .tex (default: <logs>/comparison_table.tex)")
     parser.add_argument("--architectures", nargs="+",
-                        help="names of run.py architectures to include (default: ARCHITECTURES)")
+                        help="names of run.py architectures to include (default: ARCHITECTURES; "
+                             "OURWORK is always included)")
     args = parser.parse_args()
     sys.path.insert(0, ROOT)
     import run
@@ -242,7 +257,7 @@ def main():
             parser.error(f"not defined in run.py: {missing}; defined: {sorted(known)}")
         architectures = [known[n] for n in args.architectures]
     runs = load_results(os.path.join(args.logs, "comparison_summary.csv"))
-    rows = LITERATURE + architecture_rows(architectures, OURS)
+    rows = LITERATURE + architecture_rows(architectures, getattr(run, "OURWORK", []), SPECS)
     table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr))
     out = args.out or os.path.join(args.logs, "comparison_table.tex")
     with open(out, "w", encoding="utf-8") as file:
