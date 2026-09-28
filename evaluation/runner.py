@@ -17,22 +17,31 @@ from evaluation.software import TestStats, num_spikes_loss, predict_class
 from hardware import evaluate_layer, quantize_weights
 
 
+def quantized_network(net, layer_names, bits):
+    """A copy of `net` whose weighted layers compute with weights quantized to
+    `bits` (symmetric uniform per layer; None keeps them), and each layer's
+    stored values: integer codes, or the float weights for bits=None."""
+    net = copy.deepcopy(net)
+    codes = {}
+    with torch.no_grad():
+        for name in layer_names:
+            module = getattr(net, name)
+            codes[name], scale = quantize_weights(module.weight.detach(), bits)
+            if bits is not None:
+                module.weight.copy_(codes[name] * scale)
+    return net, codes
+
+
 class _PrecisionGroup:
     """A copy of the network with weights quantized to `bits`, the integer
     codes (or floats) the hardware stores, and its evaluation state."""
 
     def __init__(self, net, layer_names, bits, architectures):
-        self.net = copy.deepcopy(net)
+        self.net, codes = quantized_network(net, layer_names, bits)
         self.architectures = architectures
-        self.codes, self.stride_padding = {}, {}
-        with torch.no_grad():
-            for name in layer_names:
-                module = getattr(self.net, name)
-                codes, scale = quantize_weights(module.weight.detach(), bits)
-                if bits is not None:  # the network computes with the stored values
-                    module.weight.copy_(codes * scale)
-                self.codes[name] = codes[..., 0].cpu()
-                self.stride_padding[name] = (module.stride[0], module.padding[0])
+        self.codes = {name: c[..., 0].cpu() for name, c in codes.items()}
+        self.stride_padding = {name: (getattr(self.net, name).stride[0],
+                                      getattr(self.net, name).padding[0]) for name in layer_names}
         self.probe = LayerProbe(self.net, layer_names)
         self.stats = TestStats()
         self.costs = {arch.name: {} for arch in architectures}
@@ -99,3 +108,37 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
         for arch in group.architectures:
             results[arch.name] = (group.stats.accuracy, group.costs[arch.name])
     return results
+
+
+def accuracy_sweep(model, bit_widths, *, data_dir, batch_size=None, max_batches=None,
+                   num_workers=4, log=print):
+    """Test accuracy (%) of `model` with its weights quantized to each of
+    `bit_widths` (None = the trained float weights). The test set is read once;
+    every batch runs through all quantized networks. No hardware evaluation.
+    Returns {bits: accuracy}."""
+    spec = models.get_spec(model)
+    batch_size = min(batch_size or 32, spec.max_batch_size or batch_size or 32)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    net = models.load_pretrained(spec, device).eval()
+    params = models.load_params(spec.path(spec.params_yaml))
+    loader = DataLoader(models.test_dataset(spec, params, data_dir), batch_size=batch_size,
+                        shuffle=False, num_workers=num_workers)
+    nets = {bits: quantized_network(net, spec.layers, bits)[0] for bits in bit_widths}
+    correct, total = dict.fromkeys(bit_widths, 0), 0
+    log(f"{spec.display_name}: accuracy with weights of {', '.join(_label(b) for b in bit_widths)}")
+    with torch.no_grad():
+        for batch_index, (_, spikes, _, label) in enumerate(loader):
+            if max_batches is not None and batch_index == max_batches:
+                break
+            spikes = spikes.to(device)
+            for bits, quantized in nets.items():
+                correct[bits] += int((predict_class(quantized(spikes)) == label).sum())
+            total += len(label)
+            if total % 1000 < len(label):
+                log(f"  {total} samples: " + ", ".join(
+                    f"{_label(b)} {100 * c / total:.2f}%" for b, c in correct.items()))
+    return {bits: 100 * c / total for bits, c in correct.items()}
+
+
+def _label(bits):
+    return "float" if bits is None else f"{bits}-bit"

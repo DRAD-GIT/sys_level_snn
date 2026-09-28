@@ -13,7 +13,7 @@ import models.nmnist
 from architectures import crossbars
 from evaluation.probes import LayerProbe
 from evaluation.report import export, format_results
-from evaluation.runner import evaluate
+from evaluation.runner import accuracy_sweep, evaluate, quantized_network
 from hardware import Component, Precision, Stage, compose
 from run import RRAM_1BIT_XBAR
 
@@ -80,6 +80,25 @@ class PipelineTests(unittest.TestCase):
         sc1 = self.results["rram_1bit_conv_xbar"][1]["SC1"]
         self.assertEqual(sc1.geometry.windows, 28 * 28)          # 34x34 input, 7x7 kernel
         self.assertGreater(sc1.output_spikes, 0)
+
+    def test_accuracy_sweep_matches_pipeline(self):
+        with tempfile.TemporaryDirectory() as data:
+            os.mkdir(os.path.join(data, "N-MNIST"))
+            sweep = accuracy_sweep("nmnist", [4, None], data_dir=data, batch_size=2,
+                                   max_batches=1, num_workers=0, log=lambda *_: None)
+        # Same quantization as the pipeline: 4-bit = run.py's design, float = analog.
+        self.assertEqual(sweep[4], self.results["rram_1bit_conv_xbar"][0])
+        self.assertEqual(sweep[None], self.results["analog_c3cim"][0])
+
+    def test_quantized_network_is_a_copy(self):
+        spec = models.get_spec("nmnist")
+        net = models.load_pretrained(spec)
+        original = net.SC1.weight.clone()
+        quantized, codes = quantized_network(net, spec.layers, 3)
+        self.assertTrue(torch.equal(net.SC1.weight, original))
+        for name in spec.layers:
+            self.assertLessEqual(len(torch.unique(getattr(quantized, name).weight)), 7)  # +/-3
+            self.assertLessEqual(int(codes[name].abs().max()), 3)
 
     def test_metric_switches(self):
         metrics = {"energy": True, "latency": True, "area": False, "layers": True, "components": False}

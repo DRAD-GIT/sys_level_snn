@@ -23,7 +23,7 @@ evaluation/            pipeline used by run.py
   report.py            metric switches, text report, JSON and CSV export
   software.py          prediction, loss, accuracy
 examples/              run_dense_layer.py: run.py for one random dense layer, checked by hand
-tools/                 checkpoint conversion and slayerSNN verification scripts
+tools/                 accuracy_sweep.py (accuracy vs weight bits); checkpoint conversion and slayerSNN verification
 tests/                 reference-model, hand-calculation and pipeline tests
 ```
 
@@ -55,6 +55,8 @@ N-MNIST.../                        Gesture.../
 Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without extension>/<class>.npy` for every trial listed in `trials_to_test.txt`.
 
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
+
+**Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `-b`), reading each test set once, and saves `logs/weight_quantization.csv`.
 
 Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Gesture batch size is capped at two.
 
@@ -177,7 +179,7 @@ The networks were trained with the slayerSNN (SLAYER PyTorch) framework, which i
 
 The kernels generated from the YAMLs match the kernels stored in the trained weights bit for bit. `tests/test_srm.py` checks the layers against literal transcriptions of slayerSNN's CUDA loops. This is an inference implementation only: it has no surrogate gradients, so it cannot train.
 
-**Verification against the original framework.** slayerSNN (built from source with CUDA 12.8 and PyTorch 2.8 on an RTX 2080 Ti) ran both networks (N-MNIST: the first 20 test samples and the whole test set; DVS-Gesture: the first 5 test samples); `SRMLayer` was then run on the same inputs:
+**Verification against the original framework.** slayerSNN (built from source with CUDA 12.8 and PyTorch 2.8 on an RTX 2080 Ti) ran both networks (detailed recordings of the first 20 N-MNIST and 5 DVS-Gesture test samples, and predictions on both whole test sets); `SRMLayer` was then run on the same inputs:
 
 | Check | N-MNIST | DVS-Gesture |
 |---|---|---|
@@ -185,7 +187,7 @@ The kernels generated from the YAMLs match the kernels stored in the trained wei
 | every layer's input spikes | 0 of 24.5 M differ (SC1-SC3, SF1, SF2) | 0 of 63.1 M differ (SC1, SC2, SF1, SF2) |
 | output spikes and predicted classes | identical, 20/20 | identical, 5/5 |
 | hardware energy from either set of spikes | identical | identical |
-| full test set, batched on the GPU | 97.77% vs 97.77%, same prediction on 10000/10000 | not run |
+| full test set, batched on the GPU | 97.77% vs 97.77%, same prediction on 10000/10000 | 86.36% vs 86.36%, same prediction on 264/264 |
 
 To repeat or extend the check on a machine with slayerSNN:
 
