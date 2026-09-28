@@ -88,8 +88,10 @@ class NeuronTests(unittest.TestCase):
         for ts in (1.0, 4.0):
             layer = SRMLayer(NEURON, {"Ts": ts, "tSample": 300})
             u = 14 * torch.rand(3, 4, 2, 2, 60, generator=self.gen)
-            spikes = layer.spike(u)
-            self.assertTrue(torch.equal(spikes, reference_spikes(u, layer.refKernel, 10, ts)))
+            expected = reference_spikes(u, layer.refKernel, 10, ts)
+            for skip_silent in (True, False):   # CPU default / GPU default
+                spikes = layer.spike(u, skip_silent=skip_silent)
+                self.assertTrue(torch.equal(spikes, expected), skip_silent)
             self.assertTrue(spikes.sum() > 0)
 
     def test_spike_refractory_and_threshold_equality(self):

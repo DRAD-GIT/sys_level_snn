@@ -23,7 +23,7 @@ from evaluation.runner import evaluate
 # RUN SETTINGS
 # ============================================================================
 MODEL = "nmnist"       # "nmnist" or "gesture"
-BATCH_SIZE = 1         # gesture is capped at 2
+BATCH_SIZE = 16        # samples per forward pass; gesture is capped at 2
 MAX_BATCHES = 1        # None = the full test set (slow)
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.

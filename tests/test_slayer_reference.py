@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
 import torch
 
 from tools.slayer_reference import pack, unpack
@@ -58,10 +59,28 @@ class CompareToolTests(unittest.TestCase):
             Component("lif", count="outputs", during="fire", static_ua=1.0,
                       event_pj=1.0, events="output_spike")])
         with tempfile.TemporaryDirectory() as folder:
+            # A 5-sample test set (random events) and the predictions SRMLayer
+            # makes one sample at a time, as a --full recording would hold.
+            data = os.path.join(folder, "N_MNIST")
+            os.makedirs(os.path.join(data, "Test"))
+            rng = np.random.default_rng(0)
+            for i in range(5):
+                n, ts = 3000, np.sort(rng.integers(0, 300000, 3000))
+                x, y, p = rng.integers(0, 34, n), rng.integers(0, 34, n), rng.integers(0, 2, n)
+                np.stack([x, y, (p << 7) | (ts >> 16), (ts >> 8) & 255, ts & 255], 1) \
+                    .astype(np.uint8).tofile(os.path.join(data, "Test", f"{i:05}.bin"))
+            with open(os.path.join(data, "Test.txt"), "w") as file:
+                file.write("".join(f"{i} {i % 10}\n" for i in range(5)))
+            dataset = models.test_dataset(spec, models.load_params(spec.path(spec.params_yaml)), data)
+            with torch.no_grad():
+                predictions = [int(predict_class(net(dataset[i][1][None]))[0]) for i in range(5)]
             path = os.path.join(folder, "nmnist_slayer.pt")
             torch.save({"format": FORMAT, "model": "nmnist", "device": "cpu", "samples": [sample],
-                        "full": None}, path)
-            report = compare(path, architectures=[arch], log=lambda *_: None)
+                        "full": {"predictions": predictions, "labels": [i % 10 for i in range(5)]}},
+                       path)
+            report = compare(path, full=True, data_dir=data, architectures=[arch], batch_size=2,
+                             num_workers=0, log=lambda *_: None)   # batches of 2, 2, 1
+        self.assertEqual(report["full_agreement"], 1.0)
         self.assertEqual((report["reader_mismatches"], report["prediction_mismatches"],
                           report["output_differ"]), (0, 0, 0))
         for name, entry in report["layers"].items():

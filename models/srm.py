@@ -159,20 +159,30 @@ class SRMLayer(torch.nn.Module):
             out[..., i:].add_(spikes[..., :n_steps - i], alpha=kernel[i])
         return out * self.ts
 
-    def spike(self, membrane):
+    def spike(self, membrane, skip_silent=None):
         """Threshold the membrane potential over time, adding the refractory
         response after every spike. Returns spikes of amplitude 1/Ts; the
-        input tensor is left unchanged."""
+        input tensor is left unchanged.
+
+        skip_silent: skip time steps where no neuron fires. Default: on the
+        CPU; not on the GPU, where the check would wait for the device every
+        step. Both give identical spikes.
+        """
         shape = membrane.shape
         n_steps = shape[-1]
         # Time-major copy so each step is a contiguous row of all neurons.
         u = membrane.reshape(-1, n_steps).t().clone(memory_format=torch.contiguous_format)
+        if skip_silent is None:
+            skip_silent = not u.is_cuda
         spikes = torch.zeros_like(u)
-        ref = self.refKernel.to(u.dtype)
+        fired = torch.empty(u.shape[1], dtype=torch.bool, device=u.device)
+        ref = self.refKernel.to(u.device, u.dtype)[:, None]
         for t in range(n_steps):
-            fired = u[t] >= self.theta
-            if fired.any():
-                spikes[t] = fired.to(u.dtype) / self.ts
-                span = min(len(ref), n_steps - t)
-                u[t:t + span] += ref[:span, None] * fired.to(u.dtype)
-        return spikes.t().reshape(shape)
+            torch.ge(u[t], self.theta, out=fired)
+            if skip_silent and not fired.any():
+                continue
+            spikes[t].copy_(fired)
+            span = min(len(ref), n_steps - t)
+            # Neurons that did not fire get ref * 0 added: u is unchanged.
+            u[t:t + span].addcmul_(ref[:span], spikes[t])
+        return spikes.div_(self.ts).t().reshape(shape)
