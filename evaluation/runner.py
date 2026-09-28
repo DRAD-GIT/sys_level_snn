@@ -55,14 +55,15 @@ def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None,
 
     net = models.load_pretrained(spec).eval()
     layers = {name: getattr(net, name) for name in spec.layers}
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   # spike activity
     results = {}
     for key, archs in by_precision.items():
         codes = {name: c[..., 0] for name, c in quantized_network(net, spec.layers, *key)[1].items()}
         costs = {arch.name: {} for arch in archs}
         correct = total = logged = 0
         log(f"{spec.display_name}: hardware of {', '.join(a.name for a in archs)} "
-            f"({precision_label(*key)} weights)")
-        for chunk in recordings[key].chunks(max_samples):
+            f"({precision_label(*key)} weights) on {device}")
+        for chunk in recordings[key].chunks(max_samples, device):
             correct += int((chunk.predictions == chunk.labels).sum())
             total += len(chunk)
             for name, module in layers.items():

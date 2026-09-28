@@ -206,49 +206,66 @@ class Activity:
         return float(self.row_drive.sum())
 
 
-def spike_activity(spikes, geometry, max_elements=2 ** 24):
-    """spikes: [batch, channels, height, width, time bins]; nonzero = spike."""
+def _group_masks(g):
+    """0/1 conv kernels [slot position, row tile x phase, C, kh, kw]: kernel
+    row k of the copy at position j of a slot is slot row q = j*K + k, in row
+    tile q // tile_rows and phase (q % tile_rows) // phase_rows."""
+    k_rows, groups = g.rows_needed, g.row_tiles * g.phases
+    q = torch.arange(g.copies_per_tile * k_rows).view(g.copies_per_tile, k_rows)
+    group = q // g.tile_rows * g.phases + q % g.tile_rows // g.phase_rows
+    masks = F.one_hot(group, groups).transpose(1, 2)              # [position, group, K]
+    return masks.reshape(g.copies_per_tile, groups, g.in_channels, *g.kernel).float()
+
+
+def spike_activity(spikes, geometry, max_elements=2 ** 26):
+    """spikes: [batch, channels, height, width, time bins]; nonzero = spike.
+    Runs on the spikes' device (GPU if they are there).
+
+    Which (row tile, phase) groups of each window hold a spike is a
+    convolution of the spike frames with 0/1 masks of those groups' kernel
+    rows (exact on binary inputs); the spikes per row, summed over frames, is
+    one unfold of the frames' sum (exact: it is linear)."""
     g = geometry
+    device = spikes.device
     frames = (spikes != 0).permute(0, 4, 1, 2, 3).reshape(-1, *spikes.shape[1:4])
-    k_rows, rows, per_phase, per_tile = g.rows_needed, g.tile_rows, g.phase_rows, g.copies_per_tile
-    slots, phases = g.slots, g.phases
-    slot_rows = per_tile * k_rows
-    copies = torch.full((slots,), per_tile, dtype=torch.int64)                      # copies per slot
-    copies[-1] = g.windows - (slots - 1) * per_tile
-    # Row q of a slot belongs to window slot q // K and is read in phase
-    # (q % tile_rows) // phase_rows (of its row tile).
-    q = torch.arange(slot_rows)
-    window_phase = F.one_hot(q // k_rows * phases + q % rows // per_phase,
-                             per_tile * phases).float()           # [slot rows, windows x phases]
-    row_drive = torch.zeros(k_rows, dtype=torch.float64)
-    leak_drive = 0.0
+    per_tile, slots, phases, windows_n = g.copies_per_tile, g.slots, g.phases, g.windows
+    copies = torch.full((slots,), per_tile, dtype=torch.int64, device=device)   # copies per slot
+    copies[-1] = windows_n - (slots - 1) * per_tile
+    conv = dict(stride=g.stride, padding=g.padding)
+
+    # Spikes per kernel row and per window, over all frames and windows.
+    total = frames.sum(0, dtype=torch.float64)[None]
+    patches = F.unfold(total, g.kernel, **conv)[0]                # [K, windows]
+    row_drive = patches.sum(1).cpu()
+    window_copies = (copies - 1).repeat_interleave(per_tile)[:windows_n].double()
+    leak_drive = float(patches.sum(0) @ window_copies)
+
+    masks = _group_masks(g).to(device)
+    groups = g.row_tiles * phases
+    position = torch.arange(windows_n, device=device) % per_tile
     totals = dict.fromkeys(("tile_reads", "tile_read_copies", "slot_reads", "window_reads",
                             "layer_reads", "tile_bins", "tile_bin_copies", "shared_tile_bins",
                             "slot_bins", "window_bins", "layer_bins"), 0)
-    chunk = max(1, max_elements // (k_rows * g.windows))
+    chunk = max(1, max_elements // (per_tile * groups * windows_n + frames[0].numel()))
     for frame_chunk in frames.split(chunk):
         f = len(frame_chunk)
-        # [f, K, windows]: each window's input patch, rows ordered like the weights.
-        patches = F.unfold(frame_chunk.float(), g.kernel, padding=g.padding, stride=g.stride)
-        row_drive += patches.sum((0, 2)).double()
-        per_window = patches.sum((0, 1)).double()                          # [windows]
-        leak_drive += float(per_window @ (copies - 1).repeat_interleave(per_tile)[:g.windows].double())
-        # [f, slot, slot rows]: the windows of a slot stacked along the rows.
-        x = F.pad(patches.transpose(1, 2), (0, 0, 0, slots * per_tile - g.windows))
-        x = x.reshape(f, slots, slot_rows)
-        # Group rows by (row tile, phase): pad to whole tiles and whole phases.
-        tiles = F.pad(x, (0, g.row_tiles * rows - slot_rows)).view(f, slots, g.row_tiles, rows)
-        tiles = F.pad(tiles, (0, phases * per_phase - rows))
-        active = tiles.view(f, slots, g.row_tiles, phases, per_phase).amax(4) > 0
-        windows = (x @ window_phase > 0).view(f, slots * per_tile, phases)[:, :g.windows]
+        hits = F.conv2d(frame_chunk.float(), masks.flatten(0, 1), **conv) > 0
+        hits = hits.view(f, per_tile, groups, windows_n)          # [f, position, group, window]
+        # Each window uses the masks of its position in its slot.
+        hits = hits[:, position, :, torch.arange(windows_n, device=device)]  # [windows, f, group]
+        hits = hits.permute(1, 0, 2).reshape(f, windows_n, g.row_tiles, phases)
+        padded = hits.new_zeros(f, slots * per_tile, g.row_tiles, phases)
+        padded[:, :windows_n] = hits
+        active = padded.view(f, slots, per_tile, g.row_tiles, phases).any(2)  # [f, slot, tile, phase]
+        windows = hits.any(2)                                    # [f, window, phase]
         tile_bin = active.any(3)                                 # [f, slot, tile]
         totals["tile_reads"] += int(active.sum())
-        totals["tile_read_copies"] += int(active.sum((0, 2, 3)) @ copies)
+        totals["tile_read_copies"] += int((active.sum((0, 2, 3)) * copies).sum())
         totals["slot_reads"] += int(active.any(2).sum())
         totals["window_reads"] += int(windows.sum())
         totals["layer_reads"] += int(windows.any(1).sum())
         totals["tile_bins"] += int(tile_bin.sum())
-        totals["tile_bin_copies"] += int(tile_bin.sum((0, 2)) @ copies)
+        totals["tile_bin_copies"] += int((tile_bin.sum((0, 2)) * copies).sum())
         totals["shared_tile_bins"] += int(tile_bin.any(1).sum())
         totals["slot_bins"] += int(tile_bin.any(2).sum())
         totals["window_bins"] += int(windows.any(2).sum())

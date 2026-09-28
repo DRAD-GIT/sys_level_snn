@@ -87,25 +87,36 @@ def pack(spikes):
             np.float32(amplitude))
 
 
-def unpack(bits, shape, amplitude):
+_BIT_SHIFTS = torch.arange(7, -1, -1, dtype=torch.uint8)   # np.packbits order: first bit highest
+
+
+def unpack(bits, shape, amplitude, device=None):
+    """(bit-packed uint8, shape, amplitude) -> spike tensor, unpacked on
+    `device` (on a GPU the packed bytes are sent and unpacked there)."""
     count = int(np.prod(shape))
-    spikes = np.unpackbits(bits, count=count).reshape(tuple(shape)).astype(np.float32)
-    return torch.from_numpy(spikes * np.float32(amplitude))
+    device = torch.device(device or "cpu")
+    if device.type == "cpu":
+        spikes = torch.from_numpy(np.unpackbits(bits, count=count).astype(np.float32))
+    else:
+        packed = torch.from_numpy(np.ascontiguousarray(bits)).to(device)
+        spikes = ((packed[:, None] >> _BIT_SHIFTS.to(device)) & 1).reshape(-1)[:count].float()
+    return (spikes * float(amplitude)).reshape(tuple(int(s) for s in shape))
 
 
 class Chunk:
     """One recorded batch: labels, predictions, and per layer the input
-    spikes, output spike counts per sample and (if recorded) output spikes."""
+    spikes (on `device`), output spike counts per sample and (if recorded)
+    output spikes."""
 
-    def __init__(self, data, layers, samples):
+    def __init__(self, data, layers, samples, device=None):
         n = samples
         self.labels = torch.from_numpy(data["labels"][:n])
         self.predictions = torch.from_numpy(data["predictions"][:n])
         self.inputs = {name: unpack(data[f"in_{name}"], data[f"in_{name}_shape"],
-                                    data[f"in_{name}_amplitude"])[:n] for name in layers}
+                                    data[f"in_{name}_amplitude"], device)[:n] for name in layers}
         self.output_counts = {name: data[f"out_{name}_count"][:n] for name in layers}
         self.outputs = {name: unpack(data[f"out_{name}"], data[f"out_{name}_shape"],
-                                     data[f"out_{name}_amplitude"])[:n]
+                                     data[f"out_{name}_amplitude"], device)[:n]
                         for name in layers if f"out_{name}" in data}
 
     def __len__(self):
@@ -122,14 +133,15 @@ class Recording:
     def samples(self):
         return self.meta["samples"]
 
-    def chunks(self, max_samples=None):
-        """The recorded batches in order, up to max_samples samples."""
+    def chunks(self, max_samples=None, device=None):
+        """The recorded batches in order, up to max_samples samples, with the
+        spikes unpacked on `device`."""
         remaining = self.samples if max_samples is None else min(max_samples, self.samples)
         for entry in self.meta["chunks"]:
             if remaining <= 0:
                 return
             with np.load(os.path.join(self.path, entry["file"])) as data:
-                chunk = Chunk(data, self.meta["layers"], min(entry["samples"], remaining))
+                chunk = Chunk(data, self.meta["layers"], min(entry["samples"], remaining), device)
             remaining -= len(chunk)
             yield chunk
 
