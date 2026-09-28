@@ -52,7 +52,8 @@ def conventional_example():
 def c3cim_example():
     """Worked example: C3CIM crossbar with a VI converter per column."""
     return compose("c3cim", Mapping(None, "max", "analog", "sequential"), [
-        crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, column_area_um2=4.27, driver_area_um2=86.36),
+        crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=8, column_area_um2=4.27,
+                             driver_area_um2=86.36),
         Component("vi", count="physical_columns", powered="used_columns", time_ns=10.0,
                   supply_v=1.0, static_ua=24.3, area_um2=29.79),
         Component("lif", count="output_bank", powered="outputs", time_ns=2.0,

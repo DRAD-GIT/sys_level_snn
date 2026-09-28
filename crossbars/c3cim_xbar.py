@@ -1,7 +1,8 @@
 """C3CIM crossbar: columns driven by constant current sources (a fixed current
 per active column) with drivers shared by groups of columns; the MAC happens
 in the voltage domain (not simulated). The column sources are the
-per-activation step "column_source", lasting `time_ns`. Sources and drivers
+per-activation step "column_source", lasting `time_ns`; all rows are driven
+at once unless `active_rows` splits them into row phases. Sources and drivers
 are powered during it unless `when` says otherwise (e.g. when=("column_source.start",
 "lif.end") keeps them on until a step "lif" ends); the drivers only
 those whose `driver_group` columns hold at least one weight column (which
@@ -11,7 +12,7 @@ from hardware import Block, Component, Crossbar, Memory
 
 
 def c3cim_xbar(*, cell_bits=1, r_on=None, r_off=None, levels_s=None, rows=64, cols=64,
-               active_rows=8, time_ns=50.0, when=None, supply_v=1.1, column_ua=0.1,
+               active_rows=None, time_ns=50.0, when=None, supply_v=1.1, column_ua=0.1,
                column_area_um2=0.0, driver_ua=11.87, driver_group=32, driver_area_um2=0.0):
     return Block(
         components=[
