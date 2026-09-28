@@ -27,7 +27,9 @@ def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None,
     only read when a recording has to be made.
     recording_dir: where recordings are kept; rerecord=True makes new ones.
     max_samples: evaluate only the first samples of the test set (None or -1 = all).
-    parallel: samples run at once when recording (default: the model's batch_size).
+    parallel: samples processed at once: the batch when recording (default:
+    the model's batch_size) and the samples per hardware evaluation step,
+    whole recorded files (default: as many as fit about 1 GiB of spikes).
     Progress is logged every `log_every` samples and at the end.
     Returns {architecture name: (software accuracy %, {layer: LayerCost})}.
     """
@@ -64,7 +66,7 @@ def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None,
         correct = total = logged = 0
         log(f"{spec.display_name}: hardware of {', '.join(a.name for a in archs)} "
             f"({precision_label(*key)} weights) on {device}")
-        for chunk in recordings[key].chunks(max_samples, device):
+        for chunk in recordings[key].chunks(max_samples, device, parallel):
             correct += int((chunk.predictions == chunk.labels).sum())
             total += len(chunk)
             for name, module in layers.items():

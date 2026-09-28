@@ -29,6 +29,9 @@ from evaluation.software import predict_class
 from hardware import quantize_weights
 
 FORMAT = 1
+# Default spike entries unpacked at once when evaluating (all layers, float32:
+# about 1 GiB): consecutive recorded files are merged into one step up to it.
+STEP_ENTRIES = 2 ** 28
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SNN_SOURCES = ("models/srm.py", "models/events.py")
 
@@ -122,6 +125,21 @@ class Chunk:
     def __len__(self):
         return len(self.labels)
 
+    @classmethod
+    def join(cls, chunks):
+        """One chunk holding the samples of `chunks`, in order."""
+        if len(chunks) == 1:
+            return chunks[0]
+        joined = cls.__new__(cls)
+        joined.labels = torch.cat([c.labels for c in chunks])
+        joined.predictions = torch.cat([c.predictions for c in chunks])
+        joined.inputs = {name: torch.cat([c.inputs[name] for c in chunks]) for name in chunks[0].inputs}
+        joined.output_counts = {name: np.concatenate([c.output_counts[name] for c in chunks])
+                                for name in chunks[0].output_counts}
+        joined.outputs = {name: torch.cat([c.outputs[name] for c in chunks])
+                          for name in chunks[0].outputs}
+        return joined
+
 
 class Recording:
     def __init__(self, path):
@@ -133,18 +151,35 @@ class Recording:
     def samples(self):
         return self.meta["samples"]
 
-    def chunks(self, max_samples=None, device=None):
-        """The recorded batches in order, up to max_samples samples (None or
-        -1: all), with the spikes unpacked on `device`."""
+    def chunks(self, max_samples=None, device=None, parallel=None):
+        """The recorded samples in order, up to max_samples (None or -1: all),
+        with the spikes unpacked on `device`, as chunks of consecutive
+        recorded files merged: at least `parallel` samples each (whole files),
+        or by default as many files as fit STEP_ENTRIES spike entries."""
         max_samples = models.sample_limit(max_samples)
+        if parallel is not None and parallel <= 0:
+            raise ValueError("parallel must be positive")
         remaining = self.samples if max_samples is None else min(max_samples, self.samples)
+        pending, samples, entries = [], 0, 0
         for entry in self.meta["chunks"]:
             if remaining <= 0:
-                return
+                break
             with np.load(os.path.join(self.path, entry["file"])) as data:
-                chunk = Chunk(data, self.meta["layers"], min(entry["samples"], remaining), device)
-            remaining -= len(chunk)
-            yield chunk
+                n = min(entry["samples"], remaining)
+                size = n * sum(int(np.prod(data[f"in_{name}_shape"][1:]))
+                               for name in self.meta["layers"])
+                if pending and parallel is None and entries + size > STEP_ENTRIES:
+                    yield Chunk.join(pending)
+                    pending, samples, entries = [], 0, 0
+                pending.append(Chunk(data, self.meta["layers"], n, device))
+            remaining -= n
+            samples += n
+            entries += size
+            if parallel is not None and samples >= parallel:
+                yield Chunk.join(pending)
+                pending, samples, entries = [], 0, 0
+        if pending:
+            yield Chunk.join(pending)
 
 
 def open_recording(recording_dir, model, bits, scaling, max_samples=None, full_outputs=False):

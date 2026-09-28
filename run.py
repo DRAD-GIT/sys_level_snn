@@ -36,7 +36,8 @@ MODEL = "nmnist"       # "nmnist" or "gesture" (pretrained weights in pretrained
 # or the dataset folder itself.
 DATASET_DIR = None     # e.g. "/data/neuromorphic"
 MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
-PARALLEL = None        # samples run at once; None = the model's default (N-MNIST 50, gesture 2)
+PARALLEL = None        # samples processed at once; None = defaults (recording: N-MNIST 50,
+                       # gesture 2; hardware evaluation: as many as fit about 1 GiB of spikes)
 # Recorded forward passes (layer inputs and outputs), reused across runs.
 RECORDING_DIR = os.path.join(ROOT, "recordings")
 
@@ -102,7 +103,8 @@ def main():
     parser.add_argument("--every", type=int, default=1000,
                         help="print progress every N samples (default 1000)")
     parser.add_argument("--parallel", type=int, default=PARALLEL,
-                        help="samples run at once when recording (default: N-MNIST 50, gesture 2)")
+                        help="samples processed at once: when recording (default: N-MNIST 50, "
+                             "gesture 2) and per hardware evaluation step (default: ~1 GiB of spikes)")
     parser.add_argument("--recordings", default=RECORDING_DIR, help="folder of recorded forward passes")
     parser.add_argument("--rerecord", action="store_true", help="record the forward pass again")
     args = parser.parse_args()
