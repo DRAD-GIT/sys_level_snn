@@ -87,7 +87,7 @@ C3CIM_XBAR = compose(
         #   column_driver  one per driver_group columns, driver_ua each, on
         #                  during column_source if its group holds weights.
         crossbars.c3cim_xbar(cell_bits=1, r_on=2e3, r_off=20e3, rows=64, cols=64,
-                             active_rows=8, time_ns=50.0, supply_v=VDD,
+                             time_ns=177.0, supply_v=VDD,
                              column_ua=0.1, column_area_um2=0.0,
                              driver_ua=11.87, driver_group=32, driver_area_um2=0.0),
         Component("vi", count="physical_columns",                   # V-I converter per column,
@@ -102,7 +102,7 @@ C3CIM_XBAR = compose(
 
 # Designs evaluated and compared side by side (same weight quantization:
 # they share one recorded forward pass).
-ARCHITECTURES = [RRAM_1BIT_XBAR, C3CIM_XBAR]
+ARCHITECTURES = [C3CIM_XBAR]
 
 # ============================================================================
 # 4. METRICS: switch each reported metric on or off
