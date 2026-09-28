@@ -48,7 +48,10 @@ RRAM_1BIT_XBAR = compose(
         Component("lif", count="outputs", during="fire",       # one per output neuron
                   supply_v=VDD, static_ua=10.0),
     ],
-    conv_mapping="parallel",                                   # or "sequential"
+    # One weight copy per output position (copies that fit share a tile): every
+    # analog LIF has its own columns, since it cannot store and restore its
+    # membrane potential to serve several pixels ("sequential" would need that).
+    conv_mapping="parallel",
 )
 
 ARCHITECTURES = [RRAM_1BIT_XBAR]
