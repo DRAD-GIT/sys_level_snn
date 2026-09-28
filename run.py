@@ -88,13 +88,13 @@ C3CIM_XBAR = compose(
         #                  during the same window if its group holds weights.
         crossbars.c3cim_xbar(cell_bits=1, r_on=2e3, r_off=20e3, rows=64, cols=64,
                              time_ns=177.0, supply_v=1.1,
-                             when=("column_source.start", "bin.end"),  # sources and drivers on until the bin ends
+                             when=("column_source.start", "lif.end"),  # sources and drivers on until the LIF has fired
                              column_ua=0.1, column_area_um2=0.0,
                              driver_ua=11.87, driver_group=32, driver_area_um2=0.0),
         Component("vi", count="physical_columns",                   # V-I converter per column,
                   powered="used_columns",                           # on for the used columns
                   time_ns=10.0,                                     # step: after the sources, per activation
-                  when=("vi.start", "bin.end"),                     # from its first step until the bin ends
+                  when=("vi.start", "lif.end"),                     # from its first step until the LIF has fired
                   supply_v=1.1, static_ua=24.3),
         Component("lif", count="outputs",                           # one per output neuron
                   time_ns=2.0,                                      # step: once per time bin, after the reads
@@ -116,13 +116,13 @@ C3CIM_OP_XBAR = compose(
         #                  during the same window if its group holds weights.
         crossbars.c3cim_xbar(cell_bits=1, r_on=2e3, r_off=20e3, rows=64, cols=64,
                              time_ns=23.0, supply_v=1.1,
-                             when=("column_source.start", "bin.end"),  # sources and drivers on until the bin ends
+                             when=("column_source.start", "lif.end"),  # sources and drivers on until the LIF has fired
                              column_ua=0.1, column_area_um2=0.0,
                              driver_ua=11.87, driver_group=32, driver_area_um2=0.0),
         Component("vi", count="physical_columns",                   # V-I converter per column,
                   powered="used_columns",                           # on for the used columns
                   time_ns=10.0,                                     # step: after the sources, per activation
-                  when=("vi.start", "bin.end"),                     # from its first step until the bin ends
+                  when=("vi.start", "lif.end"),                     # from its first step until the LIF has fired
                   supply_v=1.1, static_ua=24.3),
         Component("lif", count="outputs",                           # one per output neuron
                   time_ns=2.0,                                      # step: once per time bin, after the reads
