@@ -122,6 +122,21 @@ class Chunk:
     def __len__(self):
         return len(self.labels)
 
+    @classmethod
+    def join(cls, chunks):
+        """One chunk holding the samples of `chunks`, in order."""
+        if len(chunks) == 1:
+            return chunks[0]
+        joined = cls.__new__(cls)
+        joined.labels = torch.cat([c.labels for c in chunks])
+        joined.predictions = torch.cat([c.predictions for c in chunks])
+        joined.inputs = {name: torch.cat([c.inputs[name] for c in chunks]) for name in chunks[0].inputs}
+        joined.output_counts = {name: np.concatenate([c.output_counts[name] for c in chunks])
+                                for name in chunks[0].output_counts}
+        joined.outputs = {name: torch.cat([c.outputs[name] for c in chunks])
+                          for name in chunks[0].outputs}
+        return joined
+
 
 class Recording:
     def __init__(self, path):
@@ -133,18 +148,28 @@ class Recording:
     def samples(self):
         return self.meta["samples"]
 
-    def chunks(self, max_samples=None, device=None):
-        """The recorded batches in order, up to max_samples samples (None or
-        -1: all), with the spikes unpacked on `device`."""
+    def chunks(self, max_samples=None, device=None, parallel=None):
+        """The recorded samples in order, up to max_samples (None or -1: all),
+        with the spikes unpacked on `device`: one recorded file per chunk, or
+        with `parallel` consecutive files merged into chunks of at least
+        that many samples (whole files)."""
         max_samples = models.sample_limit(max_samples)
+        if parallel is not None and parallel <= 0:
+            raise ValueError("parallel must be positive")
         remaining = self.samples if max_samples is None else min(max_samples, self.samples)
+        pending = []
         for entry in self.meta["chunks"]:
             if remaining <= 0:
-                return
+                break
             with np.load(os.path.join(self.path, entry["file"])) as data:
-                chunk = Chunk(data, self.meta["layers"], min(entry["samples"], remaining), device)
-            remaining -= len(chunk)
-            yield chunk
+                pending.append(Chunk(data, self.meta["layers"], min(entry["samples"], remaining),
+                                     device))
+            remaining -= len(pending[-1])
+            if sum(len(c) for c in pending) >= (parallel or 1):
+                yield Chunk.join(pending)
+                pending = []
+        if pending:
+            yield Chunk.join(pending)
 
 
 def open_recording(recording_dir, model, bits, scaling, max_samples=None, full_outputs=False):
