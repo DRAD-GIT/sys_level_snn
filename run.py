@@ -35,7 +35,7 @@ DATASET_DIR = None     # e.g. "/data/neuromorphic"
 VDD = 1.1
 RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
-    Precision(weight_bits=4, weight_encoding="twos_complement"),
+    Precision(weight_bits=6, weight_encoding="twos_complement", weight_scaling="std3"),
     [
         # Crossbar: 64x64 tiles, 0.2 V read made from VDD, 5 ns read stage.
         crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3,   # 1-bit RRAM cells

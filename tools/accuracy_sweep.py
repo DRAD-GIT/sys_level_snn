@@ -72,7 +72,7 @@ def main():
                         choices=["nmnist", "gesture"])
     parser.add_argument("--bits", nargs="+", type=bit_width, default=[2, 3, 4, 5, 6, 8, None],
                         help="weight bit widths; 'float' = trained weights")
-    parser.add_argument("--scaling", nargs="+", default=["max"],
+    parser.add_argument("--scaling", nargs="+", default=["std3"],
                         help="quantization ranges to compare: max, mse, std<k> (e.g. std3)")
     parser.add_argument("--layer-bits", nargs="+", type=layer_bits, default=[],
                         help="fixed bit widths for named layers, e.g. SF1=8 SF2=float")

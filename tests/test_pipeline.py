@@ -92,13 +92,13 @@ class PipelineTests(unittest.TestCase):
     def test_accuracy_sweep_matches_pipeline(self):
         with tempfile.TemporaryDirectory() as data:
             os.mkdir(os.path.join(data, "N-MNIST"))
-            sweep = accuracy_sweep("nmnist", {"4 max": (4, "max"), "4 mse": (4, "mse"),
+            sweep = accuracy_sweep("nmnist", {"6 std3": (6, "std3"), "6 mse": (6, "mse"),
                                               "float": (None, "max")},
                                    data_dir=data, batch_size=2, max_batches=1, num_workers=0,
                                    log=lambda *_: None)
         # Same quantization as the pipeline's architectures.
-        self.assertEqual(sweep["4 max"], self.results["rram_1bit_conv_xbar"][0])
-        self.assertEqual(sweep["4 mse"], self.results["rram_mse"][0])
+        self.assertEqual(sweep["6 std3"], self.results["rram_1bit_conv_xbar"][0])
+        self.assertEqual(sweep["6 mse"], self.results["rram_mse"][0])
         self.assertEqual(sweep["float"], self.results["analog_c3cim"][0])
 
     def test_quantized_network_is_a_copy(self):

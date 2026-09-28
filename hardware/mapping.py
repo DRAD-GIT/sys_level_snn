@@ -99,7 +99,7 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
                     (1 if parallel else windows) * max(phases), slot_kinds)
 
 
-def quantize_weights(weights, bits, scaling="max"):
+def quantize_weights(weights, bits, scaling="std3"):
     """Symmetric uniform quantization: integer codes in [-(2^(b-1)-1), 2^(b-1)-1]
     and the scale (weights ~= codes * scale); weights beyond the clip range
     saturate. bits=None returns the weights. The range (clip = top code *

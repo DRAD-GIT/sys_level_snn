@@ -543,7 +543,7 @@ class CompositionTests(unittest.TestCase):
 
 class ValidationTests(unittest.TestCase):
     def test_quantize_weights(self):
-        codes, scale = quantize_weights(torch.tensor([-1.0, 0.6, 1.0]), 4)
+        codes, scale = quantize_weights(torch.tensor([-1.0, 0.6, 1.0]), 4, "max")
         self.assertEqual(codes.tolist(), [-7, 4, 7])
         self.assertAlmostEqual(scale, 1 / 7)
         weights = torch.tensor([0.3])

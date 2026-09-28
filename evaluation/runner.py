@@ -17,7 +17,7 @@ from evaluation.software import TestStats, num_spikes_loss, predict_class
 from hardware import evaluate_layer, quantize_weights
 
 
-def quantized_network(net, layer_names, bits, scaling="max"):
+def quantized_network(net, layer_names, bits, scaling="std3"):
     """A copy of `net` whose weighted layers compute with quantized weights
     (symmetric uniform per layer, range from `scaling`, see
     hardware.quantize_weights), and each layer's stored values: integer codes,

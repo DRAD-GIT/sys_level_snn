@@ -70,15 +70,15 @@ class Crossbar:
 @dataclass
 class Precision:
     # None: unquantized weights (analog encoding only).
-    weight_bits: int | None = 4
+    weight_bits: int | None = 6
     # twos_complement / offset: bit-sliced integer codes, sign or offset
     # handled after the array; differential: positive and negative columns;
     # analog: one multi-level cell per weight, G linear in the weight value.
     weight_encoding: str = "twos_complement"
     # Quantization range, symmetric around 0 (see mapping.quantize_weights):
-    # "max" = the largest |weight|; "mse" = the clip with the least squared
-    # error, per layer; "std<k>" (e.g. "std3") = k standard deviations.
-    weight_scaling: str = "max"
+    # "std<k>" = k standard deviations (default "std3"); "max" = the largest
+    # |weight|; "mse" = the clip with the least squared error, per layer.
+    weight_scaling: str = "std3"
 
 
 def scaling_std(scaling):

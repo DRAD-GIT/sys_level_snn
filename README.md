@@ -77,7 +77,7 @@ An architecture is composed from one **crossbar type** (with its memory cells as
 ```python
 RRAM_1BIT_XBAR = compose(
     "rram_1bit_conv_xbar",
-    Precision(weight_bits=4, weight_encoding="twos_complement"),
+    Precision(weight_bits=6, weight_encoding="twos_complement", weight_scaling="std3"),
     [
         crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3,   # 1-bit RRAM cells
                             rows=64, cols=64, v_read=0.2, read_ns=5.0, cell_supply_v=VDD),
@@ -98,15 +98,24 @@ Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
 **Crossbar**: the memory, tile size, read voltage, `active_rows` (rows enabled per read; fewer than `rows` splits a read into row phases), and `reference_columns` (analog encoding: one G(0) column per output).
 
-**Precision**: `weight_bits` (None = unquantized, analog only), `weight_scaling` and `weight_encoding`. Weights are quantized per layer, symmetric around 0 (codes -(2^(b-1)-1) ... 2^(b-1)-1; weights beyond the range saturate), with the range from `weight_scaling`:
+**Precision**: `weight_bits` (default 6; None = unquantized, analog only), `weight_scaling` (default `"std3"`) and `weight_encoding`. Weights are quantized per layer, symmetric around 0 (codes -(2^(b-1)-1) ... 2^(b-1)-1; weights beyond the range saturate), with the range from `weight_scaling`:
 
 | `weight_scaling` | Range (clip) |
 |---|---|
-| `"max"` (default) | the largest \|weight\|: nothing clipped; outliers stretch the steps |
+| `"max"` | the largest \|weight\|: nothing clipped; outliers stretch the steps |
 | `"mse"` | the clip with the least squared quantization error, searched per layer (200 steps up to the largest \|weight\|; never worse than `"max"` in that error) |
-| `"std<k>"`, e.g. `"std3"` | k standard deviations of the layer's weights |
+| `"std<k>"`; default `"std3"` | k standard deviations of the layer's weights (never beyond the largest \|weight\|) |
 
-The trained weights are centred on zero (|mean| < 0.14 standard deviations in every layer), so no offset is used. Lower weight error does not guarantee higher accuracy: compare the scalings with `tools/accuracy_sweep.py`.
+The trained weights are centred on zero (|mean| < 0.14 standard deviations in every layer), so no offset is used. Lower weight error does not guarantee higher accuracy: compare the scalings with `tools/accuracy_sweep.py`. Measured test accuracy (%) with every layer quantized (N-MNIST: first 1,024 test samples; DVS-Gesture: all 264, where one sample is 0.38 points):
+
+| Weights | N-MNIST max | N-MNIST mse | N-MNIST std3 | Gesture max | Gesture mse | Gesture std3 |
+|---|---:|---:|---:|---:|---:|---:|
+| 4-bit | 25.9 | 10.6 | 29.1 | 66.3 | 79.5 | 76.9 |
+| 6-bit | 43.5 | 49.0 | 95.5 | 84.1 | 83.3 | 87.5 |
+| 8-bit | 95.0 | 95.1 | 95.9 | 86.4 | 86.7 | 87.5 |
+| float | 96.2 | | | 86.4 | | |
+
+With `"max"`, a few large weights in N-MNIST's dense layers (up to 13 standard deviations) set the step, so most of their weights round to 0 and the output layer's firing collapses or saturates; `"std3"` is the most consistent choice, hence the 6-bit `"std3"` default.
 
 Encodings:
 
