@@ -114,17 +114,25 @@ Component("driver", count={"rule": "column_groups", "size": 32},         # all i
           time_ns=3.0, at="cells.start", supply_v=VDD, static_ua=11.87), # starts with the read
 Component("adc", count={"rule": "column_groups", "size": 8},             # 8 ADCs per tile
           time_ns=6.0, serial=True,                                       # its columns one after another
+          powered="used_column_groups",                                   # only ADCs with weight columns
           supply_v=VDD, static_ua=10.0),                                  # after the read (and driver)
 Component("lif", count="outputs", time_ns=2.0, supply_v=VDD, static_ua=10.0),
 ```
 
-With 60 weight columns in the tile, the report prints each layer's timeline as `cells 5 ns (per activation, x8) | driver 3 ns (per activation, x8) | adc 48 ns (per activation, x8) | lif 2 ns (per time bin) = 426 ns per time bin`. A serial step converts only the columns that hold weights, **interleaved** across the groups of a tile (column c to ADC c mod 8): with 32 weight columns in a 64-column tile, every ADC converts 4 columns, so the step is 4 x 6 = 24 ns.
+With 60 weight columns in the tile, the report prints each layer's timeline as `cells 5 ns (per activation, x8) | driver 3 ns (per activation, x8) | adc 48 ns (per activation, x8) | lif 2 ns (per time bin) = 426 ns per time bin`. A serial step converts only the columns that hold weights, and where they sit is `Mapping(columns=...)`. With 32 weight columns in a 64-column tile:
+
+| `columns` | Weight columns | ADCs of 8 | ADC step | Drivers of 32 |
+|---|---|---|---|---|
+| `"interleaved"` (default) | dealt to the groups in turn (column j to group j mod groups) | all 8 convert 4 each | 4 x 6 = 24 ns | both drive 16 |
+| `"contiguous"` | columns 0-31, filling one group after another | 4 convert 8 each, 4 hold none | 8 x 6 = 48 ns | one drives 32, one none |
+
+`powered="used_column_groups"` powers only the groups holding a weight column (the size comes from the `column_groups` count); with `powered="all"` (the default) every group of a tile is powered for the whole step. Interleaving halves the ADC step here, and with every ADC powered it also halves their energy; contiguous placement can switch off the empty groups' drivers. `c3cim_xbar`'s drivers are powered this way.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
 **Crossbar**: the memory, tile size, read voltage, `active_rows` (rows driven per activation; fewer than `rows` splits the rows into phases, one activation each), and `reference_columns` (analog encoding: one G(0) column per output).
 
-**Mapping**: `weight_bits` (default 6; None = unquantized, analog only), `weight_scaling` (default `"std3"`), `weight_encoding` and `conv` (default `"parallel"`, see **Conv mapping**). Weights are quantized per layer, symmetric around 0 (codes -(2^(b-1)-1) ... 2^(b-1)-1; weights beyond the range saturate), with the range from `weight_scaling`:
+**Mapping**: `weight_bits` (default 6; None = unquantized, analog only), `weight_scaling` (default `"std3"`), `weight_encoding`, `conv` (default `"parallel"`, see **Conv mapping**) and `columns` (default `"interleaved"`: where a tile's weight columns sit among the column groups that share an ADC, a driver, ...; see above). Weights are quantized per layer, symmetric around 0 (codes -(2^(b-1)-1) ... 2^(b-1)-1; weights beyond the range saturate), with the range from `weight_scaling`:
 
 | `weight_scaling` | Range (clip) |
 |---|---|
@@ -172,7 +180,7 @@ With `parallel`, copies that fit in a tile share it, packed block-diagonally: as
  \________ per activation, x activations ______/ per time bin
 ```
 
-A component with `time_ns` is a **step** of the timeline, named after the component. `time_ns` is the time of one operation: every instance works on all its inputs at once, so the step lasts `time_ns`. With `serial=True` (`column_groups` counts only) each instance converts its group's columns one after another, and the step lasts ceil(weight columns in the fullest tile / groups per tile) x `time_ns`: empty columns are skipped, and the weight columns are interleaved across the groups so that they share the conversions evenly. How often a step runs is inferred from `count`: columns, rows, column groups and tiles work **per activation**; neurons (`outputs`, `output_bank`) and layer-wide parts (`one`, `fixed`) **per time bin**. `per="activation"` or `per="time_bin"` overrides it (e.g. a per-output accumulator that adds every row phase).
+A component with `time_ns` is a **step** of the timeline, named after the component. `time_ns` is the time of one operation: every instance works on all its inputs at once, so the step lasts `time_ns`. With `serial=True` (`column_groups` counts only) each instance converts its group's weight columns one after another, and the step lasts as long as the fullest group: ceil(weight columns in the fullest tile / groups per tile) x `time_ns` with interleaved columns, min(group size, weight columns) x `time_ns` with contiguous ones; empty columns are skipped. How often a step runs is inferred from `count`: columns, rows, column groups and tiles work **per activation**; neurons (`outputs`, `output_bank`) and layer-wide parts (`one`, `fixed`) **per time bin**. `per="activation"` or `per="time_bin"` overrides it (e.g. a per-output accumulator that adds every row phase).
 
 **Placement**: a step starts when every step of its level given before it has ended (a per-time-bin step also waits for all activations), so the steps run one after another in the order of the components. `at=` starts a step at an anchor instead: `"cells.start"` (in parallel with the read), `"adc.end-1"` (1 ns before the ADC ends, overlapping it), `"bin.start"` (a per-time-bin step at the start of the time bin, alongside the activations). A bare name means its end. A step always lasts its own duration: `at` moves it, it never stretches it. Anchors may name a step given later; steps placed at each other in a cycle are an error. A per-activation step can only be placed at per-activation steps. `compose(..., activation_interval_ns=..., time_bin_interval_ns=...)` pipelines consecutive activations / time bins.
 
@@ -194,6 +202,7 @@ Count and powered rules, with the unit each instance belongs to:
 | `physical_rows` / `physical_columns` | row tile of a tile set | column tiles x tile rows / cols |
 | `used_columns` | row tile of a tile set | out_channels x columns per weight, per copy in it |
 | `column_groups` (`size`) | row tile of a tile set | column tiles x ceil(cols / size) |
+| `used_column_groups` (`size`) | row tile of a tile set | the column groups holding a weight column (by `Mapping.columns`) |
 | `outputs` | window | out_channels (neurons; installed for every window) |
 | `output_bank` | tile set (slot) | column tiles x cols |
 | `one` / `fixed` (`value`) | layer | 1 / value |
@@ -223,7 +232,7 @@ Per inference: energy is divided by the number of evaluated samples; area counts
 | `c3cim` | 0.0279948 | 482 | 10259.68 |
 | `conventional` | 0.07274388 | 38 | 9969.4 |
 
-A further hand calculation covers a tile with row phases and ADCs shared by column groups (`serial=True`): 8 activations x (5 + 8 x 6 ns) + 2 ns = 426 ns per time bin with 60 weight columns, and 8 x (5 + 4 x 6) + 2 ns with 32 (interleaved, 4 conversions per ADC); the reference model also deals every tile's weight columns to its groups one by one. Timeline tests cover serial, parallel (`at`), overlapping and pipelined steps, per-time-bin steps at the bin's start and at per-activation steps, cycles, power windows between step edges with offsets (including a step referenced before it is defined), and a component that would serve two pipelined activations at once; composition tests cover the inferred and overridden step frequencies, the anchor syntax and the `when` forms. Pipeline tests cover the layer probes, the runner and the metric switches.
+A further hand calculation covers a tile with row phases and ADCs shared by column groups (`serial=True`): 8 activations x (5 + 8 x 6 ns) + 2 ns = 426 ns per time bin with 60 weight columns, and 8 x (5 + 4 x 6) + 2 ns with 32 (interleaved, 4 conversions per ADC) against 8 x (5 + 8 x 6) + 2 ns contiguous, with the ADCs and drivers holding weight columns (8 and 2 interleaved, 4 and 1 contiguous); the reference model places every tile's weight columns one by one and is checked with both placements. Timeline tests cover serial, parallel (`at`), overlapping and pipelined steps, per-time-bin steps at the bin's start and at per-activation steps, cycles, power windows between step edges with offsets (including a step referenced before it is defined), and a component that would serve two pipelined activations at once; composition tests cover the inferred and overridden step frequencies, the anchor syntax and the `when` forms. Pipeline tests cover the layer probes, the runner and the metric switches.
 
 ## 6. Spiking-neuron implementation (no slayerSNN)
 

@@ -50,6 +50,25 @@ class Geometry:
     slot_kinds: tuple
     input_size: tuple        # (height, width) of the layer input
     output_size: tuple       # (height, width) of the output: windows = height x width
+    columns: str = "interleaved"   # weight column placement among column groups
+
+    def groups_holding_weights(self, size, copies):
+        """Column groups of `size` holding a weight column, over the column
+        tiles of one row tile of a slot with `copies` weight copies."""
+        per_tile = math.ceil(self.tile_cols / size)
+        total, groups = copies * self.used_columns, 0
+        for first in range(0, total, self.tile_cols):
+            columns = min(self.tile_cols, total - first)
+            groups += min(per_tile, columns) if self.columns == "interleaved" \
+                else math.ceil(columns / size)
+        return groups
+
+    def fullest_group(self, size):
+        """Weight columns in the fullest column group of `size`."""
+        columns = min(self.tile_cols, self.copies_per_tile * self.used_columns)
+        if self.columns == "interleaved":
+            return math.ceil(columns / math.ceil(self.tile_cols / size))
+        return min(size, columns)
 
     @property
     def rows_needed(self):
@@ -100,7 +119,7 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
                     windows if parallel else 1, per_tile, len(phases),
                     math.ceil(per_tile * used / xb.cols), phases, xb.rows, xb.cols, active,
                     (1 if parallel else windows) * max(phases), slot_kinds, (height, width),
-                    (out_h, out_w))
+                    (out_h, out_w), arch.mapping.columns)
 
 
 def quantize_weights(weights, bits, scaling="std3"):
@@ -195,6 +214,8 @@ class Activity:
     window_reads: int        # (frame, window, phase)
     layer_reads: int         # (frame, phase), all windows at once ("parallel" reads)
     tile_bins: int           # (frame, slot, row tile) ("parallel" tile sets)
+    last_tile_reads: int     # tile_reads and tile_bins of the last slot alone
+    last_tile_bins: int
     tile_bin_copies: int
     shared_tile_bins: int    # (frame, row tile), any slot ("sequential" tile set)
     slot_bins: int           # (frame, slot)
@@ -244,8 +265,9 @@ def spike_activity(spikes, geometry, max_elements=2 ** 26):
     groups = g.row_tiles * phases
     position = torch.arange(windows_n, device=device) % per_tile
     totals = dict.fromkeys(("tile_reads", "tile_read_copies", "slot_reads", "window_reads",
-                            "layer_reads", "tile_bins", "tile_bin_copies", "shared_tile_bins",
-                            "slot_bins", "window_bins", "layer_bins"), 0)
+                            "layer_reads", "tile_bins", "last_tile_reads", "last_tile_bins",
+                            "tile_bin_copies", "shared_tile_bins", "slot_bins", "window_bins",
+                            "layer_bins"), 0)
     chunk = max(1, max_elements // (per_tile * groups * windows_n + frames[0].numel()))
     for frame_chunk in frames.split(chunk):
         f = len(frame_chunk)
@@ -265,6 +287,8 @@ def spike_activity(spikes, geometry, max_elements=2 ** 26):
         totals["window_reads"] += int(windows.sum())
         totals["layer_reads"] += int(windows.any(1).sum())
         totals["tile_bins"] += int(tile_bin.sum())
+        totals["last_tile_reads"] += int(active[:, -1].sum())
+        totals["last_tile_bins"] += int(tile_bin[:, -1].sum())
         totals["tile_bin_copies"] += int((tile_bin.sum((0, 2)) * copies).sum())
         totals["shared_tile_bins"] += int(tile_bin.any(1).sum())
         totals["slot_bins"] += int(tile_bin.any(2).sum())

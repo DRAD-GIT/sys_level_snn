@@ -7,7 +7,6 @@ whole block of a time bin's activations, "activations", starts with the time
 bin, and time-bin steps follow it by default. Time bins repeat every time-bin
 interval.
 """
-import math
 from dataclasses import dataclass
 
 from hardware.architecture import ACTIVATIONS, BIN
@@ -15,15 +14,8 @@ from hardware.architecture import ACTIVATIONS, BIN
 
 def conversions(stage, geometry):
     """Operations one after another in a step: 1, or for a serial step the
-    most columns any instance converts. The weight columns of a tile are
-    interleaved across its column groups, so a group holds at most
-    ceil(weight columns in the tile / groups per tile) of them."""
-    if stage.serial_size is None:
-        return 1
-    g = geometry
-    groups = math.ceil(g.tile_cols / stage.serial_size)
-    columns = min(g.tile_cols, g.copies_per_tile * g.used_columns)   # fullest tile
-    return math.ceil(columns / groups)
+    weight columns of the fullest column group (see Mapping.columns)."""
+    return 1 if stage.serial_size is None else geometry.fullest_group(stage.serial_size)
 
 
 def _place(stages, durations, placed, outside=None):

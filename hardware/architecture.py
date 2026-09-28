@@ -32,7 +32,8 @@ import re
 from dataclasses import dataclass, field
 
 # Count/activity rules, by the unit an instance belongs to:
-TILE_RULES = ("tiles", "physical_rows", "physical_columns", "used_columns", "column_groups")
+TILE_RULES = ("tiles", "physical_rows", "physical_columns", "used_columns", "column_groups",
+              "used_column_groups")
 WINDOW_RULES = ("outputs", "output_bank")   # neurons per window / per tile set's columns
 LAYER_RULES = ("one", "fixed")
 DATA_RULES = ("spiking_rows",)              # word lines carrying a spike, per activation
@@ -41,6 +42,7 @@ MODELS = ("static", "crossbar_read", "reference_read", "slice_mirror")
 LEVELS = ("activation", "time_bin")         # how often a step runs
 EVENTS = LEVELS + ("output_spike",)
 CONV_MAPPINGS = ("parallel", "sequential")
+COLUMN_PLACEMENTS = ("interleaved", "contiguous")
 BIN = "bin"                                 # the whole time bin: "bin.start", "bin.end"
 ACTIVATIONS = "activations"                 # all activations of a time bin, from its start
 
@@ -91,6 +93,11 @@ class Mapping:
     weight_encoding: str = "twos_complement"
     # Convolutions: "parallel" (a weight copy per window) or "sequential".
     conv: str = "parallel"
+    # Where a tile's weight columns sit among its column groups (e.g. the
+    # columns sharing an ADC or a driver): "interleaved" (column j in group
+    # j mod groups, so the groups share them evenly) or "contiguous" (from
+    # column 0 on, filling one group after another).
+    columns: str = "interleaved"
 
 
 def scaling_std(scaling):
@@ -111,10 +118,13 @@ class Component:
     Timing: a component with `time_ns` is a step of the timeline, named after
     the component, lasting `time_ns` (one operation of every instance at
     once). serial=True (column_groups counts only): each instance converts
-    its group's columns one after another, `time_ns` each; the weight columns
-    are interleaved across the groups of a tile, so the step lasts
-    ceil(weight columns in the fullest tile / groups per tile) x time_ns
-    (e.g. 32 weight columns, 8 groups of 8: 4 conversions). A step runs in
+    its group's weight columns one after another, `time_ns` each, so the
+    step lasts as long as the fullest group: with Mapping(columns=
+    "interleaved") a tile's weight columns are dealt to its groups in turn,
+    ceil(weight columns in the fullest tile / groups per tile) conversions
+    (32 weight columns, 8 groups of 8: 4); with "contiguous" they fill the
+    groups one after another, min(group size, weight columns) (here 8).
+    A step runs in
     every activation or once per time bin: inferred from `count` (columns,
     rows, column groups, tiles: per activation; neurons and layer-wide parts:
     per time bin), or per="activation" / per="time_bin". By default a step
@@ -150,7 +160,9 @@ class Component:
                         slice 1, the next 1/2, ...) into its neuron.
 
     count / powered: a rule name or {"rule": name, "value": n (fixed),
-    "size": n (column_groups), "gated": True}. powered="all" repeats `count`.
+    "size": n (column groups), "gated": True}. powered="all" repeats `count`;
+    powered="used_column_groups": only the groups holding a weight column
+    (by Mapping.columns), its size taken from a column_groups count.
     "gated": only instances whose tile (tile rules), window ("outputs"), tile
     set ("output_bank") or layer receives at least one input spike in that
     activation or time bin.
@@ -237,8 +249,8 @@ def rule_of(spec, *, activity=False):
     if rule["rule"] == "fixed" and (isinstance(rule.get("value"), bool)
                                     or not isinstance(rule.get("value"), int) or rule["value"] < 0):
         raise ValueError("fixed rule needs a nonnegative integer 'value'")
-    if rule["rule"] == "column_groups":
-        _positive_int(rule.get("size"), "column_groups size")
+    if rule["rule"] in ("column_groups", "used_column_groups"):
+        _positive_int(rule.get("size"), f"{rule['rule']} size")
     rule.setdefault("gated", False)
     if not isinstance(rule["gated"], bool) or (rule["gated"] and not activity):
         raise ValueError(f"'gated' is a boolean for 'powered' rules only: {spec!r}")
@@ -260,6 +272,18 @@ def parse_anchor(text, default_edge):
     name, edge, sign, value = match.groups()
     offset = (-1 if sign == "-" else 1) * float(value) if value else 0.0
     return name, edge or default_edge, offset
+
+
+def powered_rule(c):
+    """A component's normalized powered rule: "all" repeats its count (with
+    its gating); used_column_groups without a size takes its count's."""
+    count = rule_of(c.count)
+    spec = {"rule": c.powered} if isinstance(c.powered, str) else dict(c.powered)
+    if spec.get("rule") == "used_column_groups" and "size" not in spec \
+            and count["rule"] == "column_groups":
+        spec["size"] = count["size"]
+    on = rule_of(spec, activity=True)
+    return dict(count, gated=on["gated"]) if on["rule"] == "all" else on
 
 
 def step_level(c):
@@ -324,6 +348,8 @@ def _validate_mapping(arch):
         raise ValueError("reference_columns applies to the analog encoding only")
     if mp.conv not in CONV_MAPPINGS:
         raise ValueError(f"mapping.conv must be one of {CONV_MAPPINGS}")
+    if mp.columns not in COLUMN_PLACEMENTS:
+        raise ValueError(f"mapping.columns must be one of {COLUMN_PLACEMENTS}")
 
 
 def _step_of(c):
@@ -427,7 +453,7 @@ def validate(arch):
     for c in arch.components:
         if c.model not in MODELS or c.events not in EVENTS:
             raise ValueError(f"{c.name}: model must be one of {MODELS}, events one of {EVENTS}")
-        powered = rule_of(c.powered, activity=True)
+        powered = powered_rule(c)
         for label in ("supply_v", "static_ua", "event_pj", "area_um2"):
             _number(getattr(c, label), f"{c.name}.{label}")
         power[c.name] = p = _power_of(c, levels)

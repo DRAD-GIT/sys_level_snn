@@ -57,7 +57,8 @@ RRAM_1BIT_XBAR = compose(
     # share a tile), so every analog LIF has its own columns; it cannot store
     # and restore its membrane potential to serve several pixels.
     Mapping(weight_bits=WEIGHT_BITS, weight_scaling=WEIGHT_SCALING,
-            weight_encoding="twos_complement", conv="parallel"),
+            weight_encoding="twos_complement", conv="parallel",
+            columns="interleaved"),   # weight columns dealt to shared ADCs/drivers in turn
     [
         # Crossbar: 64x64 tiles of 1-bit RRAM, 0.2 V read made from VDD; its
         # read, the step "cells" (5 ns), runs in every activation.

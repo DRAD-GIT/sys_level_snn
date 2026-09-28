@@ -15,7 +15,7 @@ import torch
 import crossbars
 from hardware import (Architecture, Component, Crossbar, Mapping, Memory, compose, evaluate_layer,
                       quantize_weights)
-from hardware.architecture import LAYER_RULES, TILE_RULES, rule_of
+from hardware.architecture import LAYER_RULES, TILE_RULES, powered_rule
 from hardware.mapping import layer_geometry
 
 LINEAR_1BIT = Memory(cell_bits=1, r_on=1e3, r_off=1e6)
@@ -63,9 +63,9 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
     """Per-inference energy per component and latency, by brute force.
 
     Steps must be serial (default placement) so powered times are sums of
-    durations; timeline placement itself is tested separately. Serial steps
+    durations; timeline placement itself is tested separately.     Serial steps
     last as long as the fullest column group, with the weight columns of each
-    tile dealt to its groups in turn.
+    tile placed one by one (Mapping.columns).
     """
     xb, pr = arch.crossbar, arch.mapping
     batch, channels, height, width, bins = spikes.shape
@@ -147,13 +147,27 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
                 "outputs": out, "output_bank": column_tiles * xb.cols, "one": 1,
                 "fixed": rule.get("value", 0)}[rule["rule"]]
 
+    def group_of(column, size):
+        """Column group of a tile's j-th weight column (Mapping.columns)."""
+        groups = math.ceil(xb.cols / size)
+        return column % groups if pr.columns == "interleaved" else column // size
+
+    def slot_groups(rule, copies):
+        """Groups holding a weight column, in every column tile of a row tile
+        of a slot with `copies` copies (its columns fill tiles of cols)."""
+        columns = copies * used
+        return sum(len({group_of(j, rule["size"]) for j in range(min(xb.cols, columns - first))})
+                   for first in range(0, columns, xb.cols))
+
     def tile_units(rule, slot, rt):
-        return tile_used_columns(slot, rt) if rule["rule"] == "used_columns" else per_unit(rule)
+        if rule["rule"] == "used_columns":
+            return tile_used_columns(slot, rt)
+        if rule["rule"] == "used_column_groups":
+            return slot_groups(rule, len(slot))
+        return per_unit(rule)
 
     def rules(c):
-        count = rule_of(c.count)
-        on = rule_of(c.powered, activity=True)
-        return dict(count, gated=on["gated"]) if on["rule"] == "all" else on
+        return powered_rule(c)
 
     read_powered = {c.name: 0.0 for c in arch.components}
     bin_powered = {c.name: 0.0 for c in arch.components}
@@ -218,7 +232,8 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
                     continue
                 if rule["rule"] in TILE_RULES:
                     if sequential:   # one shared tile set; a slot = a window
-                        units = [per_unit(rule) if rule["rule"] != "used_columns" else used
+                        units = [slot_groups(rule, 1) if rule["rule"] == "used_column_groups"
+                                 else per_unit(rule) if rule["rule"] != "used_columns" else used
                                  for r in range(len(layout(slots[0])))
                                  if not rule["gated"] or any(any_tile[(tuple(s), r)] for s in slots)]
                     else:
@@ -238,15 +253,15 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
     def duration(stage):
         if stage.serial_size is None:
             return stage.time_ns
-        groups = math.ceil(xb.cols / stage.serial_size)
-        fullest = 0
+        load, fullest = {}, 0
         for slot in slots:           # physical tiles: the slot's columns, cols at a time
             columns = len(slot) * used
             for first in range(0, columns, xb.cols):
-                load = [0] * groups
+                load = {}
                 for column in range(min(xb.cols, columns - first)):
-                    load[column % groups] += 1
-                fullest = max(fullest, max(load))
+                    group = group_of(column, stage.serial_size)
+                    load[group] = load.get(group, 0) + 1
+                fullest = max(fullest, max(load.values()))
         return fullest * stage.time_ns
 
     # Serial step positions: within one activation, and within a time bin,
@@ -307,6 +322,14 @@ def test_arch(conv, mapping, crossbar, custom_gains=None):
                    powered=gated("column_groups", size=3), when="wl_driver", static_ua=4.0),
          Component("adc", count={"rule": "column_groups", "size": 3}, time_ns=0.5, serial=True,
                    powered=gated("column_groups", size=3), static_ua=3.0, event_pj=0.05),
+         Component("adc_used", count={"rule": "column_groups", "size": 3}, time_ns=0.25,
+                   serial=True, powered=gated("used_column_groups"), static_ua=2.5,
+                   event_pj=0.02),
+         Component("col_bias", count={"rule": "column_groups", "size": 5},
+                   powered="used_column_groups", **WHOLE_BIN, static_ua=0.3, event_pj=0.01,
+                   events="time_bin"),
+         Component("col_gate", count={"rule": "column_groups", "size": 2},
+                   powered=gated("used_column_groups"), **WHOLE_BIN, static_ua=0.4),
          Component("tile_ctrl", count="tiles", powered=gated("tiles"), **WHOLE_BIN, static_ua=3.0),
          Component("neuron", count="outputs", powered=gated("outputs"), time_ns=1.0,
                    **WHOLE_BIN, static_ua=5.0, event_pj=0.2, events="output_spike"),
@@ -322,12 +345,19 @@ def test_arch(conv, mapping, crossbar, custom_gains=None):
 
 class ReferenceModelTests(unittest.TestCase):
     def check(self, arch, spikes, weights, stride=1, padding=0):
-        result = evaluate_layer(arch, spikes, weights, stride=stride, padding=padding, output_spikes=17)
-        expected, latency = reference_cost(arch, spikes, weights, stride, padding, output_spikes=17)
-        for name, energy in expected.items():
-            got = result.components[name].energy_nj / result.inferences
-            self.assertAlmostEqual(got, energy, delta=1e-12 + 1e-9 * abs(energy), msg=name)
-        self.assertAlmostEqual(result.latency_ns, latency, places=9)
+        """Engine vs reference model, for both column placements."""
+        for columns in ("interleaved", "contiguous"):
+            placed = dataclasses.replace(arch, mapping=dataclasses.replace(arch.mapping,
+                                                                           columns=columns))
+            result = evaluate_layer(placed, spikes, weights, stride=stride, padding=padding,
+                                    output_spikes=17)
+            expected, latency = reference_cost(placed, spikes, weights, stride, padding,
+                                               output_spikes=17)
+            for name, energy in expected.items():
+                got = result.components[name].energy_nj / result.inferences
+                self.assertAlmostEqual(got, energy, delta=1e-12 + 1e-9 * abs(energy),
+                                       msg=f"{name} ({columns})")
+            self.assertAlmostEqual(result.latency_ns, latency, places=9, msg=columns)
 
     def test_conv_and_dense_both_mappings(self):
         g = torch.Generator().manual_seed(0)
@@ -461,6 +491,41 @@ class HandCalculationTests(unittest.TestCase):
         r32 = evaluate_layer(design(8, bits=4), spikes, codes)
         self.assertEqual(r32.latency_ns, 8 * (5.0 + 4 * 6.0) + 2.0)
         self.assertAlmostEqual(r32.components["adc"].energy_nj, 1.1 * 10e-6 * 8 * 24.0 * 8, places=12)
+
+    def test_column_placement(self):
+        """32 weight columns of a 64-column tile (8 outputs x 4 slices), 8
+        row phases, ADCs of 8 columns (6 ns each) and drivers of 32."""
+        def design(columns):
+            return compose("x", Mapping(4, "max", columns=columns), [
+                crossbars.conv_xbar(r_on=20e3, r_off=200e3, active_rows=8, time_ns=5.0),
+                Component("adc", count={"rule": "column_groups", "size": 8}, time_ns=6.0,
+                          serial=True, powered="used_column_groups", static_ua=10.0),
+                Component("adc_always", count={"rule": "column_groups", "size": 8},
+                          when="adc", static_ua=10.0),
+                Component("driver", count={"rule": "column_groups", "size": 32},
+                          powered="used_column_groups", when="cells", static_ua=11.87),
+                Component("lif", count="outputs", time_ns=2.0)])
+        g = torch.Generator().manual_seed(0)
+        codes = torch.randint(-7, 8, (8, 64, 1, 1), generator=g)
+        spikes = (torch.rand(1, 64, 1, 1, 1, generator=g) < 0.2).float()
+        inter = evaluate_layer(design("interleaved"), spikes, codes)
+        contig = evaluate_layer(design("contiguous"), spikes, codes)
+        # Interleaved: 4 columns per ADC, all 8 ADCs and both drivers used.
+        self.assertEqual(inter.latency_ns, 8 * (5.0 + 4 * 6.0) + 2.0)
+        self.assertEqual([inter.components[n].used for n in ("adc", "driver")], [8, 2])
+        self.assertAlmostEqual(inter.components["adc"].energy_nj, 1.1e-5 * 8 * 24.0 * 8, places=12)
+        self.assertAlmostEqual(inter.components["driver"].energy_nj, 1.1 * 11.87e-6 * 2 * 5.0 * 8,
+                               places=12)
+        # Contiguous: columns 0-31, so 4 ADCs convert 8 columns each and one
+        # driver has none; ADCs left on for the step cost twice as much.
+        self.assertEqual(contig.latency_ns, 8 * (5.0 + 8 * 6.0) + 2.0)
+        self.assertEqual([contig.components[n].used for n in ("adc", "driver")], [4, 1])
+        self.assertEqual([contig.components[n].installed for n in ("adc", "driver")], [8, 2])
+        self.assertAlmostEqual(contig.components["adc"].energy_nj, 1.1e-5 * 4 * 48.0 * 8, places=12)
+        self.assertAlmostEqual(contig.components["adc_always"].energy_nj,
+                               2 * inter.components["adc_always"].energy_nj, places=12)
+        self.assertAlmostEqual(contig.components["driver"].energy_nj,
+                               inter.components["driver"].energy_nj / 2, places=12)
 
     def test_worked_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
@@ -690,6 +755,7 @@ class ValidationTests(unittest.TestCase):
             "static current, no power": [read, Component("x", static_ua=1.0)],
             "data model, no power": [read, Component("x", model="crossbar_read")],
             "column_groups without size": [read, Component("x", count={"rule": "column_groups"})],
+            "used groups without a size": [read, Component("x", powered="used_column_groups")],
             "gated count": [read, Component("x", count={"rule": "tiles", "gated": True})],
             "spiking rows over a time bin": [read, Component("x", powered="spiking_rows",
                                                              **WHOLE_BIN, static_ua=1.0)],
@@ -714,7 +780,8 @@ class ValidationTests(unittest.TestCase):
             with self.subTest(label), self.assertRaises(ValueError):
                 Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), components)
         for label, mapping in {"unquantized bit-sliced": Mapping(None, "max", "twos_complement"),
-                               "unknown conv": Mapping(conv="diagonal")}.items():
+                               "unknown conv": Mapping(conv="diagonal"),
+                               "unknown placement": Mapping(columns="scattered")}.items():
             with self.subTest(label), self.assertRaises(ValueError):
                 Architecture("x", Crossbar(LINEAR_1BIT), mapping, [read])
         with self.assertRaisesRegex(ValueError, "the steps are read"):   # the error lists them

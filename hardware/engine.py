@@ -16,7 +16,7 @@ Powered instances follow the component's `powered` rule: all valid instances, or
 import math
 from dataclasses import dataclass
 
-from hardware.architecture import DATA_RULES, TILE_RULES, rule_of
+from hardware.architecture import DATA_RULES, TILE_RULES, powered_rule, rule_of
 from hardware.mapping import (Geometry, conductance_slices, default_slice_gains, layer_geometry,
                               spike_activity)
 from hardware.timeline import Timeline, build_timeline
@@ -71,14 +71,28 @@ def _per_unit(rule, g):
             "physical_columns": g.column_tiles * g.tile_cols,
             "used_columns": g.used_columns,
             "column_groups": g.column_tiles * math.ceil(g.tile_cols / rule.get("size", 1)),
+            "used_column_groups": g.groups_holding_weights(rule.get("size", 1), g.copies_per_tile),
             "outputs": g.out_channels,
             "output_bank": g.column_tiles * g.tile_cols,
             "one": 1,
             "fixed": rule.get("value", 0)}[rule["rule"]]
 
 
+def _slot_groups(rule, g, total, last):
+    """Units counted per (slot, row tile) -> groups holding weights: `total`
+    units, `last` of them in the last slot, which may hold fewer copies."""
+    (_, copies, _), *rest = g.slot_kinds
+    full = g.groups_holding_weights(rule["size"], copies)
+    if not rest:
+        return total * full
+    return (total - last) * full + last * g.groups_holding_weights(rule["size"], rest[0][1])
+
+
 def installed(rule, g):
     r = rule["rule"]
+    if r == "used_column_groups":
+        kinds = g.slot_kinds if g.copies > 1 else ((1, 1, ()),)
+        return g.row_tiles * sum(n * g.groups_holding_weights(rule["size"], c) for n, c, _ in kinds)
     if r == "used_columns":
         return g.copies * g.row_tiles * _per_unit(rule, g)
     if r in TILE_RULES:
@@ -95,6 +109,11 @@ def powered_per_activation(rule, g, act, sequential):
     r, gated, frames = rule["rule"], rule["gated"], act.frames
     if r == "spiking_rows":  # every word-line segment (one per column tile) with a spike
         return act.spikes_on_rows * g.column_tiles
+    if r == "used_column_groups":  # groups holding weights, of every tile activated
+        if gated:
+            return _slot_groups(rule, g, act.tile_reads, act.last_tile_reads)
+        return frames * sum(n * sum(p) * g.groups_holding_weights(rule["size"], c)
+                            for n, c, p in g.slot_kinds)
     if r == "used_columns":  # the used columns of every tile activated
         units = act.tile_read_copies if gated else \
             frames * sum(n * c * sum(p) for n, c, p in g.slot_kinds)
@@ -112,6 +131,11 @@ def powered_per_activation(rule, g, act, sequential):
 def powered_per_bin(rule, g, act, sequential):
     """Sum over all time bins of the powered instances (whole-bin components)."""
     r, gated, frames = rule["rule"], rule["gated"], act.frames
+    if r == "used_column_groups" and not sequential:
+        if gated:
+            return _slot_groups(rule, g, act.tile_bins, act.last_tile_bins)
+        return frames * g.row_tiles * sum(n * g.groups_holding_weights(rule["size"], c)
+                                          for n, c, _ in g.slot_kinds)
     if r in TILE_RULES and sequential:
         units = act.shared_tile_bins if gated else frames * g.row_tiles
     elif r == "used_columns":
@@ -166,8 +190,7 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
     components = {}
     for c in arch.components:
         count = rule_of(c.count)
-        on = rule_of(c.powered, activity=True)
-        on = dict(count, gated=on["gated"]) if on["rule"] == "all" else on
+        on = powered_rule(c)
         n = installed(count, g)
         # Instances the powered rule can ever power (e.g. used columns of the
         # installed columns); data rules (spiking rows) can reach all.
