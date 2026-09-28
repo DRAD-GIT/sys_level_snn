@@ -88,6 +88,13 @@ class PipelineTests(unittest.TestCase):
                                 self.results["rram_1bit_conv_xbar"][1][layer].components["cells"].energy_nj)
         sc1 = self.results["rram_1bit_conv_xbar"][1]["SC1"]
         self.assertEqual(sc1.geometry.windows, 28 * 28)          # 34x34 input, 7x7 kernel
+        shapes = {layer: (cost.geometry.in_channels, cost.geometry.input_size,
+                          cost.geometry.out_channels, cost.geometry.output_size)
+                  for layer, cost in self.results["rram_1bit_conv_xbar"][1].items()}
+        self.assertEqual(shapes["SC1"], (2, (34, 34), 6, (28, 28)))
+        self.assertEqual(shapes["SF2"][2:], (10, (1, 1)))
+        text = format_results(self.results, {"layers": True})
+        self.assertIn("input 2x34x34 -> output 6x28x28 x 300 time bins", text)
         self.assertGreater(sc1.output_spikes, 0)
 
     def test_accuracy_sweep_matches_pipeline(self):

@@ -60,7 +60,11 @@ def format_results(results, metrics):
         if metrics.get("layers"):
             for layer, cost in costs.items():
                 g = cost.geometry
-                lines.append(f"\n  layer {layer}: {g.windows} window(s) x {g.copies} weight "
+                lines.append(f"\n  layer {layer}: input {_shape(g.in_channels, g.input_size)} -> "
+                             f"output {_shape(g.out_channels, g.output_size)} x "
+                             f"{cost.timeline.timesteps} time bins (kernel {g.kernel[0]}x{g.kernel[1]}, "
+                             f"stride {g.stride}, padding {g.padding})")
+                lines.append(f"    {g.windows} window(s) x {g.copies} weight "
                              f"cop{'y' if g.copies == 1 else 'ies'}, {g.row_tiles}x{g.column_tiles} "
                              f"tiles each, {g.reads_per_timestep} reads/time bin")
                 lines += _lines(totals({layer: cost}), metrics, "    ")
@@ -96,8 +100,16 @@ def _enabled(values, metrics):
     return {k: v for k, v in values.items() if metrics.get(k)}
 
 
+def _shape(channels, size):
+    return f"{channels}x{size[0]}x{size[1]}"
+
+
 def _layer_report(cost, metrics):
-    entry = _enabled(totals({"layer": cost}), metrics)
+    g = cost.geometry
+    entry = {"input_shape": [g.in_channels, *g.input_size],
+             "output_shape": [g.out_channels, *g.output_size],
+             "time_bins": cost.timeline.timesteps,
+             **_enabled(totals({"layer": cost}), metrics)}
     if metrics.get("components"):
         entry["components"] = _components(cost, metrics)
     return entry

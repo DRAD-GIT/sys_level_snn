@@ -48,6 +48,8 @@ class Geometry:
     # Slots: the windows read together, copies_per_tile at a time (the last
     # slot may hold fewer); (number of slots, copies, row phases per row tile).
     slot_kinds: tuple
+    input_size: tuple        # (height, width) of the layer input
+    output_size: tuple       # (height, width) of the output: windows = height x width
 
     @property
     def rows_needed(self):
@@ -81,7 +83,8 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
     out_ch, in_ch, kh, kw = weight_shape
     if channels != in_ch:
         raise ValueError(f"input has {channels} channels, weights expect {in_ch}")
-    windows = ((height + 2 * padding - kh) // stride + 1) * ((width + 2 * padding - kw) // stride + 1)
+    out_h, out_w = (height + 2 * padding - kh) // stride + 1, (width + 2 * padding - kw) // stride + 1
+    windows = out_h * out_w
     groups = 2 if arch.precision.weight_encoding == "differential" else 1
     per_weight = groups * slices_per_group(arch)
     k_rows, used = in_ch * kh * kw, out_ch * per_weight
@@ -96,7 +99,8 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
     return Geometry(in_ch, out_ch, (kh, kw), stride, padding, windows, per_weight,
                     windows if parallel else 1, per_tile, len(phases),
                     math.ceil(per_tile * used / xb.cols), phases, xb.rows, xb.cols, active,
-                    (1 if parallel else windows) * max(phases), slot_kinds)
+                    (1 if parallel else windows) * max(phases), slot_kinds, (height, width),
+                    (out_h, out_w))
 
 
 def quantize_weights(weights, bits, scaling="std3"):
