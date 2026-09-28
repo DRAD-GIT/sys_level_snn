@@ -9,7 +9,7 @@ current is drawn from:
   the source line is driven directly by a v_read supply -> cell_supply_v =
     v_read (energy of the cells alone).
 The array is the per-activation step "cells", lasting `time_ns`, and conducts
-during it unless `when` says otherwise (e.g. when=("cells", "lif") keeps it
+during it unless `when` says otherwise (e.g. when=("cells.start", "lif.end") keeps it
 on until the neurons' step "lif" ends). Optional G(0) reference columns for
 analog weights.
 """

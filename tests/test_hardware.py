@@ -317,7 +317,7 @@ def test_arch(conv, mapping, crossbar, custom_gains=None):
                    supply_v=0.9, slice_gains=custom_gains),
          Component("ota", count="physical_columns", powered=gated("used_columns"), when="cells",
                    static_ua=10.0, event_pj=0.5),
-         Component("bias", count="physical_columns", when=("wl_driver", "cells"), static_ua=1.0),
+         Component("bias", count="physical_columns", when=("wl_driver.start", "cells.end"), static_ua=1.0),
          Component("driver", count={"rule": "column_groups", "size": 3},
                    powered=gated("column_groups", size=3), when="wl_driver", static_ua=4.0),
          Component("adc", count={"rule": "column_groups", "size": 3}, time_ns=0.5, serial=True,
@@ -457,9 +457,9 @@ class HandCalculationTests(unittest.TestCase):
             return evaluate_layer(arch, spikes, weights).components["cells"].energy_nj
 
         # One activation per time bin: the bin's current flows for 5 + 2 ns instead of 5.
-        self.assertAlmostEqual(cells(when=("cells", "lif")), cells() * 7.0 / 5.0, places=12)
+        self.assertAlmostEqual(cells(when=("cells.start", "lif.end")), cells() * 7.0 / 5.0, places=12)
         with self.assertRaisesRegex(ValueError, "one activation per time bin"):
-            cells(when=("cells", "lif"), rows=8, active_rows=4)   # 3 row tiles x 2 phases
+            cells(when=("cells.start", "lif.end"), rows=8, active_rows=4)   # 3 row tiles x 2 phases
 
     def test_shared_adc_converting_its_columns(self):
         """64x64 tile, 8 rows at a time, columns multiplexed to ADCs (6 ns per
@@ -538,7 +538,7 @@ class HandCalculationTests(unittest.TestCase):
                 crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=64, time_ns=50.0, **window),
                 Component("lif", count="outputs", time_ns=2.0)])
             return evaluate_layer(arch, x, w).components
-        step, bin_end = run(), run(when=("column_source", "bin.end"))
+        step, bin_end = run(), run(when=("column_source.start", "bin.end"))
         for name in ("column_source", "column_driver"):
             self.assertAlmostEqual(bin_end[name].energy_nj, step[name].energy_nj * 52.0 / 50.0,
                                    places=12, msg=name)
@@ -605,7 +605,7 @@ class TimelineTests(unittest.TestCase):
                            stage("b", 6.0),                                 # after a and c
                            stage("d", 5.0, at="b.end-2"),                   # d overlaps b by 2 ns
                            stage("e", 1.0),                                 # after all of them
-                           Component("bd", when=("b", "d"), static_ua=1.0)])
+                           Component("bd", when=("b.start", "d.end"), static_ua=1.0)])
         self.assertEqual(r.timeline.activation,
                          {"a": (0, 4), "c": (0, 3), "b": (4, 10), "d": (8, 13), "e": (13, 14)})
         self.assertEqual(r.latency_ns, 3 * 14.0)
@@ -627,7 +627,7 @@ class TimelineTests(unittest.TestCase):
     def test_component_cannot_serve_overlapping_activations(self):
         with self.assertRaisesRegex(ValueError, "two activations at once"):
             self.run_arch([stage("drive", 2.0), stage("sense", 3.0),
-                           Component("both", when=("drive", "sense"), static_ua=1.0)],
+                           Component("both", when=("drive.start", "sense.end"), static_ua=1.0)],
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=32), activation_interval_ns=3.0)
 
     def test_power_interval_between_step_edges(self):
@@ -691,18 +691,17 @@ class CompositionTests(unittest.TestCase):
 
     def test_anchors_and_windows(self):
         from hardware.architecture import parse_anchor
-        self.assertEqual(parse_anchor("fire", "start"), ("fire", "start", 0.0))
-        self.assertEqual(parse_anchor("fire", "end"), ("fire", "end", 0.0))
-        self.assertEqual(parse_anchor("read.start+1", "end"), ("read", "start", 1.0))
-        self.assertEqual(parse_anchor("fire.end - 0.5", "start"), ("fire", "end", -0.5))
-        self.assertEqual(parse_anchor("bin.start", "start"), ("bin", "start", 0.0))
-        for bad in ("read.middle", "read+", "+1", "read.start*2", 3):
-            with self.assertRaisesRegex(ValueError, "bad anchor"):
-                parse_anchor(bad, "start")
+        self.assertEqual(parse_anchor("fire.end"), ("fire", "end", 0.0))
+        self.assertEqual(parse_anchor("read.start+1"), ("read", "start", 1.0))
+        self.assertEqual(parse_anchor("fire.end - 0.5"), ("fire", "end", -0.5))
+        self.assertEqual(parse_anchor("bin.start"), ("bin", "start", 0.0))
+        for bad in ("fire", "bin", "read.middle", "read+", "+1", "read.start*2", 3):
+            with self.assertRaisesRegex(ValueError, "bad anchor"):     # a point needs its edge
+                parse_anchor(bad)
         arch = Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
             stage("read", 1.0), stage("lif", 1.0, count="outputs"),
             Component("own", time_ns=1.0), Component("during", when="read"),
-            Component("span", when=("read", "lif")), Component("whole", when="bin")])
+            Component("span", when=("read.start", "lif.end")), Component("whole", when="bin")])
         self.assertEqual({name: (p.level, p.start, p.end) for name, p in arch.power.items() if p},
                          {"read": ("activation", ("read", "start", 0.0), ("read", "end", 0.0)),
                           "lif": ("time_bin", ("lif", "start", 0.0), ("lif", "end", 0.0)),
@@ -767,7 +766,9 @@ class ValidationTests(unittest.TestCase):
         fire = stage("fire", 1.0, count="outputs")
         bad = {
             "no per-activation step": [stage("t", 1.0, count="outputs")],
-            "unknown step in when": [read, Component("x", when=("missing", "read"))],
+            "unknown step in when": [read, Component("x", when=("missing.start", "read.end"))],
+            "pair without edges": [read, fire, Component("x", when=("read", "fire"))],
+            "at without an edge": [read, stage("x", 1.0, at="read")],
             "static current, no power": [read, Component("x", static_ua=1.0)],
             "data model, no power": [read, Component("x", model="crossbar_read")],
             "column_groups without size": [read, Component("x", count={"rule": "column_groups"})],
@@ -776,14 +777,14 @@ class ValidationTests(unittest.TestCase):
             "spiking rows over a time bin": [read, Component("x", powered="spiking_rows",
                                                              **WHOLE_BIN, static_ua=1.0)],
             "spiking rows as count": [read, Component("x", count="spiking_rows")],
-            "at without time_ns": [read, Component("x", at="read")],
+            "at without time_ns": [read, Component("x", at="read.end")],
             "serial without time_ns": [read, Component("x", count={"rule": "column_groups",
                                                                    "size": 2}, serial=True)],
             "serial without column groups": [read, stage("x", 1.0, serial=True)],
             "when is a point": [read, Component("x", when="read.start")],
-            "when of three": [read, Component("x", when=("read", "read", "read"))],
-            "bad anchor": [read, Component("x", when=("read.middle", "read"))],
-            "at unknown step": [read, stage("x", 1.0, at="missing")],
+            "when of three": [read, Component("x", when=("read.start", "read.end", "read.end"))],
+            "bad anchor": [read, Component("x", when=("read.middle", "read.end"))],
+            "at unknown step": [read, stage("x", 1.0, at="missing.end")],
             "activation step at a time-bin step": [read, fire, stage("x", 1.0, at="fire.end")],
             "activation step at the bin": [read, stage("x", 1.0, at="bin.start")],
             "step at the bin's end": [read, stage("x", 1.0, count="outputs", at="bin.end")],
@@ -802,7 +803,7 @@ class ValidationTests(unittest.TestCase):
                 Architecture("x", Crossbar(LINEAR_1BIT), mapping, [read])
         with self.assertRaisesRegex(ValueError, "the steps are read"):   # the error lists them
             Architecture("x", Crossbar(LINEAR_1BIT), Mapping(),
-                         [read, Component("r2", when=("fier.start", "read"))])
+                         [read, Component("r2", when=("fier.start", "read.end"))])
 
 
 if __name__ == "__main__":

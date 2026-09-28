@@ -2,7 +2,7 @@
 per active column) with drivers shared by groups of columns; the MAC happens
 in the voltage domain (not simulated). The column sources are the
 per-activation step "column_source", lasting `time_ns`. Sources and drivers
-are powered during it unless `when` says otherwise (e.g. when=("column_source",
+are powered during it unless `when` says otherwise (e.g. when=("column_source.start",
 "bin.end") keeps them on until the end of the time bin); the drivers only
 those whose `driver_group` columns hold at least one weight column (which
 depends on Mapping.columns).

@@ -132,16 +132,17 @@ class Component:
     time-bin step: also after all activations); `at` starts it at an anchor
     instead.
 
-    Anchors: "name.start", "name.end" (a bare name in `at` means its end),
-    with an offset in ns ("cells.start+1", "lif.end-0.5"); "bin.start",
-    "bin.end" (the time bin), "activations.start", "activations.end" (all
-    activations of the bin). A per-activation step can only be anchored to
+    Names and anchors: a bare name is a window ("cells": the step; "bin":
+    the time bin; "activations": all activations of the bin); an anchor is a
+    point, always with its edge: "name.start" or "name.end", with an offset
+    in ns ("cells.start+1", "lif.end-0.5"); "bin.start", "bin.end",
+    "activations.start", "activations.end". A per-activation step can only be anchored to
     per-activation steps; seen from the time bin, a per-activation step
     starts with the first activation and ends with the last.
 
-    Power: `when` = a step name (during that step), "bin" (the whole time
-    bin) or a (from, to) pair of anchors (a bare name: its start as from, its
-    end as to). Default: the component's own step. An interval within the
+    Power: `when` = a window ("vi": during that step; "bin": the whole time
+    bin) or a (from, to) pair of anchors (("cells.start", "lif.end")).
+    Default: the component's own step. An interval within the
     per-activation steps is powered in every activation (gated per
     activation); one reaching a time-bin step or the bin's edges is powered
     once per time bin. A component without a step or `when` only has area
@@ -259,19 +260,20 @@ def rule_of(spec, *, activity=False):
     return rule
 
 
-_ANCHOR = re.compile(r"\s*([A-Za-z_]\w*)(?:\.(start|end))?\s*(?:([+-])\s*(\d+(?:\.\d*)?|\.\d+))?\s*")
+_ANCHOR = re.compile(r"\s*([A-Za-z_]\w*)\.(start|end)\s*(?:([+-])\s*(\d+(?:\.\d*)?|\.\d+))?\s*")
 
 
-def parse_anchor(text, default_edge):
-    """"lif", "cells.start+1", "adc.end-0.5", "bin.start" -> (name,
-    "start"|"end", offset_ns); a bare name takes default_edge."""
+def parse_anchor(text):
+    """"cells.start", "lif.end-0.5", "bin.end" -> (name, "start"|"end",
+    offset_ns). The edge is always given: a bare name is a window, not a
+    point."""
     match = _ANCHOR.fullmatch(text) if isinstance(text, str) else None
     if not match:
-        raise ValueError(f"bad anchor {text!r}: use 'name.start' or 'name.end' "
-                         "(optionally + or - ns), e.g. 'cells.start+1' or 'bin.start'")
+        raise ValueError(f"bad anchor {text!r}: a point is 'name.start' or 'name.end' "
+                         "(optionally + or - ns), e.g. 'cells.start', 'lif.end-1', 'bin.end'")
     name, edge, sign, value = match.groups()
     offset = (-1 if sign == "-" else 1) * float(value) if value else 0.0
-    return name, edge or default_edge, offset
+    return name, edge, offset
 
 
 def powered_rule(c):
@@ -367,7 +369,7 @@ def _step_of(c):
             raise ValueError(f"{c.name}: serial=True needs a column_groups count (the columns "
                              "each instance converts one after another)")
         size = count["size"]
-    at = None if c.at is None else parse_anchor(c.at, "end")
+    at = None if c.at is None else parse_anchor(c.at)
     return Stage(c.name, float(c.time_ns), size, step_level(c), at)
 
 
@@ -391,15 +393,16 @@ def _power_of(c, levels):
         if c.time_ns is None:
             return None
         when = c.name
-    if isinstance(when, str):
-        if "." in when or not re.fullmatch(r"\s*[A-Za-z_]\w*\s*", when):
-            raise ValueError(f"{c.name}: when={when!r}: a single string names a step (or "
-                             "'bin'); give an interval as a (from, to) pair of anchors")
-        when = (when.strip(), when.strip())
+    if isinstance(when, str):          # a window: that step (or "bin", "activations")
+        if not re.fullmatch(r"\s*[A-Za-z_]\w*\s*", when):
+            raise ValueError(f"{c.name}: when={when!r}: a single string is a window (a step "
+                             "name or 'bin'); give an interval as a (from, to) pair of anchors, "
+                             "e.g. ('cells.start', 'lif.end')")
+        when = (f"{when.strip()}.start", f"{when.strip()}.end")
     if not isinstance(when, (tuple, list)) or len(when) != 2:
-        raise ValueError(f"{c.name}: when must be a step name, 'bin' or a (from, to) pair "
-                         f"of anchors, got {c.when!r}")
-    start, end = parse_anchor(when[0], "start"), parse_anchor(when[1], "end")
+        raise ValueError(f"{c.name}: when must be a window (a step name or 'bin') or a "
+                         f"(from, to) pair of anchors, got {c.when!r}")
+    start, end = parse_anchor(when[0]), parse_anchor(when[1])
     found = [_point(a, levels, f"{c.name}.when") for a in (start, end)]
     level = "activation" if found == ["activation", "activation"] else "time_bin"
     return Power(level, start, end)
