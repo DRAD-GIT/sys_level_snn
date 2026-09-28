@@ -8,6 +8,7 @@ import os
 import re
 
 import torch
+from torch.utils.data import DataLoader, Subset
 
 from .base import load_params
 
@@ -74,6 +75,16 @@ def find_dataset(spec, data_dir):
             f"{data_dir}: expected one folder starting with {' / '.join(spec.dataset_folders)} "
             f"for {spec.display_name}, found {found or 'none'}")
     return os.path.join(data_dir, found[0])
+
+
+def test_loader(spec, net_params, data_dir, max_samples=None, num_workers=4):
+    """The test set (its first max_samples, if given) in batches of spec.batch_size."""
+    if max_samples is not None and max_samples <= 0:
+        raise ValueError("max_samples must be positive")
+    dataset = test_dataset(spec, net_params, data_dir)
+    if max_samples is not None:
+        dataset = Subset(dataset, range(min(max_samples, len(dataset))))
+    return DataLoader(dataset, batch_size=spec.batch_size, shuffle=False, num_workers=num_workers)
 
 
 def test_dataset(spec, net_params, data_dir):

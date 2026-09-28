@@ -9,7 +9,6 @@ the hardware. Hardware evaluation does not simulate analog nonidealities.
 import copy
 
 import torch
-from torch.utils.data import DataLoader
 
 import models
 from evaluation.probes import LayerProbe
@@ -57,26 +56,24 @@ class _PrecisionGroup:
         self.costs = {arch.name: {} for arch in architectures}
 
 
-def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, num_workers=4,
+def evaluate(model, architectures, *, data_dir, max_samples=None, num_workers=4, log_every=1000,
              log=print):
     """Evaluate `architectures` (hardware.Architecture) on `model`.
 
     data_dir: the dataset folder, or a folder holding it (models.find_dataset).
+    max_samples: evaluate only the first samples of the test set (None = all).
+    The accuracy so far is logged every `log_every` samples and at the end.
     Returns {architecture name: (software accuracy %, {layer: LayerCost})}.
     """
-    if batch_size <= 0 or (max_batches is not None and max_batches <= 0):
-        raise ValueError("batch_size and max_batches must be positive")
     names = [a.name for a in architectures]
     if not architectures or len(set(names)) != len(names):
         raise ValueError("define at least one architecture, with unique names")
 
     spec = models.get_spec(model)
-    batch_size = min(batch_size, spec.max_batch_size or batch_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = models.load_pretrained(spec, device).eval()
     params = models.load_params(spec.path(spec.params_yaml))
-    loader = DataLoader(models.test_dataset(spec, params, data_dir), batch_size=batch_size,
-                        shuffle=False, num_workers=num_workers)
+    loader = models.test_loader(spec, params, data_dir, max_samples, num_workers)
 
     by_precision = {}  # (weight bits, scaling): architectures storing weights that way
     for arch in architectures:
@@ -86,9 +83,12 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
               for (bits, scaling), archs in by_precision.items()]
     log(f"{spec.display_name}: evaluating {', '.join(names)}")
 
-    for batch_index, (_, spikes, target, label) in enumerate(loader):
-        if max_batches is not None and batch_index == max_batches:
-            break
+    total = logged = 0
+
+    def progress():
+        log(f"  {total} samples: accuracy " + ", ".join(
+            f"{_label(*key)} {g.stats.accuracy:.2f}%" for key, g in zip(by_precision, groups)))
+    for _, spikes, target, label in loader:
         spikes, target = spikes.to(device), target.to(device)
         for group in groups:
             group.probe.clear()
@@ -109,9 +109,12 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
                         costs[name].add(cost)
                     else:
                         costs[name] = cost
-        if (batch_index + 1) % 10 == 0 or batch_index == 0:
-            log(f"batch {batch_index + 1}: accuracy " + ", ".join(
-                f"{_label(*key)} {g.stats.accuracy:.2f}%" for key, g in zip(by_precision, groups)))
+        total += len(label)
+        if _passed(total, logged, log_every):
+            progress()
+            logged = total
+    if total != logged:
+        progress()
 
     results = {}
     for group in groups:
@@ -121,44 +124,45 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
     return results
 
 
-def accuracy_sweep(model, configs, *, data_dir, batch_size=None, max_batches=None,
-                   num_workers=4, log_every=1000, log=print):
+def accuracy_sweep(model, configs, *, data_dir, max_samples=None, num_workers=4, log_every=1000,
+                   log=print):
     """Test accuracy (%) of `model` for each weight quantization in `configs`,
     {label: (bits, scaling)}, with bits and scaling as in quantized_network
-    (bits=None: the trained float weights). The test set is read once; every
-    batch runs through all configurations. No hardware evaluation. The accuracy
-    so far is logged every `log_every` samples and at the end.
-    Returns {label: accuracy}."""
+    (bits=None: the trained float weights). The test set (its first
+    max_samples, if given) is read once; every batch runs through all
+    configurations. No hardware evaluation. The accuracy so far is logged every
+    `log_every` samples and at the end. Returns {label: accuracy}."""
     spec = models.get_spec(model)
-    batch_size = min(batch_size or 32, spec.max_batch_size or batch_size or 32)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = models.load_pretrained(spec, device).eval()
     params = models.load_params(spec.path(spec.params_yaml))
-    loader = DataLoader(models.test_dataset(spec, params, data_dir), batch_size=batch_size,
-                        shuffle=False, num_workers=num_workers)
+    loader = models.test_loader(spec, params, data_dir, max_samples, num_workers)
     nets = {label: quantized_network(net, spec.layers, bits, scaling)[0]
             for label, (bits, scaling) in configs.items()}
     correct, total, logged = dict.fromkeys(configs, 0), 0, 0
     log(f"{spec.display_name}: accuracy of {len(configs)} weight configuration"
-        f"{'' if len(configs) == 1 else 's'}, {batch_size} samples per batch")
+        f"{'' if len(configs) == 1 else 's'}")
 
     def progress():
         log(f"  {total} samples: " + ", ".join(
             f"{name} {100 * c / total:.2f}%" for name, c in correct.items()))
     with torch.no_grad():
-        for batch_index, (_, spikes, _, label) in enumerate(loader):
-            if max_batches is not None and batch_index == max_batches:
-                break
+        for _, spikes, _, label in loader:
             spikes = spikes.to(device)
             for name, quantized in nets.items():
                 correct[name] += int((predict_class(quantized(spikes)) == label).sum())
             total += len(label)
-            if total // log_every > logged // log_every:
+            if _passed(total, logged, log_every):
                 progress()
                 logged = total
     if total != logged:
         progress()
     return {name: 100 * c / total for name, c in correct.items()}
+
+
+def _passed(total, logged, every):
+    """True when a multiple of `every` samples was passed since the last log."""
+    return total // every > logged // every
 
 
 def _precision_key(bits, scaling):

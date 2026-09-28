@@ -23,8 +23,7 @@ from evaluation.runner import evaluate
 # RUN SETTINGS
 # ============================================================================
 MODEL = "nmnist"       # "nmnist" or "gesture"
-BATCH_SIZE = 16        # samples per forward pass; gesture is capped at 2
-MAX_BATCHES = 1        # None = the full test set (slow)
+MAX_SAMPLES = 100      # first test samples to evaluate; None = the full test set
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = None     # e.g. "/data/neuromorphic"
@@ -75,13 +74,15 @@ def main():
     parser = argparse.ArgumentParser(description="SNN inference + CIM hardware metrics")
     parser.add_argument("--model", default=MODEL, choices=["nmnist", "gesture"])
     parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
-    parser.add_argument("-b", "--batch-size", type=int, default=BATCH_SIZE)
-    parser.add_argument("--batches", type=int, default=MAX_BATCHES,
-                        help="max batches to run; -1 = full test set")
+    parser.add_argument("--samples", type=int, default=MAX_SAMPLES,
+                        help="first test samples to evaluate; -1 = the full test set")
+    parser.add_argument("--every", type=int, default=1000,
+                        help="print the accuracy so far every N samples (default 1000)")
     args = parser.parse_args()
 
-    results = evaluate(args.model, ARCHITECTURES, data_dir=args.data, batch_size=args.batch_size,
-                       max_batches=None if args.batches in (None, -1) else args.batches)
+    results = evaluate(args.model, ARCHITECTURES, data_dir=args.data,
+                       max_samples=None if args.samples in (None, -1) else args.samples,
+                       log_every=args.every)
     print(format_results(results, METRICS))
     for row in export(results, ARCHITECTURES, args.model, METRICS, LOG_DIR):
         print(f"saved {row['result_json']}")

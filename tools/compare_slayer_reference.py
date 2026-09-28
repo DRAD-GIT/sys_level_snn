@@ -17,7 +17,6 @@ import os
 import sys
 
 import torch
-from torch.utils.data import DataLoader
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -45,11 +44,10 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
     return energy
 
 
-def compare(path, full=False, data_dir=None, architectures=None, device=None, batch_size=None,
-            num_workers=4, log=print):
+def compare(path, full=False, data_dir=None, architectures=None, device=None, num_workers=4,
+            log=print):
     """device: where SRMLayer runs; default the GPU if available (as run.py).
-    batch_size / num_workers: for the full test set; batch_size defaults to the
-    model's limit (gesture: 2), else 32."""
+    num_workers: file-reading processes for the full test set."""
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     reference = models.load_tensors(path)
     if reference.get("format") != FORMAT:
@@ -110,11 +108,10 @@ def compare(path, full=False, data_dir=None, architectures=None, device=None, ba
         recorded = reference.get("full")
         if not recorded:
             raise ValueError(f"{path} has no full-test-set predictions; export with --full")
-        dataset = models.test_dataset(spec, models.load_params(spec.path(spec.params_yaml)), data_dir)
+        loader = models.test_loader(spec, models.load_params(spec.path(spec.params_yaml)), data_dir,
+                                    num_workers=num_workers)
         agree = correct = done = 0
         n = len(recorded["labels"])
-        batch_size = batch_size or spec.max_batch_size or 32
-        loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
         with torch.no_grad():
             for _, spikes, _, _ in loader:
                 for ours in predict_class(net(spikes.to(device))).tolist():
@@ -137,9 +134,6 @@ if __name__ == "__main__":
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--data", help="dataset folder, or a folder holding it (for --full)")
     parser.add_argument("--device", help="where SRMLayer runs (cpu / cuda); default cuda if available")
-    parser.add_argument("-b", "--batch-size", type=int,
-                        help="samples per forward pass (--full); default: the model's limit, else 32")
     args = parser.parse_args()
     for reference_path in args.reference:
-        compare(reference_path, full=args.full, data_dir=args.data, device=args.device,
-                batch_size=args.batch_size)
+        compare(reference_path, full=args.full, data_dir=args.data, device=args.device)

@@ -103,5 +103,6 @@ SPEC = ModelSpec(
     checkpoint="pretrained/nmnist_lenet.pth",
     params_yaml="models/nmnist.yaml",
     layers=("SC1", "SC2", "SC3", "SF1", "SF2"),
+    batch_size=50,          # divides 1000 and the 10,000 test samples
     dataset_folders=("N-MNIST",),
 )

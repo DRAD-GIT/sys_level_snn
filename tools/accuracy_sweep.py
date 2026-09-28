@@ -79,10 +79,7 @@ def main():
     parser.add_argument("--sensitivity", action="store_true",
                         help="also quantize one layer at a time (the rest float)")
     parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
-    parser.add_argument("-b", "--batch-size", type=int,
-                        help="samples the GPU processes at once (default 32; gesture: 2); "
-                             "only speed and memory, not the result")
-    parser.add_argument("--batches", type=int, help="max batches (default: whole test set)")
+    parser.add_argument("--samples", type=int, help="first test samples to evaluate (default: all)")
     parser.add_argument("--every", type=int, default=1000,
                         help="print the accuracy so far every N samples (default 1000)")
     args = parser.parse_args()
@@ -103,8 +100,8 @@ def main():
         configs = configurations(layers, args)
         accuracy = accuracy_sweep(model, {config_label(key): value
                                           for key, value in configs.items()},
-                                  data_dir=args.data, batch_size=args.batch_size,
-                                  max_batches=args.batches, log_every=args.every)
+                                  data_dir=args.data, max_samples=args.samples,
+                                  log_every=args.every)
         result = {key: accuracy[config_label(key)] for key in configs}
         bit_widths = [b for b in args.bits if b is not None]
         fixed = {layer: b for layer, b in args.layer_bits.items() if layer in layers}

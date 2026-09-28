@@ -53,6 +53,9 @@ class ModelSpec:
     layers: names of the weighted conv/dense layers, in forward order. Only
         these layers are mapped onto CIM hardware.
     checkpoint / params_yaml: paths relative to the repository root.
+    batch_size: samples evaluated at once (in parallel on the GPU); only speed
+        and memory depend on it, not the results. Lower it if a GPU runs out
+        of memory.
     dataset_folders: name prefixes of the dataset's folder (ignoring case and
         separators: "N-MNIST" also matches "N_MNIST" or "nmnist_v2").
     """
@@ -63,7 +66,7 @@ class ModelSpec:
     checkpoint: str
     params_yaml: str
     layers: tuple[str, ...]
-    max_batch_size: int | None = None
+    batch_size: int = 32
     dataset_folders: tuple[str, ...] = ()
 
     def path(self, relative: str) -> str:

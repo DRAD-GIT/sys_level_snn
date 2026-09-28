@@ -62,13 +62,14 @@ class ProbeTests(unittest.TestCase):
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
-        spec = dataclasses.replace(models.get_spec("nmnist"), dataset_class=RandomSpikes)
+        spec = dataclasses.replace(models.get_spec("nmnist"), dataset_class=RandomSpikes,
+                                   batch_size=2)
         self.spec_patch = patch.object(models.nmnist, "SPEC", spec)
         self.spec_patch.start()
         with tempfile.TemporaryDirectory() as data:
             os.mkdir(os.path.join(data, "N-MNIST"))
-            self.results = evaluate("nmnist", ARCHITECTURES, data_dir=data, batch_size=2,
-                                    max_batches=1, num_workers=0, log=lambda *_: None)
+            self.results = evaluate("nmnist", ARCHITECTURES, data_dir=data, max_samples=2,
+                                    num_workers=0, log=lambda *_: None)
 
     def tearDown(self):
         self.spec_patch.stop()
@@ -94,12 +95,24 @@ class PipelineTests(unittest.TestCase):
             os.mkdir(os.path.join(data, "N-MNIST"))
             sweep = accuracy_sweep("nmnist", {"6 std3": (6, "std3"), "6 mse": (6, "mse"),
                                               "float": (None, "max")},
-                                   data_dir=data, batch_size=2, max_batches=1, num_workers=0,
+                                   data_dir=data, max_samples=2, num_workers=0,
                                    log=lambda *_: None)
         # Same quantization as the pipeline's architectures.
         self.assertEqual(sweep["6 std3"], self.results["rram_1bit_conv_xbar"][0])
         self.assertEqual(sweep["6 mse"], self.results["rram_mse"][0])
         self.assertEqual(sweep["float"], self.results["analog_c3cim"][0])
+
+    def test_sample_limit_and_batches(self):
+        spec = models.get_spec("nmnist")                        # patched: 2 samples, batches of 2
+        params = models.load_params(spec.path(spec.params_yaml))
+        with tempfile.TemporaryDirectory() as data:
+            os.mkdir(os.path.join(data, "N-MNIST"))
+            one = models.test_loader(spec, params, data, max_samples=1, num_workers=0)
+            everything = models.test_loader(spec, params, data, max_samples=50, num_workers=0)
+        self.assertEqual((len(one.dataset), one.batch_size), (1, 2))
+        self.assertEqual(len(everything.dataset), 2)            # capped at the test set
+        with self.assertRaisesRegex(ValueError, "max_samples"):
+            models.test_loader(spec, params, data, max_samples=0)
 
     def test_quantized_network_is_a_copy(self):
         spec = models.get_spec("nmnist")

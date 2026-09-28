@@ -31,7 +31,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 
 Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. Then edit `run.py`:
 
-- `MODEL`, `BATCH_SIZE`, `MAX_BATCHES`: what to run.
+- `MODEL`, `MAX_SAMPLES`: what to run (the first `MAX_SAMPLES` test samples; `None` = all).
 - `DATASET_DIR`: where the datasets are (see below).
 - `ARCHITECTURES`: which designs to evaluate, each composed from a crossbar (with its memory cells) and your own stages and components (see section 3).
 - `METRICS`: switch each reported metric on or off (accuracy, energy, latency, power, area, TOPS/W, pJ per synaptic operation, per-layer results, per-component breakdown).
@@ -40,7 +40,7 @@ Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requiremen
 python run.py                                   # settings in run.py
 python run.py --data /data/neuromorphic         # dataset location for this run
 python run.py --model gesture                   # override the model once
-python run.py --model nmnist -b 12 --batches -1 # full N-MNIST test set (slow)
+python run.py --model nmnist --samples -1       # full N-MNIST test set (slow)
 python -m unittest discover -s tests            # all tests
 ```
 
@@ -56,9 +56,9 @@ Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without 
 
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
 
-**Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `-b`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Precision**). `--sensitivity` also quantizes one layer at a time (the others float) to show which layers limit the accuracy, and `--layer-bits SF1=8 SF2=float` fixes named layers' bit widths for mixed precision. The accuracy so far is printed every `--every` samples (default 1000) and at the end; `-b` (samples processed at once) only affects speed and GPU memory.
+**Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `--samples 1000`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Precision**). `--sensitivity` also quantizes one layer at a time (the others float) to show which layers limit the accuracy, and `--layer-bits SF1=8 SF2=float` fixes named layers' bit widths for mixed precision. The accuracy so far is printed every `--every` samples (default 1000) and at the end.
 
-Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits` and `weight_scaling`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Gesture batch size is capped at two.
+Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits` and `weight_scaling`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Samples are evaluated in parallel in batches set per model (`batch_size` in the model's `SPEC`: N-MNIST 50, DVS-Gesture 2, which needs about 0.5 GB of GPU memory per sample); the batch size only affects speed and memory, not the results. Lower it there if a GPU runs out of memory.
 
 The weight files are plain tensors (`torch.load(weights_only=True)`); `models.load_pretrained` checks that the YAML's neuron parameters still reproduce the neuron kernels stored with them. To add a model, write its classes and a `SPEC` in `models/<name>.py` and register it in `models/__init__.py`.
 

@@ -74,6 +74,6 @@ SPEC = ModelSpec(
     checkpoint="pretrained/gesture.pth",
     params_yaml="models/gesture.yaml",
     layers=("SC1", "SC2", "SF1", "SF2"),
-    max_batch_size=2,
+    batch_size=2,           # ~0.5 GB of GPU memory per sample (1450 time bins)
     dataset_folders=("Gesture", "DVS-Gesture"),
 )

@@ -3,10 +3,12 @@
 Skipped until reference files exist: record them on a machine with slayerSNN
 using tools/export_slayer_reference.py and commit them under reference/.
 """
+import dataclasses
 import glob
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -78,8 +80,10 @@ class CompareToolTests(unittest.TestCase):
             torch.save({"format": FORMAT, "model": "nmnist", "device": "cpu", "samples": [sample],
                         "full": {"predictions": predictions, "labels": [i % 10 for i in range(5)]}},
                        path)
-            report = compare(path, full=True, data_dir=data, architectures=[arch], batch_size=2,
-                             num_workers=0, log=lambda *_: None)   # batches of 2, 2, 1
+            small_batches = dataclasses.replace(spec, batch_size=2)       # batches of 2, 2, 1
+            with patch.object(models.nmnist, "SPEC", small_batches):
+                report = compare(path, full=True, data_dir=data, architectures=[arch],
+                                 num_workers=0, log=lambda *_: None)
         self.assertEqual(report["full_agreement"], 1.0)
         self.assertEqual((report["reader_mismatches"], report["prediction_mismatches"],
                           report["output_differ"]), (0, 0, 0))
