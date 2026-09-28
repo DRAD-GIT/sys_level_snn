@@ -56,12 +56,13 @@ class _PrecisionGroup:
         self.costs = {arch.name: {} for arch in architectures}
 
 
-def evaluate(model, architectures, *, data_dir, max_samples=None, num_workers=4, log_every=1000,
-             log=print):
+def evaluate(model, architectures, *, data_dir, max_samples=None, parallel=None, num_workers=4,
+             log_every=1000, log=print):
     """Evaluate `architectures` (hardware.Architecture) on `model`.
 
     data_dir: the dataset folder, or a folder holding it (models.find_dataset).
     max_samples: evaluate only the first samples of the test set (None = all).
+    parallel: samples evaluated at once (default: the model's batch_size).
     The accuracy so far is logged every `log_every` samples and at the end.
     Returns {architecture name: (software accuracy %, {layer: LayerCost})}.
     """
@@ -73,7 +74,7 @@ def evaluate(model, architectures, *, data_dir, max_samples=None, num_workers=4,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = models.load_pretrained(spec, device).eval()
     params = models.load_params(spec.path(spec.params_yaml))
-    loader = models.test_loader(spec, params, data_dir, max_samples, num_workers)
+    loader = models.test_loader(spec, params, data_dir, max_samples, parallel, num_workers)
 
     by_precision = {}  # (weight bits, scaling): architectures storing weights that way
     for arch in architectures:
@@ -81,7 +82,8 @@ def evaluate(model, architectures, *, data_dir, max_samples=None, num_workers=4,
                                                arch.precision.weight_scaling), []).append(arch)
     groups = [_PrecisionGroup(net, spec.layers, bits, scaling, archs)
               for (bits, scaling), archs in by_precision.items()]
-    log(f"{spec.display_name}: evaluating {', '.join(names)}")
+    log(f"{spec.display_name}: evaluating {', '.join(names)}; "
+        f"{loader.batch_size} samples in parallel")
 
     total = logged = 0
 
@@ -124,24 +126,25 @@ def evaluate(model, architectures, *, data_dir, max_samples=None, num_workers=4,
     return results
 
 
-def accuracy_sweep(model, configs, *, data_dir, max_samples=None, num_workers=4, log_every=1000,
-                   log=print):
+def accuracy_sweep(model, configs, *, data_dir, max_samples=None, parallel=None, num_workers=4,
+                   log_every=1000, log=print):
     """Test accuracy (%) of `model` for each weight quantization in `configs`,
     {label: (bits, scaling)}, with bits and scaling as in quantized_network
     (bits=None: the trained float weights). The test set (its first
     max_samples, if given) is read once; every batch runs through all
-    configurations. No hardware evaluation. The accuracy so far is logged every
+    configurations, `parallel` samples at once (default: the model's
+    batch_size). No hardware evaluation. The accuracy so far is logged every
     `log_every` samples and at the end. Returns {label: accuracy}."""
     spec = models.get_spec(model)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net = models.load_pretrained(spec, device).eval()
     params = models.load_params(spec.path(spec.params_yaml))
-    loader = models.test_loader(spec, params, data_dir, max_samples, num_workers)
+    loader = models.test_loader(spec, params, data_dir, max_samples, parallel, num_workers)
     nets = {label: quantized_network(net, spec.layers, bits, scaling)[0]
             for label, (bits, scaling) in configs.items()}
     correct, total, logged = dict.fromkeys(configs, 0), 0, 0
     log(f"{spec.display_name}: accuracy of {len(configs)} weight configuration"
-        f"{'' if len(configs) == 1 else 's'}")
+        f"{'' if len(configs) == 1 else 's'}, {loader.batch_size} samples in parallel")
 
     def progress():
         log(f"  {total} samples: " + ", ".join(

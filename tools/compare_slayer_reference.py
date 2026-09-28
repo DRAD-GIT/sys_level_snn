@@ -44,10 +44,11 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
     return energy
 
 
-def compare(path, full=False, data_dir=None, architectures=None, device=None, num_workers=4,
-            log=print):
+def compare(path, full=False, data_dir=None, architectures=None, device=None, parallel=None,
+            num_workers=4, log=print):
     """device: where SRMLayer runs; default the GPU if available (as run.py).
-    num_workers: file-reading processes for the full test set."""
+    parallel / num_workers: samples evaluated at once (default: the model's
+    batch_size) and file-reading processes, for the full test set."""
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     reference = models.load_tensors(path)
     if reference.get("format") != FORMAT:
@@ -109,7 +110,7 @@ def compare(path, full=False, data_dir=None, architectures=None, device=None, nu
         if not recorded:
             raise ValueError(f"{path} has no full-test-set predictions; export with --full")
         loader = models.test_loader(spec, models.load_params(spec.path(spec.params_yaml)), data_dir,
-                                    num_workers=num_workers)
+                                    parallel=parallel, num_workers=num_workers)
         agree = correct = done = 0
         n = len(recorded["labels"])
         with torch.no_grad():
@@ -134,6 +135,9 @@ if __name__ == "__main__":
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--data", help="dataset folder, or a folder holding it (for --full)")
     parser.add_argument("--device", help="where SRMLayer runs (cpu / cuda); default cuda if available")
+    parser.add_argument("--parallel", type=int,
+                        help="samples evaluated at once for --full (default: N-MNIST 50, gesture 2)")
     args = parser.parse_args()
     for reference_path in args.reference:
-        compare(reference_path, full=args.full, data_dir=args.data, device=args.device)
+        compare(reference_path, full=args.full, data_dir=args.data, device=args.device,
+                parallel=args.parallel)

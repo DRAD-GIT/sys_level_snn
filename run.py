@@ -24,6 +24,7 @@ from evaluation.runner import evaluate
 # ============================================================================
 MODEL = "nmnist"       # "nmnist" or "gesture"
 MAX_SAMPLES = 100      # first test samples to evaluate; None = the full test set
+PARALLEL = None        # samples evaluated at once; None = the model's default (N-MNIST 50, gesture 2)
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = None     # e.g. "/data/neuromorphic"
@@ -78,11 +79,13 @@ def main():
                         help="first test samples to evaluate; -1 = the full test set")
     parser.add_argument("--every", type=int, default=1000,
                         help="print the accuracy so far every N samples (default 1000)")
+    parser.add_argument("--parallel", type=int, default=PARALLEL,
+                        help="samples evaluated at once (default: N-MNIST 50, gesture 2)")
     args = parser.parse_args()
 
     results = evaluate(args.model, ARCHITECTURES, data_dir=args.data,
                        max_samples=None if args.samples in (None, -1) else args.samples,
-                       log_every=args.every)
+                       parallel=args.parallel, log_every=args.every)
     print(format_results(results, METRICS))
     for row in export(results, ARCHITECTURES, args.model, METRICS, LOG_DIR):
         print(f"saved {row['result_json']}")

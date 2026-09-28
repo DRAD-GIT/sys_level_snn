@@ -77,14 +77,17 @@ def find_dataset(spec, data_dir):
     return os.path.join(data_dir, found[0])
 
 
-def test_loader(spec, net_params, data_dir, max_samples=None, num_workers=4):
-    """The test set (its first max_samples, if given) in batches of spec.batch_size."""
-    if max_samples is not None and max_samples <= 0:
-        raise ValueError("max_samples must be positive")
+def test_loader(spec, net_params, data_dir, max_samples=None, parallel=None, num_workers=4):
+    """The test set (its first max_samples, if given) in groups of `parallel`
+    samples evaluated at once (default: spec.batch_size)."""
+    for label, value in (("max_samples", max_samples), ("parallel", parallel)):
+        if value is not None and value <= 0:
+            raise ValueError(f"{label} must be positive")
     dataset = test_dataset(spec, net_params, data_dir)
     if max_samples is not None:
         dataset = Subset(dataset, range(min(max_samples, len(dataset))))
-    return DataLoader(dataset, batch_size=spec.batch_size, shuffle=False, num_workers=num_workers)
+    return DataLoader(dataset, batch_size=parallel or spec.batch_size, shuffle=False,
+                      num_workers=num_workers)
 
 
 def test_dataset(spec, net_params, data_dir):
