@@ -527,6 +527,22 @@ class HandCalculationTests(unittest.TestCase):
         self.assertAlmostEqual(contig.components["driver"].energy_nj,
                                inter.components["driver"].energy_nj / 2, places=12)
 
+    def test_c3cim_sources_on_until_the_time_bin_ends(self):
+        """One activation per time bin (all 64 rows at once): sources and
+        drivers on from their step to the end of the bin, 50 + 2 ns instead
+        of 50."""
+        x, w = torch.ones(1, 64, 1, 1, 2), torch.ones(4, 64, 1, 1)
+
+        def run(**window):
+            arch = compose("c", Mapping(None, "max", "analog"), [
+                crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=64, time_ns=50.0, **window),
+                Component("lif", count="outputs", time_ns=2.0)])
+            return evaluate_layer(arch, x, w).components
+        step, bin_end = run(), run(when=("column_source", "bin.end"))
+        for name in ("column_source", "column_driver"):
+            self.assertAlmostEqual(bin_end[name].energy_nj, step[name].energy_nj * 52.0 / 50.0,
+                                   places=12, msg=name)
+
     def test_worked_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
         r = evaluate_layer(c3cim_example(), x, w)
