@@ -549,6 +549,32 @@ class ValidationTests(unittest.TestCase):
         weights = torch.tensor([0.3])
         self.assertIs(quantize_weights(weights, None)[0], weights)
 
+    def test_quantization_scalings(self):
+        g = torch.Generator().manual_seed(3)
+        weights = torch.randn(4000, generator=g)
+        weights[:5] *= 15                                            # a few outliers
+        std = float(weights.std())
+
+        def error(bits, scaling):
+            codes, scale = quantize_weights(weights, bits, scaling)
+            return float((codes * scale - weights).pow(2).sum())
+        for bits in (2, 3, 4, 6, 8):
+            # "mse" searches clips up to the largest |weight|, which is "max":
+            # never worse, and much better with outliers at few bits.
+            self.assertLessEqual(error(bits, "mse"), error(bits, "max") * (1 + 1e-12))
+        self.assertLess(error(3, "mse"), 0.5 * error(3, "max"))
+        codes, scale = quantize_weights(weights, 4, "std3")
+        self.assertAlmostEqual(scale * 7, 3 * std, places=5)         # clip at 3 sigma
+        self.assertEqual(int(codes.abs().max()), 7)                  # outliers saturate
+        _, scale = quantize_weights(torch.tensor([-1.0, 0.5]), 4, "std10")
+        self.assertAlmostEqual(scale * 7, 1.0)                       # never beyond the max
+        self.assertEqual(quantize_weights(torch.zeros(3), 4, "mse")[0].tolist(), [0, 0, 0])
+        for bad in ("std", "std0", "min", "std-1"):
+            with self.assertRaisesRegex(ValueError, "weight_scaling"):
+                quantize_weights(weights, 4, bad)
+            with self.assertRaisesRegex(ValueError, "weight_scaling"):
+                test_arch("sequential", Precision(4, weight_scaling=bad), Crossbar(LINEAR_1BIT))
+
     def test_weight_code_checks(self):
         arch = test_arch("sequential", Precision(4), Crossbar(LINEAR_1BIT))
         with self.assertRaisesRegex(ValueError, "within"):

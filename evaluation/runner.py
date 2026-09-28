@@ -17,27 +17,28 @@ from evaluation.software import TestStats, num_spikes_loss, predict_class
 from hardware import evaluate_layer, quantize_weights
 
 
-def quantized_network(net, layer_names, bits):
+def quantized_network(net, layer_names, bits, scaling="max"):
     """A copy of `net` whose weighted layers compute with weights quantized to
-    `bits` (symmetric uniform per layer; None keeps them), and each layer's
-    stored values: integer codes, or the float weights for bits=None."""
+    `bits` (symmetric uniform per layer, range from `scaling`, see
+    hardware.quantize_weights; None keeps them), and each layer's stored
+    values: integer codes, or the float weights for bits=None."""
     net = copy.deepcopy(net)
     codes = {}
     with torch.no_grad():
         for name in layer_names:
             module = getattr(net, name)
-            codes[name], scale = quantize_weights(module.weight.detach(), bits)
+            codes[name], scale = quantize_weights(module.weight.detach(), bits, scaling)
             if bits is not None:
                 module.weight.copy_(codes[name] * scale)
     return net, codes
 
 
 class _PrecisionGroup:
-    """A copy of the network with weights quantized to `bits`, the integer
-    codes (or floats) the hardware stores, and its evaluation state."""
+    """A copy of the network with weights quantized to `bits` with `scaling`,
+    the integer codes (or floats) the hardware stores, and its evaluation state."""
 
-    def __init__(self, net, layer_names, bits, architectures):
-        self.net, codes = quantized_network(net, layer_names, bits)
+    def __init__(self, net, layer_names, bits, scaling, architectures):
+        self.net, codes = quantized_network(net, layer_names, bits, scaling)
         self.architectures = architectures
         self.codes = {name: c[..., 0].cpu() for name, c in codes.items()}
         self.stride_padding = {name: (getattr(self.net, name).stride[0],
@@ -68,10 +69,12 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
     loader = DataLoader(models.test_dataset(spec, params, data_dir), batch_size=batch_size,
                         shuffle=False, num_workers=num_workers)
 
-    by_bits = {}
+    by_precision = {}  # (weight bits, scaling): architectures storing weights that way
     for arch in architectures:
-        by_bits.setdefault(arch.precision.weight_bits, []).append(arch)
-    groups = [_PrecisionGroup(net, spec.layers, bits, archs) for bits, archs in by_bits.items()]
+        by_precision.setdefault(_precision_key(arch.precision.weight_bits,
+                                               arch.precision.weight_scaling), []).append(arch)
+    groups = [_PrecisionGroup(net, spec.layers, bits, scaling, archs)
+              for (bits, scaling), archs in by_precision.items()]
     log(f"{spec.display_name}: evaluating {', '.join(names)}")
 
     for batch_index, (_, spikes, target, label) in enumerate(loader):
@@ -99,8 +102,7 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
                         costs[name] = cost
         if (batch_index + 1) % 10 == 0 or batch_index == 0:
             log(f"batch {batch_index + 1}: accuracy " + ", ".join(
-                f"{'float' if bits is None else f'{bits}-bit'} {g.stats.accuracy:.2f}%"
-                for bits, g in zip(by_bits, groups)))
+                f"{_label(*key)} {g.stats.accuracy:.2f}%" for key, g in zip(by_precision, groups)))
 
     results = {}
     for group in groups:
@@ -110,12 +112,13 @@ def evaluate(model, architectures, *, data_dir, batch_size=1, max_batches=None, 
     return results
 
 
-def accuracy_sweep(model, bit_widths, *, data_dir, batch_size=None, max_batches=None,
-                   num_workers=4, log=print):
+def accuracy_sweep(model, bit_widths, scalings=("max",), *, data_dir, batch_size=None,
+                   max_batches=None, num_workers=4, log=print):
     """Test accuracy (%) of `model` with its weights quantized to each of
-    `bit_widths` (None = the trained float weights). The test set is read once;
-    every batch runs through all quantized networks. No hardware evaluation.
-    Returns {bits: accuracy}."""
+    `bit_widths` (None = the trained float weights) with each of `scalings`
+    (see hardware.quantize_weights). The test set is read once; every batch
+    runs through all quantized networks. No hardware evaluation.
+    Returns {(bits, scaling): accuracy}, with (None, None) for float."""
     spec = models.get_spec(model)
     batch_size = min(batch_size or 32, spec.max_batch_size or batch_size or 32)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -123,22 +126,28 @@ def accuracy_sweep(model, bit_widths, *, data_dir, batch_size=None, max_batches=
     params = models.load_params(spec.path(spec.params_yaml))
     loader = DataLoader(models.test_dataset(spec, params, data_dir), batch_size=batch_size,
                         shuffle=False, num_workers=num_workers)
-    nets = {bits: quantized_network(net, spec.layers, bits)[0] for bits in bit_widths}
-    correct, total = dict.fromkeys(bit_widths, 0), 0
-    log(f"{spec.display_name}: accuracy with weights of {', '.join(_label(b) for b in bit_widths)}")
+    keys = list(dict.fromkeys(_precision_key(b, s) for b in bit_widths for s in scalings))
+    nets = {key: quantized_network(net, spec.layers, *key)[0] for key in keys}
+    correct, total = dict.fromkeys(keys, 0), 0
+    log(f"{spec.display_name}: accuracy with weights of {', '.join(_label(*k) for k in keys)}")
     with torch.no_grad():
         for batch_index, (_, spikes, _, label) in enumerate(loader):
             if max_batches is not None and batch_index == max_batches:
                 break
             spikes = spikes.to(device)
-            for bits, quantized in nets.items():
-                correct[bits] += int((predict_class(quantized(spikes)) == label).sum())
+            for key, quantized in nets.items():
+                correct[key] += int((predict_class(quantized(spikes)) == label).sum())
             total += len(label)
             if total % 1000 < len(label):
                 log(f"  {total} samples: " + ", ".join(
-                    f"{_label(b)} {100 * c / total:.2f}%" for b, c in correct.items()))
-    return {bits: 100 * c / total for bits, c in correct.items()}
+                    f"{_label(*k)} {100 * c / total:.2f}%" for k, c in correct.items()))
+    return {key: 100 * c / total for key, c in correct.items()}
 
 
-def _label(bits):
-    return "float" if bits is None else f"{bits}-bit"
+def _precision_key(bits, scaling):
+    """(bits, scaling); float weights have no scaling."""
+    return (None, None) if bits is None else (bits, scaling)
+
+
+def _label(bits, scaling):
+    return "float" if bits is None else f"{bits}-bit {scaling}"

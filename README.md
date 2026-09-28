@@ -56,9 +56,9 @@ Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without 
 
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
 
-**Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `-b`), reading each test set once, and saves `logs/weight_quantization.csv`.
+**Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `-b`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Precision**).
 
-Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Gesture batch size is capped at two.
+Architectures are grouped by weight precision. Each group runs the network with its weights quantized as that hardware stores them (symmetric uniform, `weight_bits` and `weight_scaling`), so the reported accuracy and the spike activity that drives the energy both belong to that precision. Gesture batch size is capped at two.
 
 The weight files are plain tensors (`torch.load(weights_only=True)`); `models.load_pretrained` checks that the YAML's neuron parameters still reproduce the neuron kernels stored with them. To add a model, write its classes and a `SPEC` in `models/<name>.py` and register it in `models/__init__.py`.
 
@@ -98,7 +98,17 @@ Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
 **Crossbar**: the memory, tile size, read voltage, `active_rows` (rows enabled per read; fewer than `rows` splits a read into row phases), and `reference_columns` (analog encoding: one G(0) column per output).
 
-**Precision**: `weight_bits` (None = unquantized, analog only) and `weight_encoding`:
+**Precision**: `weight_bits` (None = unquantized, analog only), `weight_scaling` and `weight_encoding`. Weights are quantized per layer, symmetric around 0 (codes -(2^(b-1)-1) ... 2^(b-1)-1; weights beyond the range saturate), with the range from `weight_scaling`:
+
+| `weight_scaling` | Range (clip) |
+|---|---|
+| `"max"` (default) | the largest \|weight\|: nothing clipped; outliers stretch the steps |
+| `"mse"` | the clip with the least squared quantization error, searched per layer (200 steps up to the largest \|weight\|; never worse than `"max"` in that error) |
+| `"std<k>"`, e.g. `"std3"` | k standard deviations of the layer's weights |
+
+The trained weights are centred on zero (|mean| < 0.14 standard deviations in every layer), so no offset is used. Lower weight error does not guarantee higher accuracy: compare the scalings with `tools/accuracy_sweep.py`.
+
+Encodings:
 
 | Encoding | Columns per weight | Cells |
 |---|---|---|

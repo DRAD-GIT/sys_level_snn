@@ -21,6 +21,7 @@ window's input patch driving the kernel rows:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # Count/activity rules, by the unit an instance belongs to:
@@ -74,6 +75,20 @@ class Precision:
     # handled after the array; differential: positive and negative columns;
     # analog: one multi-level cell per weight, G linear in the weight value.
     weight_encoding: str = "twos_complement"
+    # Quantization range, symmetric around 0 (see mapping.quantize_weights):
+    # "max" = the largest |weight|; "mse" = the clip with the least squared
+    # error, per layer; "std<k>" (e.g. "std3") = k standard deviations.
+    weight_scaling: str = "max"
+
+
+def scaling_std(scaling):
+    """k of a "std<k>" scaling, else None; raises for unknown scalings."""
+    if scaling in ("max", "mse"):
+        return None
+    match = re.fullmatch(r"std(\d+(?:\.\d+)?)", str(scaling))
+    if not match or float(match.group(1)) <= 0:
+        raise ValueError(f"weight_scaling must be 'max', 'mse' or 'std<k>' (e.g. 'std3'), got {scaling!r}")
+    return float(match.group(1))
 
 
 @dataclass
@@ -280,6 +295,7 @@ def validate(arch):
         _positive_int(pr.weight_bits, "precision.weight_bits")
         if pr.weight_bits < 2:
             raise ValueError("signed weights need weight_bits >= 2")
+    scaling_std(pr.weight_scaling)
     if xb.reference_columns and pr.weight_encoding != "analog":
         raise ValueError("reference_columns applies to the analog encoding only")
     if arch.conv_mapping not in MAPPINGS:

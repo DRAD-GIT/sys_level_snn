@@ -22,7 +22,11 @@ ANALOG = compose("analog_c3cim", Precision(None, "analog"), [
     crossbars.c3cim_xbar(r_on=2e3, r_off=20e3),
     Stage("fire", 2.0, level="timestep"),
     Component("lif", count="outputs", during="fire", static_ua=6.0)])
-ARCHITECTURES = [RRAM_1BIT_XBAR, ANALOG]
+# Same design with weights quantized by the least-squared-error clip.
+RRAM_MSE = dataclasses.replace(
+    RRAM_1BIT_XBAR, name="rram_mse",
+    precision=dataclasses.replace(RRAM_1BIT_XBAR.precision, weight_scaling="mse"))
+ARCHITECTURES = [RRAM_1BIT_XBAR, ANALOG, RRAM_MSE]
 
 
 class RandomSpikes(torch.utils.data.Dataset):
@@ -70,13 +74,17 @@ class PipelineTests(unittest.TestCase):
         self.spec_patch.stop()
 
     def test_results_per_architecture_and_layer(self):
-        self.assertEqual(set(self.results), {"rram_1bit_conv_xbar", "analog_c3cim"})
+        self.assertEqual(set(self.results), {"rram_1bit_conv_xbar", "analog_c3cim", "rram_mse"})
         for accuracy, costs in self.results.values():
             self.assertEqual(list(costs), list(models.get_spec("nmnist").layers))
             self.assertTrue(0 <= accuracy <= 100)
             for cost in costs.values():
                 self.assertEqual(cost.inferences, 2)
                 self.assertGreater(cost.energy_nj, 0)
+        # The mse design stores other weight codes: other cell conductances.
+        for layer in models.get_spec("nmnist").layers:
+            self.assertNotEqual(self.results["rram_mse"][1][layer].components["cells"].energy_nj,
+                                self.results["rram_1bit_conv_xbar"][1][layer].components["cells"].energy_nj)
         sc1 = self.results["rram_1bit_conv_xbar"][1]["SC1"]
         self.assertEqual(sc1.geometry.windows, 28 * 28)          # 34x34 input, 7x7 kernel
         self.assertGreater(sc1.output_spikes, 0)
@@ -84,11 +92,14 @@ class PipelineTests(unittest.TestCase):
     def test_accuracy_sweep_matches_pipeline(self):
         with tempfile.TemporaryDirectory() as data:
             os.mkdir(os.path.join(data, "N-MNIST"))
-            sweep = accuracy_sweep("nmnist", [4, None], data_dir=data, batch_size=2,
-                                   max_batches=1, num_workers=0, log=lambda *_: None)
-        # Same quantization as the pipeline: 4-bit = run.py's design, float = analog.
-        self.assertEqual(sweep[4], self.results["rram_1bit_conv_xbar"][0])
-        self.assertEqual(sweep[None], self.results["analog_c3cim"][0])
+            sweep = accuracy_sweep("nmnist", [4, None], ["max", "mse"], data_dir=data,
+                                   batch_size=2, max_batches=1, num_workers=0,
+                                   log=lambda *_: None)
+        self.assertEqual(set(sweep), {(4, "max"), (4, "mse"), (None, None)})
+        # Same quantization as the pipeline's architectures.
+        self.assertEqual(sweep[(4, "max")], self.results["rram_1bit_conv_xbar"][0])
+        self.assertEqual(sweep[(4, "mse")], self.results["rram_mse"][0])
+        self.assertEqual(sweep[(None, None)], self.results["analog_c3cim"][0])
 
     def test_quantized_network_is_a_copy(self):
         spec = models.get_spec("nmnist")
@@ -115,7 +126,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(set(report["network"]), {"energy", "latency"})
             self.assertNotIn("components", report["layers"]["SC1"])
             with open(os.path.join(folder, "comparison_summary.csv")) as file:
-                self.assertEqual(len(file.read().strip().splitlines()), 3)   # header + 2 (upserted)
+                self.assertEqual(len(file.read().strip().splitlines()), 4)   # header + 3 (upserted)
 
 
 if __name__ == "__main__":

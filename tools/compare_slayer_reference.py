@@ -36,7 +36,8 @@ def _hardware_energy(architectures, net, layer_names, inputs, output_spikes):
         total = 0.0
         for name in layer_names:
             module = getattr(net, name)
-            codes, _ = quantize_weights(module.weight.detach()[..., 0].cpu(), arch.precision.weight_bits)
+            codes, _ = quantize_weights(module.weight.detach()[..., 0].cpu(),
+                                        arch.precision.weight_bits, arch.precision.weight_scaling)
             total += evaluate_layer(arch, inputs[name], codes, stride=module.stride[0],
                                     padding=module.padding[0],
                                     output_spikes=output_spikes.get(name, 0)).energy_nj

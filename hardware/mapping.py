@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from hardware.architecture import slices_per_group
+from hardware.architecture import scaling_std, slices_per_group
 
 
 def _row_phases(rows_used, tile_rows, phase_rows):
@@ -99,16 +99,41 @@ def layer_geometry(arch, input_shape, weight_shape, stride=1, padding=0):
                     (1 if parallel else windows) * max(phases), slot_kinds)
 
 
-def quantize_weights(weights, bits):
+def quantize_weights(weights, bits, scaling="max"):
     """Symmetric uniform quantization: integer codes in [-(2^(b-1)-1), 2^(b-1)-1]
-    and the scale (weights ~= codes * scale). bits=None returns the weights."""
+    and the scale (weights ~= codes * scale); weights beyond the clip range
+    saturate. bits=None returns the weights. The range (clip = top code *
+    scale) follows `scaling`:
+      "max"     the largest |weight| (nothing is clipped);
+      "mse"     the clip, among 200 steps up to the largest |weight|, with the
+                least squared error of the quantized weights;
+      "std<k>"  k standard deviations of the weights (e.g. "std3").
+    """
     if bits is None:
         return weights, 1.0
     weights = weights.detach()
     top = 2 ** (bits - 1) - 1
     peak = float(weights.abs().max())
-    scale = peak / top if peak > 0 else 1.0
-    return torch.round(weights / scale).clamp(-top, top).to(torch.int64), scale
+    if peak == 0:
+        return torch.zeros_like(weights, dtype=torch.int64), 1.0
+    k = scaling_std(scaling)
+    if k is not None:
+        clip = min(k * float(weights.std()), peak)
+    elif scaling == "mse":
+        clip = min((peak * step / 200 for step in range(1, 201)),
+                   key=lambda c: float((_quantize(weights, top, c / top) - weights).pow(2).sum()))
+    else:
+        clip = peak
+    scale = clip / top
+    return _codes(weights, top, scale), scale
+
+
+def _codes(weights, top, scale):
+    return torch.round(weights / scale).clamp(-top, top).to(torch.int64)
+
+
+def _quantize(weights, top, scale):
+    return _codes(weights, top, scale) * scale
 
 
 def conductance_slices(arch, weights):
