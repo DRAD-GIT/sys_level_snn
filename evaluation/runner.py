@@ -149,7 +149,7 @@ def accuracy_sweep(model, configs, *, data_dir, batch_size=None, max_batches=Non
                 correct[name] += int((predict_class(quantized(spikes)) == label).sum())
             total += len(label)
             if (batch_index + 1) % log_every == 0:
-                log(f"  batch {batch_index + 1}, {total} samples: " + ", ".join(
+                log(f"  after {batch_index + 1} batches ({total} samples): " + ", ".join(
                     f"{name} {100 * c / total:.2f}%" for name, c in correct.items()))
     return {name: 100 * c / total for name, c in correct.items()}
 
