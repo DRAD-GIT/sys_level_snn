@@ -58,16 +58,16 @@ RRAM_1BIT_XBAR = compose(
     # and restore its membrane potential to serve several pixels.
     Mapping(weight_bits=WEIGHT_BITS, weight_scaling=WEIGHT_SCALING,
             weight_encoding="twos_complement", conv="parallel",
-            columns="interleaved"),   # weight columns dealt to shared ADCs/drivers in turn
+            columns="contiguous"),   # weight columns dealt to shared ADCs/drivers in turn
     [
         # Crossbar: 64x64 tiles of 1-bit RRAM, 0.2 V read made from VDD; its
         # read, the step "cells" (5 ns), runs in every activation.
         crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64,
-                            v_read=0.2, cell_supply_v=VDD, time_ns=5.0),
+                            v_read=0.2, cell_supply_v=1.1, time_ns=5.0,when=("cells.start", "lif.end")),
         Component("sl_ota", count="physical_columns",               # one per column,
-                  powered={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
-                  when="cells",                                     # during the read
-                  supply_v=VDD, static_ua=10.0),
+                  powered={"rule": "used_columns"},  # on when its tile gets a spike
+                 when=("sl_ota.start", "lif.end"),                                     # during the read
+                  supply_v=1.1, static_ua=10.0),
         Component("lif", count="outputs",                           # one per output neuron
                   time_ns=2.0,                                      # step: once per time bin, after the reads
                   supply_v=VDD, static_ua=10.0),                    # powered during its step
@@ -132,7 +132,7 @@ C3CIM_OP_XBAR = compose(
 
 # Designs evaluated and compared side by side (same weight quantization:
 # they share one recorded forward pass).
-ARCHITECTURES = [C3CIM_XBAR, C3CIM_OP_XBAR]
+ARCHITECTURES = [RRAM_1BIT_XBAR,C3CIM_XBAR, C3CIM_OP_XBAR]
 
 # ============================================================================
 # 4. METRICS: switch each reported metric on or off
