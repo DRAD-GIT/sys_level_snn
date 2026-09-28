@@ -115,7 +115,7 @@ The trained weights are centred on zero (|mean| < 0.14 standard deviations in ev
 | 8-bit | 95.0 | 95.1 | 95.9 | 86.4 | 86.7 | 87.5 |
 | float | 96.2 | | | 86.4 | | |
 
-With `"max"`, a few large weights in N-MNIST's dense layers (up to 13 standard deviations) set the step, so most of their weights round to 0 and the output layer's firing collapses or saturates; `"std3"` is the most consistent choice, hence the 6-bit `"std3"` default.
+On the full test sets, 6-bit `"std3"` gives 96.80% on N-MNIST (float 97.77%) and 87.50% on DVS-Gesture (float 86.36%; the difference is 3 of 264 samples). With `"max"`, a few large weights in N-MNIST's dense layers (up to 13 standard deviations) set the step, so most of their weights round to 0 and the output layer's firing collapses or saturates; `"std3"` is the most consistent choice, hence the 6-bit `"std3"` default.
 
 Encodings:
 
