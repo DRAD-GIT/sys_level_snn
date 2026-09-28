@@ -10,11 +10,11 @@ conv mapping, once per convolution window: an **activation**. Input spikes of
 every time bin carry the same weight in the LIF membrane, so input precision
 is the number of time bins.
 
-Timing comes from the components: a component with `stage=` defines a step
-of the timeline, run in every activation or once per time bin (inferred from
-what the component is attached to, or set with `per=`). When a component
-draws current is its power interval, `start` to `end` (default: its own
-stage).
+Timing comes from the components: a component with `time_ns` is a step of
+the timeline, named after the component, run in every activation or once per
+time bin (inferred from what the component is attached to, or set with
+`per=`). `at` places a step, `when` sets when a component draws current
+(default: during its own step).
 
 A kernel (the weights of one output channel) occupies one column per weight
 slice: weights of `weight_bits` are stored in cells of the memory's
@@ -38,11 +38,11 @@ LAYER_RULES = ("one", "fixed")
 DATA_RULES = ("spiking_rows",)              # word lines carrying a spike, per activation
 ENCODINGS = ("twos_complement", "offset", "differential", "analog")
 MODELS = ("static", "crossbar_read", "reference_read", "slice_mirror")
-LEVELS = ("activation", "time_bin")         # how often a stage runs
+LEVELS = ("activation", "time_bin")         # how often a step runs
 EVENTS = LEVELS + ("output_spike",)
 CONV_MAPPINGS = ("parallel", "sequential")
-BIN = "bin"                                 # anchors "bin.start" and "bin.end" (= "end")
-ACTIVATIONS = "activations"                 # time-bin pseudo-stage: all activations of a bin
+BIN = "bin"                                 # the whole time bin: "bin.start", "bin.end"
+ACTIVATIONS = "activations"                 # all activations of a time bin, from its start
 
 
 @dataclass
@@ -105,29 +105,37 @@ def scaling_std(scaling):
 
 @dataclass
 class Component:
-    """A circuit block: `count` instances installed (area); `on` of them
-    powered from `start` to `end`.
+    """A circuit block: `count` instances installed (area), `powered` of them
+    drawing current during `when`.
 
-    Timing: `stage="name"` makes this component define a step of the
-    timeline, lasting `stage_ns`, or `op_ns` per operation when each instance
-    handles its inputs one after another (an ADC shared by a column group of
-    size n converts n columns: n x op_ns). Stages run in the order they are
-    defined; `after` (stage names; [] = at the start of its level) and
-    `offset_ns` (negative = overlap) place one differently. A stage runs in
-    every activation or once per time bin, after all activations: inferred
-    from `count` (columns, rows, column groups, tiles: per activation;
-    neurons and layer-wide parts: per time bin), or per="activation" /
-    per="time_bin".
+    Timing: a component with `time_ns` is a step of the timeline, named after
+    the component, lasting `time_ns` (one operation of every instance at
+    once). serial=True (column_groups counts only): each instance converts
+    its group's columns one after another, `time_ns` each; the weight columns
+    are interleaved across the groups of a tile, so the step lasts
+    ceil(weight columns in the fullest tile / groups per tile) x time_ns
+    (e.g. 32 weight columns, 8 groups of 8: 4 conversions). A step runs in
+    every activation or once per time bin: inferred from `count` (columns,
+    rows, column groups, tiles: per activation; neurons and layer-wide parts:
+    per time bin), or per="activation" / per="time_bin". By default a step
+    starts when all steps of its level defined before it have ended (a
+    time-bin step: also after all activations); `at` starts it at an anchor
+    instead.
 
-    Power: `start` / `end` anchors: "stage" (its start as start, its end as
-    end), "stage.start", "stage.end", with an offset in ns ("read.start+1",
-    "fire.end-0.5"), "bin.start", and "end" (= "bin.end", the end of the time
-    bin). Default: the component's own stage. An interval within the
-    per-activation stages is powered in every activation (gated per
-    activation); one reaching a time-bin stage or the bin's edges is powered
-    once per time bin, where a per-activation stage starts with the first
-    activation and ends with the last. A component without a stage or
-    interval only has area and event costs.
+    Anchors: "name.start", "name.end" (a bare name in `at` means its end),
+    with an offset in ns ("cells.start+1", "lif.end-0.5"); "bin.start",
+    "bin.end" (the time bin), "activations.start", "activations.end" (all
+    activations of the bin). A per-activation step can only be anchored to
+    per-activation steps; seen from the time bin, a per-activation step
+    starts with the first activation and ends with the last.
+
+    Power: `when` = a step name (during that step), "bin" (the whole time
+    bin) or a (from, to) pair of anchors (a bare name: its start as from, its
+    end as to). Default: the component's own step. An interval within the
+    per-activation steps is powered in every activation (gated per
+    activation); one reaching a time-bin step or the bin's edges is powered
+    once per time bin. A component without a step or `when` only has area
+    and event costs.
 
     energy = supply_v * static_ua * powered time      (bias/static current)
            + event_pj * events                        (per activation, time bin or output spike)
@@ -141,23 +149,20 @@ class Component:
                         significant first; default binary: most significant
                         slice 1, the next 1/2, ...) into its neuron.
 
-    count / on: a rule name or {"rule": name, "value": n (fixed),
-    "size": n (column_groups), "gated": True}. on="all" repeats `count`.
+    count / powered: a rule name or {"rule": name, "value": n (fixed),
+    "size": n (column_groups), "gated": True}. powered="all" repeats `count`.
     "gated": only instances whose tile (tile rules), window ("outputs"), tile
     set ("output_bank") or layer receives at least one input spike in that
     activation or time bin.
     """
     name: str
     count: str | dict = "tiles"
-    on: str | dict = "all"
-    stage: str | None = None
-    stage_ns: float | None = None
-    op_ns: float | None = None
+    powered: str | dict = "all"
+    time_ns: float | None = None
+    serial: bool = False
+    at: str | None = None
     per: str | None = None
-    after: str | list | None = None
-    offset_ns: float = 0.0
-    start: str | None = None
-    end: str | None = None
+    when: str | tuple | None = None
     supply_v: float = 1.1
     static_ua: float = 0.0
     event_pj: float = 0.0
@@ -170,18 +175,17 @@ class Component:
 
 @dataclass(frozen=True)
 class Stage:
-    """A step of the timeline, derived from the component that defines it."""
+    """A step of the timeline, from the component of the same name."""
     name: str
-    duration_ns: float
+    time_ns: float                  # per operation
+    serial_size: int | None         # column group converted one column at a time, else None
     level: str                      # "activation" or "time_bin"
-    after: tuple | None             # None = after the previous stage of its level
-    offset_ns: float
-    owner: str
+    at: tuple | None                # (name, "start"|"end", offset_ns); None = after earlier steps
 
 
 @dataclass(frozen=True)
 class Power:
-    """A component's power interval: its level and (stage, "start"|"end",
+    """A component's power interval: its level and (name, "start"|"end",
     offset_ns) anchors."""
     level: str
     start: tuple
@@ -200,10 +204,6 @@ class Architecture:
     def __post_init__(self):
         self.stages, self.power = validate(self)
 
-    @property
-    def activation_stages(self):
-        return {s.name for s in self.stages if s.level == "activation"}
-
 
 @dataclass
 class Block:
@@ -215,8 +215,8 @@ class Block:
 
 def compose(name, mapping, parts, *, activation_interval_ns=None, time_bin_interval_ns=None):
     """Assemble an Architecture from exactly one crossbar (a Block, which
-    brings the array's components and its stage) plus any Components. Stages
-    run in the order their components are given."""
+    brings the array's components and its step) plus any Components. Steps
+    run in the order their components are given, unless placed with `at`."""
     blocks = [p if isinstance(p, Block) else
               Block(components=[p]) if isinstance(p, Component) else None for p in parts]
     if None in blocks:
@@ -229,11 +229,11 @@ def compose(name, mapping, parts, *, activation_interval_ns=None, time_bin_inter
 
 
 def rule_of(spec, *, activity=False):
-    """Normalize a count/on rule to {"rule", "value"?, "size"?, "gated"}."""
+    """Normalize a count/powered rule to {"rule", "value"?, "size"?, "gated"}."""
     rule = {"rule": spec} if isinstance(spec, str) else dict(spec)
     allowed = TILE_RULES + WINDOW_RULES + LAYER_RULES + (DATA_RULES + ("all",) if activity else ())
     if rule.get("rule") not in allowed:
-        raise ValueError(f"unknown {'on' if activity else 'count'} rule {spec!r}")
+        raise ValueError(f"unknown {'powered' if activity else 'count'} rule {spec!r}")
     if rule["rule"] == "fixed" and (isinstance(rule.get("value"), bool)
                                     or not isinstance(rule.get("value"), int) or rule["value"] < 0):
         raise ValueError("fixed rule needs a nonnegative integer 'value'")
@@ -241,7 +241,7 @@ def rule_of(spec, *, activity=False):
         _positive_int(rule.get("size"), "column_groups size")
     rule.setdefault("gated", False)
     if not isinstance(rule["gated"], bool) or (rule["gated"] and not activity):
-        raise ValueError(f"'gated' is a boolean for 'on' rules only: {spec!r}")
+        raise ValueError(f"'gated' is a boolean for 'powered' rules only: {spec!r}")
     if set(rule) - {"rule", "value", "size", "gated"}:
         raise ValueError(f"unknown rule fields in {spec!r}")
     return rule
@@ -251,31 +251,22 @@ _ANCHOR = re.compile(r"\s*([A-Za-z_]\w*)(?:\.(start|end))?\s*(?:([+-])\s*(\d+(?:
 
 
 def parse_anchor(text, default_edge):
-    """"fire", "fire.start+1", "read.end-0.5", "bin.start", "end" ->
-    (stage, "start"|"end", offset_ns); a bare stage name takes default_edge."""
-    match = _ANCHOR.fullmatch(str(text))
+    """"lif", "cells.start+1", "adc.end-0.5", "bin.start" -> (name,
+    "start"|"end", offset_ns); a bare name takes default_edge."""
+    match = _ANCHOR.fullmatch(text) if isinstance(text, str) else None
     if not match:
-        raise ValueError(f"bad anchor {text!r}: use 'stage', 'stage.start' or 'stage.end' "
-                         "(optionally + or - ns), 'bin.start' or 'end'")
-    stage, edge, sign, value = match.groups()
-    if stage == "end" and edge is None:
-        stage, edge = BIN, "end"
+        raise ValueError(f"bad anchor {text!r}: use 'name.start' or 'name.end' "
+                         "(optionally + or - ns), e.g. 'cells.start+1' or 'bin.start'")
+    name, edge, sign, value = match.groups()
     offset = (-1 if sign == "-" else 1) * float(value) if value else 0.0
-    return stage, edge or default_edge, offset
+    return name, edge or default_edge, offset
 
 
-def stage_level(c):
-    """How often a component's stage runs: `per`, else from its count rule."""
+def step_level(c):
+    """How often a component's step runs: `per`, else from its count rule."""
     if c.per is not None:
         return c.per
     return "activation" if rule_of(c.count)["rule"] in TILE_RULES else "time_bin"
-
-
-def operations(c):
-    """Operations each instance performs in its stage, one after another: the
-    columns of its group for column_groups, else 1."""
-    count = rule_of(c.count)
-    return count["size"] if count["rule"] == "column_groups" else 1
 
 
 def _positive_int(value, label):
@@ -335,44 +326,61 @@ def _validate_mapping(arch):
         raise ValueError(f"mapping.conv must be one of {CONV_MAPPINGS}")
 
 
-def _stage_of(c):
-    """The Stage a component defines."""
-    if not isinstance(c.stage, str) or not re.fullmatch(r"[A-Za-z_]\w*", c.stage) \
-            or c.stage in (BIN, ACTIVATIONS, "end"):
-        raise ValueError(f"{c.name}: stage names are identifiers other than "
-                         f"'{BIN}', '{ACTIVATIONS}' and 'end', got {c.stage!r}")
-    if (c.stage_ns is None) == (c.op_ns is None):
-        raise ValueError(f"{c.name}: stage {c.stage!r} needs either stage_ns or op_ns")
-    duration = c.stage_ns if c.stage_ns is not None else c.op_ns * operations(c)
-    _number(duration, f"{c.name}: stage duration")
+def _step_of(c):
+    """The Stage (timeline step) a timed component defines."""
+    if not re.fullmatch(r"[A-Za-z_]\w*", c.name) or c.name in (BIN, ACTIVATIONS):
+        raise ValueError(f"{c.name}: a component with time_ns is a step named after it: its "
+                         f"name must be an identifier other than '{BIN}' and '{ACTIVATIONS}'")
+    _number(c.time_ns, f"{c.name}.time_ns")
     if c.per is not None and c.per not in LEVELS:
         raise ValueError(f"{c.name}: per must be one of {LEVELS}")
-    after = c.after
-    if after is not None:
-        after = (after,) if isinstance(after, str) else tuple(after)
-    if isinstance(c.offset_ns, bool) or not isinstance(c.offset_ns, (int, float)):
-        raise ValueError(f"{c.name}: offset_ns must be a number")
-    return Stage(c.stage, float(duration), stage_level(c), after, float(c.offset_ns), c.name)
+    size = None
+    if c.serial:
+        count = rule_of(c.count)
+        if count["rule"] != "column_groups":
+            raise ValueError(f"{c.name}: serial=True needs a column_groups count (the columns "
+                             "each instance converts one after another)")
+        size = count["size"]
+    at = None if c.at is None else parse_anchor(c.at, "end")
+    return Stage(c.name, float(c.time_ns), size, step_level(c), at)
+
+
+def _point(anchor, levels, label):
+    """Check an anchor's name; returns the level of the step it names
+    (None for the time bin's own anchors)."""
+    name, edge, _ = anchor
+    if name == BIN or name == ACTIVATIONS:
+        return None
+    if name not in levels:
+        raise ValueError(f"{label}: unknown step {name!r}; the steps are "
+                         f"{', '.join(levels) or 'none'} (plus '{BIN}' and '{ACTIVATIONS}'; "
+                         "a step is a component with time_ns)")
+    return levels[name]
 
 
 def _power_of(c, levels):
     """The Power interval of a component, or None if it draws no current."""
-    if c.start is None and c.end is None and c.stage is None:
-        return None
-    if c.stage is None and (c.start is None or c.end is None):
-        raise ValueError(f"{c.name}: give both 'start' and 'end' (it has no stage of its own)")
-    start = parse_anchor(c.start if c.start is not None else c.stage, "start")
-    end = parse_anchor(c.end if c.end is not None else c.stage, "end")
-    for stage, _, _ in (start, end):
-        if stage not in levels and stage not in (BIN, ACTIVATIONS):
-            raise ValueError(f"{c.name}: unknown stage {stage!r} in start/end; the stages are "
-                             f"{', '.join(levels) or 'none'} (plus 'bin' and 'end')")
-    level = "activation" if levels.get(start[0]) == levels.get(end[0]) == "activation" else "time_bin"
+    when = c.when
+    if when is None:
+        if c.time_ns is None:
+            return None
+        when = c.name
+    if isinstance(when, str):
+        if "." in when or not re.fullmatch(r"\s*[A-Za-z_]\w*\s*", when):
+            raise ValueError(f"{c.name}: when={when!r}: a single string names a step (or "
+                             "'bin'); give an interval as a (from, to) pair of anchors")
+        when = (when.strip(), when.strip())
+    if not isinstance(when, (tuple, list)) or len(when) != 2:
+        raise ValueError(f"{c.name}: when must be a step name, 'bin' or a (from, to) pair "
+                         f"of anchors, got {c.when!r}")
+    start, end = parse_anchor(when[0], "start"), parse_anchor(when[1], "end")
+    found = [_point(a, levels, f"{c.name}.when") for a in (start, end)]
+    level = "activation" if found == ["activation", "activation"] else "time_bin"
     return Power(level, start, end)
 
 
 def validate(arch):
-    """Check the architecture; returns its stages and its components' power
+    """Check the architecture; returns its steps and its components' power
     intervals."""
     xb = arch.crossbar
     if not isinstance(xb.memory, Memory):
@@ -392,41 +400,44 @@ def validate(arch):
 
     names, stages = set(), []
     for c in arch.components:
-        if not c.name or c.name in names:
+        if not isinstance(c.name, str) or not c.name or c.name in names:
             raise ValueError(f"component names must be unique: {c.name!r}")
         names.add(c.name)
         rule_of(c.count)
-        if c.stage is not None:
-            stage = _stage_of(c)
-            if stage.name in {s.name for s in stages}:
-                raise ValueError(f"{c.name}: stage {stage.name!r} is already defined by "
-                                 f"{next(s.owner for s in stages if s.name == stage.name)}")
-            stages.append(stage)
+        if not isinstance(c.serial, bool):
+            raise ValueError(f"{c.name}: serial must be True or False")
+        if c.time_ns is not None:
+            stages.append(_step_of(c))
+        elif c.at is not None or c.serial or c.per is not None:
+            raise ValueError(f"{c.name}: at, serial and per describe a step: give it time_ns")
     if not any(s.level == "activation" for s in stages):
-        raise ValueError("a per-activation stage is required (the crossbar's read)")
+        raise ValueError("a per-activation step is required (the crossbar's read)")
     levels = {s.name: s.level for s in stages}
     for s in stages:
-        for dep in s.after or ():
-            if levels.get(dep, "time_bin" if dep == ACTIVATIONS else None) != s.level:
-                raise ValueError(f"stage {s.name}: 'after' must name stages of the same "
-                                 f"level ({s.level}), got {dep!r}")
+        if s.at is None:
+            continue
+        target = _point(s.at, levels, f"{s.name}.at")
+        if s.level == "activation" and target != "activation":
+            raise ValueError(f"{s.name}: a per-activation step can only start at a "
+                             f"per-activation step, got at={s.at[0]!r}")
+        if s.at[0] == BIN and s.at[1] == "end":
+            raise ValueError(f"{s.name}: a step cannot start at the end of the time bin")
 
     power = {}
     for c in arch.components:
         if c.model not in MODELS or c.events not in EVENTS:
             raise ValueError(f"{c.name}: model must be one of {MODELS}, events one of {EVENTS}")
-        on = rule_of(c.on, activity=True)
+        powered = rule_of(c.powered, activity=True)
         for label in ("supply_v", "static_ua", "event_pj", "area_um2"):
             _number(getattr(c, label), f"{c.name}.{label}")
         power[c.name] = p = _power_of(c, levels)
         if (c.static_ua or c.model != "static") and p is None:
-            raise ValueError(f"{c.name}: static or data-driven current needs a stage or "
-                             "'start' and 'end'")
-        if on["rule"] in DATA_RULES and p is not None and p.level != "activation":
-            raise ValueError(f"{c.name}: {on['rule']} counts spikes per activation; power it "
-                             "within the per-activation stages")
-        if on["rule"] in DATA_RULES and c.event_pj and c.events == "time_bin":
-            raise ValueError(f"{c.name}: {on['rule']} events are counted per activation")
+            raise ValueError(f"{c.name}: static or data-driven current needs time_ns or when")
+        if powered["rule"] in DATA_RULES and p is not None and p.level != "activation":
+            raise ValueError(f"{c.name}: {powered['rule']} counts spikes per activation; power "
+                             "it within the per-activation steps")
+        if powered["rule"] in DATA_RULES and c.event_pj and c.events == "time_bin":
+            raise ValueError(f"{c.name}: {powered['rule']} events are counted per activation")
         if c.model == "reference_read" and not xb.reference_columns:
             raise ValueError(f"{c.name}: reference_read needs crossbar.reference_columns")
         if c.slice_gains is not None:

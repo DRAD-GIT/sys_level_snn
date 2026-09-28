@@ -20,19 +20,18 @@ from hardware.mapping import layer_geometry
 
 LINEAR_1BIT = Memory(cell_bits=1, r_on=1e3, r_off=1e6)
 NONUNIFORM_2BIT = Memory(cell_bits=2, levels_s=(1e-6, 3e-4, 5e-4, 1e-3))
-WHOLE_BIN = dict(start="bin.start", end="end")
+WHOLE_BIN = dict(when="bin")
 
 
 def rram_ota_design(conv="sequential"):
     """The 1-bit RRAM current-mode design of run.py, with slice mirrors."""
     return compose("rram_ota", Mapping(4, "max", "twos_complement", conv), [
         crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64, v_read=0.2,
-                            stage="read", stage_ns=5.0),
-        Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
-                  start="read", end="read", static_ua=10.0),
-        Component("slice_mirrors", model="slice_mirror", count="used_columns",
-                  start="read", end="read"),
-        Component("lif", count="outputs", stage="fire", stage_ns=2.0, static_ua=10.0),
+                            time_ns=5.0),
+        Component("sl_ota", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, when="cells", static_ua=10.0),
+        Component("slice_mirrors", model="slice_mirror", count="used_columns", when="cells"),
+        Component("lif", count="outputs", time_ns=2.0, static_ua=10.0),
     ])
 
 
@@ -40,13 +39,13 @@ def conventional_example():
     """Worked example: current-mode crossbar with analog cells and G(0)
     reference columns, a DA per column and LIFs on for the whole time bin."""
     return compose("conventional", Mapping(None, "max", "analog", "sequential"), [
-        crossbars.conv_xbar(r_on=2e3, r_off=200e3, v_read=0.1, active_rows=8, stage_ns=4.5,
+        crossbars.conv_xbar(r_on=2e3, r_off=200e3, v_read=0.1, active_rows=8, time_ns=4.5,
                             cell_supply_v=1.1, reference_columns=True, tile_area_um2=136.67),
-        Component("da", count="physical_columns", on="used_columns", start="read", end="read",
+        Component("da", count="physical_columns", powered="used_columns", when="cells",
                   static_ua=6.1, area_um2=30.22),
-        Component("reference_subtractor", count="output_bank", on="outputs",
-                  stage="subtract", stage_ns=0.0, per="activation"),
-        Component("lif", count="output_bank", on="outputs", stage="fire", stage_ns=2.0,
+        Component("reference_subtractor", count="output_bank", powered="outputs",
+                  time_ns=0.0, per="activation"),
+        Component("lif", count="output_bank", powered="outputs", time_ns=2.0,
                   **WHOLE_BIN, static_ua=6.0, area_um2=86.79)])
 
 
@@ -54,17 +53,19 @@ def c3cim_example():
     """Worked example: C3CIM crossbar with a VI converter per column."""
     return compose("c3cim", Mapping(None, "max", "analog", "sequential"), [
         crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, column_area_um2=4.27, driver_area_um2=86.36),
-        Component("vi", count="physical_columns", on="used_columns", stage="vi", stage_ns=10.0,
+        Component("vi", count="physical_columns", powered="used_columns", time_ns=10.0,
                   supply_v=1.0, static_ua=24.3, area_um2=29.79),
-        Component("lif", count="output_bank", on="outputs", stage="fire", stage_ns=2.0,
+        Component("lif", count="output_bank", powered="outputs", time_ns=2.0,
                   **WHOLE_BIN, static_ua=6.0, area_um2=86.79)])
 
 
 def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
     """Per-inference energy per component and latency, by brute force.
 
-    Stages must be serial (default placement) so powered times are sums of
-    durations; timeline placement itself is tested separately.
+    Steps must be serial (default placement) so powered times are sums of
+    durations; timeline placement itself is tested separately. Serial steps
+    last as long as the fullest column group, with the weight columns of each
+    tile dealt to its groups in turn.
     """
     xb, pr = arch.crossbar, arch.mapping
     batch, channels, height, width, bins = spikes.shape
@@ -151,7 +152,7 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
 
     def rules(c):
         count = rule_of(c.count)
-        on = rule_of(c.on, activity=True)
+        on = rule_of(c.powered, activity=True)
         return dict(count, gated=on["gated"]) if on["rule"] == "all" else on
 
     read_powered = {c.name: 0.0 for c in arch.components}
@@ -234,19 +235,33 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
                     bin_powered[c.name] += per_unit(rule) * (
                         not rule["gated"] or any(any(v) for v in patches.values()))
 
-    # Serial stage positions: within one activation, and within a time bin,
-    # where the per-activation stages repeat reads_per_bin times and the
-    # time-bin stages follow.
+    def duration(stage):
+        if stage.serial_size is None:
+            return stage.time_ns
+        groups = math.ceil(xb.cols / stage.serial_size)
+        fullest = 0
+        for slot in slots:           # physical tiles: the slot's columns, cols at a time
+            columns = len(slot) * used
+            for first in range(0, columns, xb.cols):
+                load = [0] * groups
+                for column in range(min(xb.cols, columns - first)):
+                    load[column % groups] += 1
+                fullest = max(fullest, max(load))
+        return fullest * stage.time_ns
+
+    # Serial step positions: within one activation, and within a time bin,
+    # where the per-activation steps repeat reads_per_bin times and the
+    # time-bin steps follow.
     in_activation, t = {}, 0.0
     for stage in (s for s in arch.stages if s.level == "activation"):
-        in_activation[stage.name] = (t, t + stage.duration_ns)
-        t += stage.duration_ns
+        in_activation[stage.name] = (t, t + duration(stage))
+        t += duration(stage)
     span = t
     edges = {name: (a, (reads_per_bin - 1) * span + b) for name, (a, b) in in_activation.items()}
     t = reads_per_bin * span
     for stage in (s for s in arch.stages if s.level == "time_bin"):
-        edges[stage.name] = (t, t + stage.duration_ns)
-        t += stage.duration_ns
+        edges[stage.name] = (t, t + duration(stage))
+        t += duration(stage)
     bin_span = t
     edges["bin"] = (0.0, bin_span)
     energy = {}
@@ -273,34 +288,36 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
 
 
 def test_arch(conv, mapping, crossbar, custom_gains=None):
-    """Per activation: drive 2 ns (word-line drivers), sense 3 ns (the cells);
-    per time bin: fire 1 ns (neurons). Every rule, gated and not."""
+    """Per activation: wl_driver 2 ns (word-line drivers), cells 3 ns (the
+    read), adc 0.5 ns per column of its group; per time bin: neuron 1 ns.
+    Every rule, gated and not."""
     gated = lambda rule, **kw: dict(rule=rule, gated=True, **kw)
-    sense = dict(start="sense", end="sense")
     return Architecture(
         "test", crossbar, dataclasses.replace(mapping, conv=conv),
-        [Component("wl_driver", count="physical_rows", on="spiking_rows", stage="drive",
-                   stage_ns=2.0, static_ua=2.0, event_pj=0.1),
-         Component("cells", model="crossbar_read", stage="sense", stage_ns=3.0, supply_v=1.0),
-         Component("mirrors", model="slice_mirror", **sense, supply_v=1.2),
-         Component("mirrors_custom", model="slice_mirror", start="drive", end="drive",
+        [Component("wl_driver", count="physical_rows", powered="spiking_rows", time_ns=2.0,
+                   static_ua=2.0, event_pj=0.1),
+         Component("cells", model="crossbar_read", time_ns=3.0, supply_v=1.0),
+         Component("mirrors", model="slice_mirror", when="cells", supply_v=1.2),
+         Component("mirrors_custom", model="slice_mirror", when="wl_driver",
                    supply_v=0.9, slice_gains=custom_gains),
-         Component("ota", count="physical_columns", on=gated("used_columns"), **sense,
+         Component("ota", count="physical_columns", powered=gated("used_columns"), when="cells",
                    static_ua=10.0, event_pj=0.5),
-         Component("bias", count="physical_columns", start="drive", end="sense", static_ua=1.0),
+         Component("bias", count="physical_columns", when=("wl_driver", "cells"), static_ua=1.0),
          Component("driver", count={"rule": "column_groups", "size": 3},
-                   on=gated("column_groups", size=3), start="drive", end="drive", static_ua=4.0),
-         Component("tile_ctrl", count="tiles", on=gated("tiles"), **WHOLE_BIN, static_ua=3.0),
-         Component("neuron", count="outputs", on=gated("outputs"), stage="fire", stage_ns=1.0,
+                   powered=gated("column_groups", size=3), when="wl_driver", static_ua=4.0),
+         Component("adc", count={"rule": "column_groups", "size": 3}, time_ns=0.5, serial=True,
+                   powered=gated("column_groups", size=3), static_ua=3.0, event_pj=0.05),
+         Component("tile_ctrl", count="tiles", powered=gated("tiles"), **WHOLE_BIN, static_ua=3.0),
+         Component("neuron", count="outputs", powered=gated("outputs"), time_ns=1.0,
                    **WHOLE_BIN, static_ua=5.0, event_pj=0.2, events="output_spike"),
          Component("bank", count="output_bank", **WHOLE_BIN, static_ua=0.5,
                    event_pj=0.3, events="time_bin"),
-         Component("sense_amp", count="output_bank", on=gated("output_bank"), **sense,
+         Component("sense_amp", count="output_bank", powered=gated("output_bank"), when="cells",
                    static_ua=0.7),
-         Component("controller", count="one", on=gated("one"), **sense, event_pj=1.0),
+         Component("controller", count="one", powered=gated("one"), when="cells", event_pj=1.0),
          Component("clock", count={"rule": "fixed", "value": 5}, **WHOLE_BIN, static_ua=0.2),
-         Component("windowed", count="physical_columns", on=gated("used_columns"),
-                   start="sense.start+0.5", end="fire.end-0.25", static_ua=6.0)])
+         Component("windowed", count="physical_columns", powered=gated("used_columns"),
+                   when=("cells.start+0.5", "neuron.end-0.25"), static_ua=6.0)])
 
 
 class ReferenceModelTests(unittest.TestCase):
@@ -350,7 +367,7 @@ class ReferenceModelTests(unittest.TestCase):
                 arch = test_arch("parallel", Mapping(None if analog else 3, "max", encoding), crossbar)
                 if analog:
                     arch = Architecture("test", crossbar, arch.mapping, arch.components + [
-                        Component("reference", model="reference_read", start="sense", end="sense")])
+                        Component("reference", model="reference_read", when="cells")])
                 w = weights.float() if analog else weights
                 with self.subTest(cell_bits=memory.cell_bits, encoding=encoding):
                     geometry = layer_geometry(arch, spikes.shape[1:4], w.shape, padding=1)
@@ -364,7 +381,7 @@ class ReferenceModelTests(unittest.TestCase):
         silent = torch.zeros(1, 2, 4, 4, 2)
         result = evaluate_layer(arch, silent, torch.ones(3, 2, 3, 3, dtype=torch.int64),
                                 output_spikes=0)
-        for name in ("cells", "mirrors", "mirrors_custom", "ota", "driver", "wl_driver",
+        for name in ("cells", "mirrors", "mirrors_custom", "ota", "driver", "adc", "wl_driver",
                      "tile_ctrl", "neuron", "sense_amp", "controller", "windowed"):
             self.assertEqual(result.components[name].energy_nj, 0.0, name)
         for name in ("bias", "bank", "clock"):
@@ -403,41 +420,47 @@ class HandCalculationTests(unittest.TestCase):
         weights = torch.randint(-7, 8, (8, 20, 1, 1), generator=g)
         spikes = (torch.rand(1, 20, 1, 1, 3, generator=g) > 0.5).float()
 
-        def cells(end=None, **crossbar):
+        def cells(when=None, **crossbar):
             arch = compose("x", Mapping(4, "max"), [
-                crossbars.conv_xbar(r_on=1e3, r_off=1e6, stage_ns=5.0, end=end, **crossbar),
-                Component("lif", count="outputs", stage="fire", stage_ns=2.0, static_ua=1.0)])
+                crossbars.conv_xbar(r_on=1e3, r_off=1e6, time_ns=5.0, when=when, **crossbar),
+                Component("lif", count="outputs", time_ns=2.0, static_ua=1.0)])
             return evaluate_layer(arch, spikes, weights).components["cells"].energy_nj
 
         # One activation per time bin: the bin's current flows for 5 + 2 ns instead of 5.
-        self.assertAlmostEqual(cells(end="fire"), cells() * 7.0 / 5.0, places=12)
+        self.assertAlmostEqual(cells(when=("cells", "lif")), cells() * 7.0 / 5.0, places=12)
         with self.assertRaisesRegex(ValueError, "one activation per time bin"):
-            cells(end="fire", rows=8, active_rows=4)   # 3 row tiles x 2 phases
+            cells(when=("cells", "lif"), rows=8, active_rows=4)   # 3 row tiles x 2 phases
 
     def test_shared_adc_converting_its_columns(self):
-        """64x64 tile, 8 rows at a time, 8 columns multiplexed to one ADC (3
-        steps of 2 ns per conversion, 10 uA), LIF fire 2 ns per time bin."""
-        def design(group):
-            return compose("adc", Mapping(6, "max", conv="parallel"), [
-                crossbars.conv_xbar(r_on=20e3, r_off=200e3, active_rows=8, stage_ns=5.0),
+        """64x64 tile, 8 rows at a time, columns multiplexed to ADCs (6 ns per
+        conversion, 10 uA), LIF 2 ns per time bin."""
+        def design(group, bits=6):
+            return compose("adc", Mapping(bits, "max", conv="parallel"), [
+                crossbars.conv_xbar(r_on=20e3, r_off=200e3, active_rows=8, time_ns=5.0),
                 Component("adc", count={"rule": "column_groups", "size": group},
-                          stage="convert", op_ns=3 * 2.0, supply_v=1.1, static_ua=10.0),
-                Component("lif", count="outputs", stage="fire", stage_ns=2.0)])
+                          time_ns=6.0, serial=True, supply_v=1.1, static_ua=10.0),
+                Component("lif", count="outputs", time_ns=2.0)])
         g = torch.Generator().manual_seed(0)
         weights = torch.randint(-31, 32, (10, 64, 1, 1), generator=g)      # 60 of 64 columns
         spikes = (torch.rand(1, 64, 1, 1, 1, generator=g) < 0.2).float()  # one time bin
         r = evaluate_layer(design(8), spikes, weights)
-        self.assertEqual([(s.name, s.duration_ns, s.level) for s in design(8).stages],
-                         [("read", 5.0, "activation"), ("convert", 48.0, "activation"),
-                          ("fire", 2.0, "time_bin")])
+        self.assertEqual(r.timeline.stages, (("cells", 5.0, "activation"), ("adc", 48.0, "activation"),
+                                             ("lif", 2.0, "time_bin")))
         self.assertEqual(r.geometry.activations_per_bin, 8)
         self.assertEqual(r.latency_ns, 8 * (5.0 + 48.0) + 2.0)                # 426 ns
         self.assertEqual(r.components["adc"].installed, 8)
         self.assertAlmostEqual(r.components["adc"].energy_nj, 1.1 * 10e-6 * 8 * 48.0 * 8, places=12)
-        self.assertIn("convert 48 ns (per activation, x8)", r.timeline.describe())
-        # Half the group: twice the ADCs, half the conversion time.
+        self.assertIn("adc 48 ns (per activation, x8)", r.timeline.describe())
+        # Half the group: twice the ADCs; 60 columns interleaved over 16 ADCs
+        # take 4 conversions.
         r4 = evaluate_layer(design(4), spikes, weights)
         self.assertEqual((r4.components["adc"].installed, r4.latency_ns), (16, 8 * (5.0 + 24.0) + 2.0))
+        # 32 of 64 columns (8 outputs x 4 slices), interleaved: every ADC
+        # converts 4 columns, not the 8 of its group.
+        codes = torch.randint(-7, 8, (8, 64, 1, 1), generator=g)
+        r32 = evaluate_layer(design(8, bits=4), spikes, codes)
+        self.assertEqual(r32.latency_ns, 8 * (5.0 + 4 * 6.0) + 2.0)
+        self.assertAlmostEqual(r32.components["adc"].energy_nj, 1.1 * 10e-6 * 8 * 24.0 * 8, places=12)
 
     def test_worked_examples(self):
         x, w = torch.ones(1, 96, 1, 1, 1), torch.ones(2, 96, 1, 1)
@@ -483,9 +506,9 @@ class HandCalculationTests(unittest.TestCase):
 
 
 def stage(name, ns, **kw):
-    """A component that only defines a stage (per activation unless its count
+    """A component that only defines a step (per activation unless its count
     makes it per time bin)."""
-    return Component(name, stage=name, stage_ns=ns, **kw)
+    return Component(name, time_ns=ns, **kw)
 
 
 class TimelineTests(unittest.TestCase):
@@ -496,24 +519,26 @@ class TimelineTests(unittest.TestCase):
                               torch.ones(1, 64, 1, 1))
 
     def test_serial_parallel_and_overlap(self):
-        r = self.run_arch([stage("a", 4.0), stage("b", 6.0),                 # b after a
-                           stage("c", 3.0, after=[]),                        # c parallel with a
-                           stage("d", 5.0, after="b", offset_ns=-2.0),       # d overlaps b by 2 ns
-                           Component("bd", start="b", end="d", static_ua=1.0)])
-        self.assertEqual(r.timeline.activation, {"a": (0, 4), "b": (4, 10), "c": (0, 3), "d": (8, 13)})
-        self.assertEqual(r.latency_ns, 3 * 13.0)
+        r = self.run_arch([stage("a", 4.0),
+                           stage("c", 3.0, at="a.start"),                   # c parallel with a
+                           stage("b", 6.0),                                 # after a and c
+                           stage("d", 5.0, at="b.end-2"),                   # d overlaps b by 2 ns
+                           stage("e", 1.0),                                 # after all of them
+                           Component("bd", when=("b", "d"), static_ua=1.0)])
+        self.assertEqual(r.timeline.activation,
+                         {"a": (0, 4), "c": (0, 3), "b": (4, 10), "d": (8, 13), "e": (13, 14)})
+        self.assertEqual(r.latency_ns, 3 * 14.0)
         self.assertAlmostEqual(r.components["bd"].energy_nj, 1.1e-6 * 3 * 9.0, places=15)  # 4..13
 
     def test_pipelined_activations_and_overlapping_bins(self):
         comps = [stage("drive", 2.0), stage("sense", 3.0),
-                 Component("neuron", count="outputs", stage="fire", stage_ns=1.0,
-                           **WHOLE_BIN, static_ua=1.0),
-                 Component("amp", start="sense", end="sense", static_ua=1.0)]
+                 Component("neuron", count="outputs", time_ns=1.0, **WHOLE_BIN, static_ua=1.0),
+                 Component("amp", when="sense", static_ua=1.0)]
         r = self.run_arch(comps, x=torch.ones(1, 64, 1, 1, 2),
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=16),   # 4 activations per bin
                           activation_interval_ns=3.0, time_bin_interval_ns=10.0)
-        self.assertEqual(r.timeline.time_bin["fire"], (14.0, 15.0))  # 3*3 + 5, then fire
-        self.assertEqual(r.latency_ns, 25.0)                         # next bin starts at 10
+        self.assertEqual(r.timeline.time_bin["neuron"], (14.0, 15.0))  # 3*3 + 5, then the neuron
+        self.assertEqual(r.latency_ns, 25.0)                           # next bin starts at 10
         # 1 uA from 1.1 V: 4 activations x 3 ns and 15 ns per bin, over 2 bins.
         self.assertAlmostEqual(r.components["amp"].energy_nj, 1.1e-6 * 2 * 4 * 3.0, places=15)
         self.assertAlmostEqual(r.components["neuron"].energy_nj, 1.1e-6 * 2 * 15.0, places=15)
@@ -521,14 +546,14 @@ class TimelineTests(unittest.TestCase):
     def test_component_cannot_serve_overlapping_activations(self):
         with self.assertRaisesRegex(ValueError, "two activations at once"):
             self.run_arch([stage("drive", 2.0), stage("sense", 3.0),
-                           Component("both", start="drive", end="sense", static_ua=1.0)],
+                           Component("both", when=("drive", "sense"), static_ua=1.0)],
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=32), activation_interval_ns=3.0)
 
-    def test_power_interval_between_stage_edges(self):
+    def test_power_interval_between_step_edges(self):
         # 4 activations per bin of drive 2 + sense 3 ns, then fire 1 ns: sense
         # starts at 2 in the first activation; fire ends at 4 * 5 + 1 = 21.
         r = self.run_arch([stage("drive", 2.0), stage("sense", 3.0),
-                           Component("ota", start="sense.start+1", end="fire.end-1", static_ua=1.0),
+                           Component("ota", when=("sense.start+1", "fire.end-1"), static_ua=1.0),
                            stage("fire", 1.0, count="outputs")],        # defined after its use
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=16))
         self.assertEqual(r.timeline.anchor("sense", "start"), 2.0)
@@ -536,50 +561,74 @@ class TimelineTests(unittest.TestCase):
         self.assertAlmostEqual(r.components["ota"].energy_nj, 1.1e-6 * 3 * (21.0 - 1.0 - 3.0), places=15)
         with self.assertRaisesRegex(ValueError, "ends before it starts"):
             self.run_arch([stage("read", 5.0),
-                           Component("x", start="read.end", end="read.start", static_ua=1.0)])
+                           Component("x", when=("read.end", "read.start"), static_ua=1.0)])
 
-    def test_time_bin_stage_before_activations(self):
+    def test_time_bin_steps_at_anchors(self):
         r = self.run_arch([stage("read", 5.0),
-                           stage("precharge", 1.0, count="outputs", after=[]),
-                           stage("fire", 2.0, count="outputs", after="activations")])
+                           stage("precharge", 1.0, count="outputs", at="bin.start"),
+                           stage("fire", 2.0, count="outputs")])       # after the activations
         self.assertEqual(r.timeline.time_bin["precharge"], (0.0, 1.0))
+        self.assertEqual(r.timeline.time_bin["fire"], (5.0, 7.0))
         self.assertEqual(r.latency_ns, 3 * 7.0)
+        # A time-bin step at a per-activation step: its last activation's end
+        # (2 activations of 5 ns), and a step placed at one defined later.
+        r = self.run_arch([stage("read", 5.0),
+                           stage("early", 1.0, count="outputs", at="fire.start-1"),
+                           stage("fire", 2.0, count="outputs", at="read.end-1")],
+                          crossbar=Crossbar(LINEAR_1BIT, active_rows=32))
+        self.assertEqual((r.timeline.time_bin["fire"], r.timeline.time_bin["early"]),
+                         ((9.0, 11.0), (8.0, 9.0)))
+        with self.assertRaisesRegex(ValueError, "cycle"):
+            self.run_arch([stage("read", 5.0), stage("x", 1.0, at="y.end"),
+                           stage("y", 1.0, at="x.end")])
+        with self.assertRaisesRegex(ValueError, "before its level starts"):
+            self.run_arch([stage("read", 5.0), stage("x", 1.0, at="read.start-1")])
 
 
 class CompositionTests(unittest.TestCase):
     def test_parts_compose_in_order(self):
         arch = rram_ota_design()
-        self.assertEqual([(s.name, s.level, s.owner) for s in arch.stages],
-                         [("read", "activation", "cells"), ("fire", "time_bin", "lif")])
+        self.assertEqual([(s.name, s.level) for s in arch.stages],
+                         [("cells", "activation"), ("lif", "time_bin")])
         self.assertEqual([c.name for c in arch.components],
                          ["cells", "sl_ota", "slice_mirrors", "lif"])
         self.assertEqual(arch.power["sl_ota"].level, "activation")
         self.assertIsNone(Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
             stage("read", 1.0), Component("area_only", area_um2=5.0)]).power["area_only"])
 
-    def test_stage_frequency_inferred_or_set(self):
+    def test_step_frequency_inferred_or_set(self):
         arch = Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
             stage("read", 1.0),                                              # tiles: per activation
-            Component("adc", count={"rule": "column_groups", "size": 4}, stage="convert", op_ns=2.0),
-            Component("acc", count="outputs", stage="accumulate", stage_ns=1.0, per="activation"),
-            Component("lif", count="outputs", stage="fire", stage_ns=1.0),   # neurons: per time bin
-            Component("ctrl", count="one", stage="reset", stage_ns=1.0)])
-        self.assertEqual({s.name: (s.duration_ns, s.level) for s in arch.stages},
-                         {"read": (1.0, "activation"), "convert": (8.0, "activation"),
-                          "accumulate": (1.0, "activation"), "fire": (1.0, "time_bin"),
-                          "reset": (1.0, "time_bin")})
+            Component("adc", count={"rule": "column_groups", "size": 4}, time_ns=2.0, serial=True),
+            Component("acc", count="outputs", time_ns=1.0, per="activation"),
+            Component("lif", count="outputs", time_ns=1.0),                  # neurons: per time bin
+            Component("ctrl", count="one", time_ns=1.0)])
+        self.assertEqual({s.name: (s.time_ns, s.serial_size, s.level) for s in arch.stages},
+                         {"read": (1.0, None, "activation"), "adc": (2.0, 4, "activation"),
+                          "acc": (1.0, None, "activation"), "lif": (1.0, None, "time_bin"),
+                          "ctrl": (1.0, None, "time_bin")})
 
-    def test_anchors(self):
+    def test_anchors_and_windows(self):
         from hardware.architecture import parse_anchor
         self.assertEqual(parse_anchor("fire", "start"), ("fire", "start", 0.0))
         self.assertEqual(parse_anchor("fire", "end"), ("fire", "end", 0.0))
         self.assertEqual(parse_anchor("read.start+1", "end"), ("read", "start", 1.0))
         self.assertEqual(parse_anchor("fire.end - 0.5", "start"), ("fire", "end", -0.5))
-        self.assertEqual(parse_anchor("end", "end"), ("bin", "end", 0.0))
         self.assertEqual(parse_anchor("bin.start", "start"), ("bin", "start", 0.0))
-        for bad in ("read.middle", "read+", "+1", "read.start*2"):
+        for bad in ("read.middle", "read+", "+1", "read.start*2", 3):
             with self.assertRaisesRegex(ValueError, "bad anchor"):
                 parse_anchor(bad, "start")
+        arch = Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
+            stage("read", 1.0), stage("lif", 1.0, count="outputs"),
+            Component("own", time_ns=1.0), Component("during", when="read"),
+            Component("span", when=("read", "lif")), Component("whole", when="bin")])
+        self.assertEqual({name: (p.level, p.start, p.end) for name, p in arch.power.items() if p},
+                         {"read": ("activation", ("read", "start", 0.0), ("read", "end", 0.0)),
+                          "lif": ("time_bin", ("lif", "start", 0.0), ("lif", "end", 0.0)),
+                          "own": ("activation", ("own", "start", 0.0), ("own", "end", 0.0)),
+                          "during": ("activation", ("read", "start", 0.0), ("read", "end", 0.0)),
+                          "span": ("time_bin", ("read", "start", 0.0), ("lif", "end", 0.0)),
+                          "whole": ("time_bin", ("bin", "start", 0.0), ("bin", "end", 0.0))})
 
     def test_compose_needs_one_crossbar(self):
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
@@ -634,24 +683,32 @@ class ValidationTests(unittest.TestCase):
 
     def test_invalid_architectures(self):
         read = stage("read", 1.0)
+        fire = stage("fire", 1.0, count="outputs")
         bad = {
-            "no per-activation stage": [stage("t", 1.0, count="outputs")],
-            "unknown anchor stage": [read, Component("x", start="missing", end="read")],
+            "no per-activation step": [stage("t", 1.0, count="outputs")],
+            "unknown step in when": [read, Component("x", when=("missing", "read"))],
             "static current, no power": [read, Component("x", static_ua=1.0)],
             "data model, no power": [read, Component("x", model="crossbar_read")],
             "column_groups without size": [read, Component("x", count={"rule": "column_groups"})],
             "gated count": [read, Component("x", count={"rule": "tiles", "gated": True})],
-            "spiking rows over a time bin": [read, Component("x", on="spiking_rows", **WHOLE_BIN,
-                                                             static_ua=1.0)],
+            "spiking rows over a time bin": [read, Component("x", powered="spiking_rows",
+                                                             **WHOLE_BIN, static_ua=1.0)],
             "spiking rows as count": [read, Component("x", count="spiking_rows")],
-            "stage without duration": [read, Component("x", stage="y")],
-            "stage_ns and op_ns": [read, Component("x", stage="y", stage_ns=1.0, op_ns=1.0)],
-            "start without a stage": [read, Component("x", start="read")],
-            "bad anchor": [read, Component("x", start="read.middle", end="read")],
-            "duplicate stage": [read, stage("read", 2.0, count="outputs")],
-            "bad per": [read, Component("x", stage="y", stage_ns=1.0, per="cycle")],
-            "after another level": [read, stage("fire", 1.0, count="outputs", after="read")],
-            "reserved stage name": [read, stage("bin", 1.0)],
+            "at without time_ns": [read, Component("x", at="read")],
+            "serial without time_ns": [read, Component("x", count={"rule": "column_groups",
+                                                                   "size": 2}, serial=True)],
+            "serial without column groups": [read, stage("x", 1.0, serial=True)],
+            "when is a point": [read, Component("x", when="read.start")],
+            "when of three": [read, Component("x", when=("read", "read", "read"))],
+            "bad anchor": [read, Component("x", when=("read.middle", "read"))],
+            "at unknown step": [read, stage("x", 1.0, at="missing")],
+            "activation step at a time-bin step": [read, fire, stage("x", 1.0, at="fire.end")],
+            "activation step at the bin": [read, stage("x", 1.0, at="bin.start")],
+            "step at the bin's end": [read, stage("x", 1.0, count="outputs", at="bin.end")],
+            "duplicate name": [read, stage("read", 2.0, count="outputs")],
+            "bad per": [read, stage("x", 1.0, per="cycle")],
+            "reserved step name": [read, stage("bin", 1.0)],
+            "step name not an identifier": [read, stage("my adc", 1.0)],
         }
         for label, components in bad.items():
             with self.subTest(label), self.assertRaises(ValueError):
@@ -660,9 +717,9 @@ class ValidationTests(unittest.TestCase):
                                "unknown conv": Mapping(conv="diagonal")}.items():
             with self.subTest(label), self.assertRaises(ValueError):
                 Architecture("x", Crossbar(LINEAR_1BIT), mapping, [read])
-        with self.assertRaisesRegex(ValueError, "stages are read"):   # the error lists them
+        with self.assertRaisesRegex(ValueError, "the steps are read"):   # the error lists them
             Architecture("x", Crossbar(LINEAR_1BIT), Mapping(),
-                         [read, Component("r2", start="fier.start", end="read")])
+                         [read, Component("r2", when=("fier.start", "read"))])
 
 
 if __name__ == "__main__":

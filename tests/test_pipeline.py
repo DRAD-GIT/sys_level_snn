@@ -22,7 +22,7 @@ from run import RRAM_1BIT_XBAR
 # run.py's design plus one with analog weights, for a second precision group.
 ANALOG = compose("analog_c3cim", Mapping(None, "max", "analog", "sequential"), [
     crossbars.c3cim_xbar(r_on=2e3, r_off=20e3),
-    Component("lif", count="outputs", stage="fire", stage_ns=2.0, static_ua=6.0)])
+    Component("lif", count="outputs", time_ns=2.0, static_ua=6.0)])
 # Same design with weights quantized by the least-squared-error clip.
 RRAM_MSE = dataclasses.replace(
     RRAM_1BIT_XBAR, name="rram_mse",

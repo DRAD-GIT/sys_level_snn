@@ -1,7 +1,7 @@
 """Energy, latency and area of one weighted layer on a CIM architecture.
 
 evaluate_layer(arch, spikes, weights) maps the layer (mapping.py), extracts
-the spike activity, places the stages on the timeline (timeline.py) and
+the spike activity, places the steps on the timeline (timeline.py) and
 charges every component:
   static   supply_v * static_ua * (powered time per activation or time bin)
            * powered instances, summed over all activations or time bins
@@ -10,7 +10,7 @@ charges every component:
            * powered time,
            for the array ("crossbar_read", "reference_read") and the
            weight-slice current mirrors ("slice_mirror")
-Powered instances follow the component's `on` rule: all valid instances, or
+Powered instances follow the component's `powered` rule: all valid instances, or
 ("gated") only those whose tile/window/layer receives a spike.
 """
 import math
@@ -28,7 +28,7 @@ class ComponentCost:
     installed: int
     area_um2: float
     energy_nj: float = 0.0   # summed over all evaluated inferences
-    used: int = 0            # installed instances its `on` rule can power
+    used: int = 0            # installed instances its `powered` rule can power
 
 
 @dataclass
@@ -150,7 +150,7 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
         act = spike_activity(spikes, g)
         if activity_cache is not None:
             activity_cache[key] = act
-    tl = build_timeline(arch, g.activations_per_bin, spikes.shape[4])
+    tl = build_timeline(arch, g, spikes.shape[4])
     sequential = arch.mapping.conv == "sequential"
 
     # Current (A) of each column slice summed over all reads: each spike on
@@ -166,10 +166,10 @@ def evaluate_layer(arch, spikes, weights, *, stride=1, padding=0, output_spikes=
     components = {}
     for c in arch.components:
         count = rule_of(c.count)
-        on = rule_of(c.on, activity=True)
+        on = rule_of(c.powered, activity=True)
         on = dict(count, gated=on["gated"]) if on["rule"] == "all" else on
         n = installed(count, g)
-        # Instances the on-rule can ever power (e.g. used columns of the
+        # Instances the powered rule can ever power (e.g. used columns of the
         # installed columns); data rules (spiking rows) can reach all.
         used = n if on["rule"] in DATA_RULES else min(n, installed(on, g))
         # Powered time per activation or per time bin, and the powered

@@ -57,7 +57,7 @@ class CompareToolTests(unittest.TestCase):
         # An architecture charging every LIF output spike.
         arch = compose("spike_events", Mapping(4), [
             crossbars.conv_xbar(r_on=2e4, r_off=2e5),
-            Component("lif", count="outputs", stage="fire", stage_ns=2.0, static_ua=1.0,
+            Component("lif", count="outputs", time_ns=2.0, static_ua=1.0,
                       event_pj=1.0, events="output_spike")])
         with tempfile.TemporaryDirectory() as folder:
             # A 5-sample test set (random events) and the predictions SRMLayer

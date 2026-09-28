@@ -10,9 +10,9 @@ crossbars/             crossbar types, one per file
   conv_xbar.py         current-mode crossbar (cell current G x v_read into each column)
   c3cim_xbar.py        constant-current crossbar with shared column drivers
 hardware/              the hardware model
-  architecture.py      Memory, Crossbar, Mapping, Component (stages, power intervals), compose()
+  architecture.py      Memory, Crossbar, Mapping, Component (steps, power windows), compose()
   mapping.py           layer -> windows, tiles, weight slices; spike activity
-  timeline.py          stage placement: serial, parallel, overlapping, pipelined
+  timeline.py          step placement: serial, parallel, overlapping, pipelined
   engine.py            evaluate_layer: energy / latency / area of one layer
 models/                SNN networks, dataset readers and their neuron/simulation YAMLs
   srm.py               plain-PyTorch SRM spiking layers (replaces slayerSNN)
@@ -77,9 +77,9 @@ An architecture is composed from one **crossbar type** (with its memory cells as
 
 | Part | Where | What it is |
 |---|---|---|
-| crossbar (exactly one) | `crossbars/` | memory cells: `cell_bits` and `r_on`/`r_off` (levels linear in conductance) or `levels_s` (every level's conductance, for nonuniform cells). `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers. Each defines the array's per-activation stage (`stage="read"`, `stage_ns`) and its own costs |
+| crossbar (exactly one) | `crossbars/` | memory cells: `cell_bits` and `r_on`/`r_off` (levels linear in conductance) or `levels_s` (every level's conductance, for nonuniform cells). `conv_xbar`: current-mode, cell current G x v_read into each column, charged from `cell_supply_v` (VDD when an OTA derives v_read from the supply, v_read when the source line is driven directly); `c3cim_xbar`: constant-current columns with shared drivers. Each brings the array's per-activation step (`time_ns`; `"cells"` for `conv_xbar`, `"column_source"` for `c3cim_xbar`) and its own costs |
 | mapping | `hardware.Mapping` | how the network goes onto the crossbars: `weight_bits`, `weight_scaling`, `weight_encoding`, `conv` |
-| components | `hardware.Component` | any circuit: your name, how many are installed (`count`), how many are powered (`on`, optionally spike-`gated`), optionally a stage of the timeline it defines (`stage`, `stage_ns` or `op_ns`), when it draws current (`start`, `end`), and its static current and/or event energy |
+| components | `hardware.Component` | any circuit: your name, how many are installed (`count`), how many are powered (`powered`, optionally spike-`gated`), optionally its time (`time_ns`, which makes it a step of the timeline; `serial`, `at`, `per`), when it draws current (`when`; default: during its own step), and its static current and/or event energy |
 
 The 1-bit RRAM design in `run.py`:
 
@@ -90,31 +90,33 @@ RRAM_1BIT_XBAR = compose(
             conv="parallel"),
     [
         crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64,
-                            v_read=0.2, cell_supply_v=VDD, stage="read", stage_ns=5.0),
-        Component("sl_ota", count="physical_columns",          # one per column,
-                  on={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
-                  start="read", end="read",                    # powered during the read
+                            v_read=0.2, cell_supply_v=VDD, time_ns=5.0),   # step "cells"
+        Component("sl_ota", count="physical_columns",               # one per column,
+                  powered={"rule": "used_columns", "gated": True},  # on when its tile gets a spike
+                  when="cells",                                     # during the read
                   supply_v=VDD, static_ua=10.0),
-        Component("lif", count="outputs",                      # one per output neuron
-                  stage="fire", stage_ns=2.0,                  # once per time bin, after the reads
-                  supply_v=VDD, static_ua=10.0),               # powered during fire
+        Component("lif", count="outputs",                           # one per output neuron
+                  time_ns=2.0,                                      # step: once per time bin, after the reads
+                  supply_v=VDD, static_ua=10.0),                    # powered during its step
     ],
 )
 ```
 
-To keep the OTA on until the neuron has fired, write `end="fire"`; for an exact interval, `start="read.start+1", end="fire.end-1"`. The same components can sit on a `c3cim_xbar`, and the cells are changed in the crossbar call. `examples/run_dense_layer.py` is a complete worked example.
+To keep the OTA on until the neuron has fired, write `when=("cells", "lif")`; for an exact window, `when=("cells.start+1", "lif.end-1")`. The same components can sit on a `c3cim_xbar`, and the cells are changed in the crossbar call. `examples/run_dense_layer.py` is a complete worked example.
 
-A tile with 8 of its 64 rows driven at a time and one 3-bit ADC shared by every 8 columns (each conversion 3 steps of 2 ns, 10 uA):
+A tile with 8 of its 64 rows driven at a time, a current-source driver per 32 columns switching on with the read, and one 3-bit ADC shared by every 8 columns (6 ns per conversion, 10 uA):
 
 ```python
-crossbars.conv_xbar(..., rows=64, cols=64, active_rows=8, stage="read", stage_ns=5.0),  # 8 activations per time bin
-Component("adc", count={"rule": "column_groups", "size": 8},       # 8 ADCs per tile
-          stage="convert", op_ns=3 * 2.0,                           # 8 columns x 6 ns = 48 ns per activation
-          supply_v=VDD, static_ua=10.0),
-Component("lif", count="outputs", stage="fire", stage_ns=2.0, supply_v=VDD, static_ua=10.0),
+crossbars.conv_xbar(..., rows=64, cols=64, active_rows=8, time_ns=5.0),   # "cells": 8 activations per time bin
+Component("driver", count={"rule": "column_groups", "size": 32},         # all its columns at once
+          time_ns=3.0, at="cells.start", supply_v=VDD, static_ua=11.87), # starts with the read
+Component("adc", count={"rule": "column_groups", "size": 8},             # 8 ADCs per tile
+          time_ns=6.0, serial=True,                                       # its columns one after another
+          supply_v=VDD, static_ua=10.0),                                  # after the read (and driver)
+Component("lif", count="outputs", time_ns=2.0, supply_v=VDD, static_ua=10.0),
 ```
 
-The report prints each layer's timeline, here `read 5 ns (per activation, x8) | convert 48 ns (per activation, x8) | fire 2 ns (per time bin) = 426 ns per time bin`.
+With 60 weight columns in the tile, the report prints each layer's timeline as `cells 5 ns (per activation, x8) | driver 3 ns (per activation, x8) | adc 48 ns (per activation, x8) | lif 2 ns (per time bin) = 426 ns per time bin`. A serial step converts only the columns that hold weights, **interleaved** across the groups of a tile (column c to ADC c mod 8): with 32 weight columns in a 64-column tile, every ADC converts 4 columns, so the step is 4 x 6 = 24 ns.
 
 Units: ohm, V, uA, ns, pJ (event energy), um^2 per installed instance.
 
@@ -161,16 +163,20 @@ Inputs are binary spikes. Spikes of every time bin are integrated with equal wei
 
 With `parallel`, copies that fit in a tile share it, packed block-diagonally: as many as fit both the tile's rows and its columns (e.g. 18-row x 16-column copies: 3 per 64x64 tile, so 25 windows take 9 tiles). Each copy has its own rows (its window's inputs) and columns (its outputs). The cells of a copy's rows in the other copies' columns hold level 0 and conduct G(level 0) x v_read on every spiking row, which is charged to the array (and to the slice mirrors and reference columns of those columns). Columns without weights are off, with every component counted on them (`used_columns`). A copy larger than a tile gets its own tiles. The windows activated together are a **slot**: one window per activation with `sequential`, one tile set's copies with `parallel`. With `active_rows`, a packed tile drives the rows of all its copies in phases, so packing can add activations.
 
-**Activations and stages** (timeline): an **activation** is one drive of a set of rows and read of the columns: one row phase, and with `sequential` also one window. A time bin holds activations x (the per-activation stages), then the per-time-bin stages:
+**Activations and steps** (timeline): an **activation** is one drive of a set of rows and read of the columns: one row phase, and with `sequential` also one window. A time bin holds activations x (the per-activation steps), then the per-time-bin steps:
 
 ```
-| read | convert | read | convert | ... | read | convert |  fire  |
- \___________ per activation, x activations ___________/ per time bin
+| cells | adc | cells | adc | ... | cells | adc |  lif  |
+ \________ per activation, x activations ______/ per time bin
 ```
 
-A component defines a stage with `stage="name"` and its duration: `stage_ns`, or `op_ns` per operation when each instance handles its inputs one after another (`column_groups` of size n: n operations; otherwise 1). How often the stage runs is inferred from `count`: columns, rows, column groups and tiles work **per activation**; neurons (`outputs`, `output_bank`) and layer-wide parts (`one`, `fixed`) **per time bin**. `per="activation"` or `per="time_bin"` overrides it (e.g. a per-output accumulator that adds every row phase). Stages run in the order their components are given; `after=` (stage names; `[]` = at the start of its level; `"activations"` = after all activations) and `offset_ns` (negative = overlap) place a stage differently. A stage may be referenced before the component defining it. `compose(..., activation_interval_ns=..., time_bin_interval_ns=...)` pipelines consecutive activations / time bins.
+A component with `time_ns` is a **step** of the timeline, named after the component. `time_ns` is the time of one operation: every instance works on all its inputs at once, so the step lasts `time_ns`. With `serial=True` (`column_groups` counts only) each instance converts its group's columns one after another, and the step lasts ceil(weight columns in the fullest tile / groups per tile) x `time_ns`: empty columns are skipped, and the weight columns are interleaved across the groups so that they share the conversions evenly. How often a step runs is inferred from `count`: columns, rows, column groups and tiles work **per activation**; neurons (`outputs`, `output_bank`) and layer-wide parts (`one`, `fixed`) **per time bin**. `per="activation"` or `per="time_bin"` overrides it (e.g. a per-output accumulator that adds every row phase).
 
-**Power** (when a component draws current): `start` and `end` anchors: `"read"` (the stage's start as `start`, its end as `end`), `"read.start"`, `"fire.end"`, with an offset in ns (`"read.start+1"`, `"fire.end-0.5"`), `"bin.start"`, and `"end"` (= `"bin.end"`, the end of the time bin). The default is the component's own stage. An interval within the per-activation stages is powered **in every activation** and gated per activation; one reaching a per-time-bin stage or the bin's edges is powered **once per time bin** (a per-activation stage then starts with the first activation and ends with the last). A component with no stage and no interval only has area and event costs. One interval per component: a component powered in two separate intervals is two components.
+**Placement**: a step starts when every step of its level given before it has ended (a per-time-bin step also waits for all activations), so the steps run one after another in the order of the components. `at=` starts a step at an anchor instead: `"cells.start"` (in parallel with the read), `"adc.end-1"` (1 ns before the ADC ends, overlapping it), `"bin.start"` (a per-time-bin step at the start of the time bin, alongside the activations). A bare name means its end. A step always lasts its own duration: `at` moves it, it never stretches it. Anchors may name a step given later; steps placed at each other in a cycle are an error. A per-activation step can only be placed at per-activation steps. `compose(..., activation_interval_ns=..., time_bin_interval_ns=...)` pipelines consecutive activations / time bins.
+
+**Anchors**: `"name.start"`, `"name.end"`, with an offset in ns (`"cells.start+1"`, `"lif.end-0.5"`); `"bin.start"`, `"bin.end"` (the time bin); `"activations.start"`, `"activations.end"` (all activations of the time bin). Seen from the time bin, a per-activation step starts with the first activation and ends with the last.
+
+**Power** (when a component draws current, `when=`): a step name (during that step: `when="cells"`), `"bin"` (the whole time bin), or a `(from, to)` pair of anchors, where a bare name means its start as `from` and its end as `to` (`when=("cells", "lif")`: from the read's start to the neuron's end). The default is the component's own step; a component with neither a step nor `when` only has area and event costs. `when` never moves anything on the timeline: `at` decides when a component works, `when` when it is switched on. A window within the per-activation steps is powered **in every activation** and gated per activation; one reaching a per-time-bin step or the bin's edges is powered **once per time bin**. One window per component: a component powered in two separate windows is two components.
 
 **Costs** of a component:
 
@@ -178,7 +184,7 @@ A component defines a stage with `stage="name"` and its duration: `stage_ns`, or
 - `event_pj` per event: per powered instance per activation (`events="activation"`), per time bin (`"time_bin"`), or per LIF output spike of the layer (`"output_spike"`);
 - data-driven models, drawn from `supply_v` while powered (per activation; over a whole time bin only with one activation per time bin), with currents computed from the spikes and conductances: `"crossbar_read"` (weight columns), `"reference_read"` (G(0) reference columns) and `"slice_mirror"` (current mirrors copying each weight-slice column with gain `slice_gains`; default binary, most significant slice x1, the next x1/2, ...).
 
-Count and on rules, with the unit each instance belongs to:
+Count and powered rules, with the unit each instance belongs to:
 
 | Rule | Unit | Instances per unit |
 |---|---|---|
@@ -189,11 +195,11 @@ Count and on rules, with the unit each instance belongs to:
 | `outputs` | window | out_channels (neurons; installed for every window) |
 | `output_bank` | tile set (slot) | column tiles x cols |
 | `one` / `fixed` (`value`) | layer | 1 / value |
-| `spiking_rows` (on only) | activation | word lines carrying a spike, one per column tile |
+| `spiking_rows` (powered only) | activation | word lines carrying a spike, one per column tile |
 
 `{"rule": ..., "gated": True}` powers an instance only when its unit receives at least one input spike in that activation (per-activation power) or time bin (per-time-bin power). Without gating, every valid unit is powered: a partially filled row tile stops after its last row phase.
 
-Leave unknown values at 0 (e.g. areas) and switch the metric off. A different memory is a change of the crossbar's cell parameters; a new circuit is a `Component` (with `stage=` if it takes time of its own).
+Leave unknown values at 0 (e.g. areas) and switch the metric off. A different memory is a change of the crossbar's cell parameters; a new circuit is a `Component` (with `time_ns` if it takes time of its own).
 
 ## 4. How costs are computed
 
@@ -201,7 +207,7 @@ For each layer and batch (`hardware/engine.py`):
 
 1. **Mapping**: windows, weight copies, copies per tile, tiles, row phases and activations per time bin (`mapping.layer_geometry`).
 2. **Activity** (on the GPU if available): per row, the number of spikes (the frames' sum, unfolded once); the spikes that leak into packed copies' columns; per activation and time bin, which row tiles, slots, windows and the layer receive a spike (`mapping.spike_activity`).
-3. **Timeline**: stage start/end times, activations per time bin, latency per inference = (T - 1) x time-bin interval + time-bin span (`timeline.build_timeline`). Latency follows the schedule and does not depend on the data.
+3. **Timeline**: step start/end times (serial steps from the layer's weight columns per tile), activations per time bin, latency per inference = (T - 1) x time-bin interval + time-bin span (`timeline.build_timeline`). Latency follows the schedule and does not depend on the data.
 4. **Energy** per component: static energy = supply x current x (powered time per activation or time bin) x (powered instances summed over all activations or time bins); event energy; data-driven energy = supply x (for each column slice: v_read x sum over spikes of that row's conductance plus the level-0 leak of packed copies, times its mirror gain for `slice_mirror`) x powered time.
 
 Per inference: energy is divided by the number of evaluated samples; area counts installed instances once. Network totals add the layers, which run one after another. Reported metrics: energy (nJ), latency (us), power = energy / latency (mW), area (mm^2), TOPS/W = 2 x dense MACs / energy (every input in every time bin, zeros included), and pJ per synaptic operation (SOP = an input spike reaching one output neuron; the event-driven SNN figure).
@@ -215,7 +221,7 @@ Per inference: energy is divided by the number of evaluated samples; area counts
 | `c3cim` | 0.0279948 | 482 | 10259.68 |
 | `conventional` | 0.07274388 | 38 | 9969.4 |
 
-A further hand calculation covers a tile with row phases and ADCs shared by column groups (`op_ns`): 8 activations x (5 + 8 x 6 ns) + 2 ns = 426 ns per time bin. Timeline tests cover serial, parallel, overlapping and pipelined stages, power intervals between stage edges with offsets (including a stage referenced before it is defined), and a component that would serve two pipelined activations at once; composition tests cover the inferred and overridden stage frequencies and the anchor syntax. Pipeline tests cover the layer probes, the runner and the metric switches.
+A further hand calculation covers a tile with row phases and ADCs shared by column groups (`serial=True`): 8 activations x (5 + 8 x 6 ns) + 2 ns = 426 ns per time bin with 60 weight columns, and 8 x (5 + 4 x 6) + 2 ns with 32 (interleaved, 4 conversions per ADC); the reference model also deals every tile's weight columns to its groups one by one. Timeline tests cover serial, parallel (`at`), overlapping and pipelined steps, per-time-bin steps at the bin's start and at per-activation steps, cycles, power windows between step edges with offsets (including a step referenced before it is defined), and a component that would serve two pipelined activations at once; composition tests cover the inferred and overridden step frequencies, the anchor syntax and the `when` forms. Pipeline tests cover the layer probes, the runner and the metric switches.
 
 ## 6. Spiking-neuron implementation (no slayerSNN)
 

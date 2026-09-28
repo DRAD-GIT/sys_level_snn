@@ -37,16 +37,16 @@ ARCH = compose(
         # 1-bit RRAM (20k / 200k ohm), 64x64 tiles, 0.2 V read made by the OTA
         # from VDD, 5 ns to settle; the array conducts until the LIF ends.
         crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64,
-                            v_read=0.2, cell_supply_v=VDD, stage="read", stage_ns=5.0,
-                            end="fire"),
+                            v_read=0.2, cell_supply_v=VDD, time_ns=5.0,
+                            when=("cells", "lif")),
         # An OTA per column (source line), 10 uA static, on from the read until
         # the LIF ends, only when its tile receives a spike.
-        Component("sl_ota", count="physical_columns", on={"rule": "used_columns", "gated": True},
-                  start="read", end="fire", supply_v=VDD, static_ua=10.0),
-        # A LIF per output: its 2 ns fire step once per time bin, after the
-        # read; its comparator draws 10 uA during it.
-        Component("lif", count="outputs", stage="fire", stage_ns=2.0,
-                  supply_v=VDD, static_ua=10.0),
+        Component("sl_ota", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True},
+                  when=("cells", "lif"), supply_v=VDD, static_ua=10.0),
+        # A LIF per output: its 2 ns step once per time bin, after the read;
+        # its comparator draws 10 uA during it.
+        Component("lif", count="outputs", time_ns=2.0, supply_v=VDD, static_ua=10.0),
     ],
 )
 

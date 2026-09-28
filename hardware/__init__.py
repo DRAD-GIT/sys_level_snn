@@ -1,9 +1,9 @@
 """Modular compute-in-memory cost model for spiking layers.
 
-architecture.py  memory, crossbar, mapping, components (with their stages and
+architecture.py  memory, crossbar, mapping, components (with their steps and
                  power intervals); Block and compose()
 mapping.py       layer -> windows, tiles, weight slices; spike activity
-timeline.py      stage placement: serial, parallel, overlapping, pipelined
+timeline.py      step placement: serial, parallel, overlapping, pipelined
 engine.py        energy / latency / area of a layer
 """
 from hardware.architecture import (Architecture, Block, Component, Crossbar, Mapping, Memory,

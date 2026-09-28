@@ -1,6 +1,6 @@
 """Crossbar types. Each returns the Crossbar (with its memory cells given
 directly) together with the array's own components and its per-activation
-stage. Compose one with your own Components:
+step. Compose one with your own Components:
 
     compose(name, Mapping(...), [crossbars.conv_xbar(...), Component(...), ...])
 
