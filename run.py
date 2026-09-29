@@ -36,12 +36,12 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 MODEL = "nmnist"       # "nmnist" or "gesture" (pretrained weights in pretrained/)
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
-DATASET_DIR = None     # e.g. "/data/neuromorphic"
+DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_dats/"   # None = none set
 MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 PARALLEL = None        # samples processed at once; None = defaults (recording: N-MNIST 50,
                        # gesture 2; hardware evaluation: one recorded file per step)
 # Recorded forward passes (layer inputs and outputs), reused across runs.
-RECORDING_DIR = os.path.join(ROOT, "recordings")
+RECORDING_DIR = "/shares/bulk/yashbiyani/c3cim_sys_dats/recordings/"   # default: os.path.join(ROOT, "recordings")
 
 # ============================================================================
 # 2. WEIGHT QUANTIZATION
