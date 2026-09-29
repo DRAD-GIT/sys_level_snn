@@ -89,16 +89,20 @@ class LatexTableTests(unittest.TestCase):
             crossbars.conv_xbar(r_on=20e3, r_off=200e3), Component("lif", count="outputs", time_ns=2.0)])
         c3cim = compose("c3cim_op_xbar", Mapping(), [
             crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=16),
-            Component("lif", count="outputs", time_ns=2.0)])
-        rows = latex_table.architecture_rows(
-            [rram, c3cim], specs={"c3cim_op_xbar": {"work": "This work", "tech": "40",
-                                                    "sensing": "Voltage"}})
+            Component("lif", count="outputs", time_ns=2.0)],
+            specs={"label": "This work", "tech": 40, "sensing": "Voltage"})
+        rows = latex_table.architecture_rows([rram, c3cim])
         self.assertEqual([(r["work"], r["specs"], r["midrule"]) for r in rows],
                          [("rram\\_xbar", ["", "", "", "1", "", "200/20", "", "64"], True),
                           ("This work", ["40", "", "", "1", "", "20/2", "Voltage", "16"], False)])
         self.assertEqual(latex_table.LITERATURE, [])                 # none by default
-        with self.assertRaisesRegex(ValueError, "unknown keys"):
-            latex_table.architecture_rows([rram], specs={"rram_xbar": {"voltage": "1"}})
+        with self.assertRaisesRegex(ValueError, "unknown specs"):
+            compose("x", Mapping(), [crossbars.conv_xbar(r_on=1e3, r_off=1e4)],
+                    specs={"voltage": 1})
+        # Given specs override the ones read from the crossbar.
+        own = compose("own", Mapping(), [crossbars.conv_xbar(r_on=20e3, r_off=200e3)],
+                      specs={"r_ratio": "200/20 (set)"})
+        self.assertEqual(latex_table.architecture_rows([own])[0]["specs"][5], "200/20 (set)")
         runs = summary([["nmnist", "rram_xbar", "c", 10000, 1400, 93, 15.3, 161.7]])
         warnings = []
         table = latex_table.build_table(rows, runs, warn=warnings.append)

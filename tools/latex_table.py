@@ -11,9 +11,11 @@ logs/comparison_summary.csv, written by run.py. For each model it uses the
 architecture's latest configuration (the last run of it, so a design changed
 since then is not mixed in) and, of that, the run with the most samples; a
 run on fewer samples than the whole test set, or a missing run (empty cells),
-is reported with a warning. Of an architecture's hardware specifications,
-cell precision, R_High/R_Low and accumulation (rows summed per read) are
-read from it; the others stay empty unless set in SPECS. Units: power mW,
+is reported with a warning. An architecture's hardware specifications come
+from its definition: those given in compose(..., specs={...}) (and its row
+name, specs["label"]), else, for cell precision, R_High/R_Low and
+accumulation (rows summed per read), read from the crossbar; unknown ones
+stay empty. Units: power mW,
 latency us and energy uJ per inference, TOPS/W. In every result column the
 best value of any row (lowest power, latency and energy, highest TOPS/W) is
 red, and a value of our work is bold where it beats every row that is not
@@ -47,13 +49,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #    "nmnist": (531.6, 9.8, 5.2, 44.4), "gesture": (1040.2, 37.7, 39.2, 113.8)},
 LITERATURE = []
 
-# Per architecture (by name): its row's name ("work") and any specification
-# the architecture does not tell: "tech", "supply", "device", "bitcell",
-# "sensing" (or override the derived "cell", "r_ratio", "accumulation").
-SPECS = {
-    # "c3cim_op_xbar": {"work": r"\textbf{This work}", "tech": "40", "supply": "1.1",
-    #                   "device": "Resistive", "bitcell": "2T1R", "sensing": "Voltage"},
-}
+# The specification columns, in order (keys of an architecture's specs).
 SPEC_KEYS = ("tech", "supply", "device", "cell", "bitcell", "r_ratio", "sensing", "accumulation")
 MODELS = ("nmnist", "gesture")
 FULL_TEST_SET = {"nmnist": 10000, "gesture": 264}
@@ -152,10 +148,11 @@ def derived_specs(arch):
     return specs
 
 
-def architecture_rows(architectures, ourwork=(), specs=None):
-    """One table row per Architecture, named after it (LaTeX-escaped), with
-    derived specifications, overridden or completed by specs[name]: first the
-    others, then (after a rule) those in `ourwork` (Architectures or names)."""
+def architecture_rows(architectures, ourwork=()):
+    """One table row per Architecture, named specs["label"] or after it
+    (LaTeX-escaped), with its specs, completed by those read from its
+    crossbar: first the others, then (after a rule) those in `ourwork`
+    (Architectures or names)."""
     ours = {a if isinstance(a, str) else a.name for a in ourwork}
     names = {a.name for a in architectures}
     architectures = list(architectures) + [a for a in ourwork
@@ -164,14 +161,9 @@ def architecture_rows(architectures, ourwork=(), specs=None):
               [a for a in architectures if a.name in ours]
     rows = []
     for i, arch in enumerate(ordered):
-        extra = dict((specs or {}).get(arch.name, {}))
-        unknown = set(extra) - set(SPEC_KEYS) - {"work"}
-        if unknown:
-            raise ValueError(f"SPECS[{arch.name!r}]: unknown keys {sorted(unknown)}; use 'work' "
-                             f"or {', '.join(SPEC_KEYS)}")
-        values = {**derived_specs(arch), **extra}
+        values = {**derived_specs(arch), **{k: str(v) for k, v in arch.specs.items()}}
         first_ours = arch.name in ours and (i == 0 or ordered[i - 1].name not in ours)
-        rows.append({"work": extra.get("work", arch.name.replace("_", r"\_")),
+        rows.append({"work": values.get("label", arch.name.replace("_", r"\_")),
                      "specs": [values.get(key, "") for key in SPEC_KEYS],
                      "architecture": arch.name, "ours": arch.name in ours,
                      "midrule": i == 0 or first_ours})
@@ -257,7 +249,7 @@ def main():
             parser.error(f"not defined in run.py: {missing}; defined: {sorted(known)}")
         architectures = [known[n] for n in args.architectures]
     runs = load_results(os.path.join(args.logs, "comparison_summary.csv"))
-    rows = LITERATURE + architecture_rows(architectures, getattr(run, "OURWORK", []), SPECS)
+    rows = LITERATURE + architecture_rows(architectures, getattr(run, "OURWORK", []))
     table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr))
     out = args.out or os.path.join(args.logs, "comparison_table.tex")
     with open(out, "w", encoding="utf-8") as file:

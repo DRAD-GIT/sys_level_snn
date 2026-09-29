@@ -42,6 +42,12 @@ MODELS = ("static", "crossbar_read", "reference_read", "slice_mirror")
 LEVELS = ("activation", "time_bin")         # how often a step runs
 EVENTS = LEVELS + ("output_spike",)
 CONV_MAPPINGS = ("parallel", "sequential")
+# Descriptive specifications of an architecture, for reports and the paper
+# table only (they change no cost): a display label, technology (nm), supply
+# (V), storage device, cell precision, bit-cell, R_High/R_Low (kOhm), sensing
+# mode, accumulation (rows summed per read).
+SPEC_KEYS = ("label", "tech", "supply", "device", "cell", "bitcell", "r_ratio", "sensing",
+             "accumulation")
 COLUMN_PLACEMENTS = ("interleaved", "contiguous")
 BIN = "bin"                                 # the whole time bin: "bin.start", "bin.end"
 ACTIVATIONS = "activations"                 # all activations of a time bin, from its start
@@ -213,6 +219,7 @@ class Architecture:
     components: list[Component]
     activation_interval_ns: float | None = None  # pipelined activations; None = back to back
     time_bin_interval_ns: float | None = None    # overlapping time bins; None = serial
+    specs: dict = field(default_factory=dict)    # descriptive only (SPEC_KEYS), no cost
 
     def __post_init__(self):
         self.stages, self.power = validate(self)
@@ -226,10 +233,13 @@ class Block:
     crossbar: Crossbar | None = None
 
 
-def compose(name, mapping, parts, *, activation_interval_ns=None, time_bin_interval_ns=None):
+def compose(name, mapping, parts, *, activation_interval_ns=None, time_bin_interval_ns=None,
+            specs=None):
     """Assemble an Architecture from exactly one crossbar (a Block, which
     brings the array's components and its step) plus any Components. Steps
-    run in the order their components are given, unless placed with `at`."""
+    run in the order their components are given, unless placed with `at`.
+    specs: descriptive specifications for reports, {key: value} with keys from
+    SPEC_KEYS (e.g. {"tech": 40, "bitcell": "2T1R"}); they change no cost."""
     blocks = [p if isinstance(p, Block) else
               Block(components=[p]) if isinstance(p, Component) else None for p in parts]
     if None in blocks:
@@ -238,7 +248,7 @@ def compose(name, mapping, parts, *, activation_interval_ns=None, time_bin_inter
     if len(crossbars) != 1:
         raise ValueError(f"{name}: compose needs exactly one crossbar, got {len(crossbars)}")
     return Architecture(name, crossbars[0], mapping, [c for b in blocks for c in b.components],
-                        activation_interval_ns, time_bin_interval_ns)
+                        activation_interval_ns, time_bin_interval_ns, dict(specs or {}))
 
 
 def rule_of(spec, *, activity=False):
@@ -426,6 +436,14 @@ def validate(arch):
     for label in ("activation_interval_ns", "time_bin_interval_ns"):
         if getattr(arch, label) is not None:
             _number(getattr(arch, label), label, positive=True)
+    if not isinstance(arch.specs, dict):
+        raise ValueError(f"{arch.name}: specs must be a dict")
+    unknown = set(arch.specs) - set(SPEC_KEYS)
+    if unknown:
+        raise ValueError(f"{arch.name}: unknown specs {sorted(unknown)}; use {', '.join(SPEC_KEYS)}")
+    for key, value in arch.specs.items():
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise ValueError(f"{arch.name}: specs[{key!r}] must be a string or a number")
 
     names, stages = set(), []
     for c in arch.components:
