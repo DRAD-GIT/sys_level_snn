@@ -25,6 +25,8 @@ import models
 from evaluation.report import export, format_results
 from evaluation.runner import evaluate
 from hardware import Component, Mapping, compose
+# Published macros calibrated to their papers (each with its own weight precision).
+from literature_macros import DS_CIM, MEMRISTIVE_SNN, SOT_MRAM, TD_CIM, TEMPO_CIM
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -141,9 +143,14 @@ C3CIM_OP_XBAR = compose(
            "sensing": "Voltage"},
 )
 
-# Designs evaluated and compared side by side (same weight quantization:
-# they share one recorded forward pass).
-ARCHITECTURES = [RRAM_1BIT_XBAR, C3CIM_XBAR, C3CIM_OP_XBAR]
+# Published macros (literature_macros.py: how each number follows from its
+# paper). Each stores weights at its paper's precision (5, 3, 4, 5 and 4
+# bits), so each precision records its own forward pass on first use.
+LITERATURE = [DS_CIM, SOT_MRAM, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
+
+# Designs evaluated and compared side by side (architectures with the same
+# weight quantization share one recorded forward pass).
+ARCHITECTURES = [RRAM_1BIT_XBAR, C3CIM_XBAR, C3CIM_OP_XBAR] + LITERATURE
 # Our work: listed last in the paper table (tools/latex_table.py), where its
 # values that beat every other row are bold.
 OURWORK = [C3CIM_XBAR, C3CIM_OP_XBAR]
