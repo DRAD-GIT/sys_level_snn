@@ -144,13 +144,15 @@ DS_CIM = compose(
 # T_out to convert; T_out = alpha x sum(T_in x G), with alpha from Fig. 7(a)
 # (20 ns at 1.2e-12 s.S): mean sum = 128 rows x 25.5 ns x 0.2375 uS = 7.75e-13
 # s.S -> 12.9 ns, so the OSG is on for ~63.9 ns per MVM.
-# With a 1-bit spike the input pulse is one bit, 0.2 ns, and T_out is at most
-# 128 x 0.2 ns x (1/3 MOhm) x alpha = 0.142 ns; the blocks are modelled as
-# powers during those windows, so their energy scales down with the pulse.
-# This makes the macro very cheap per spike (a 0.2 ns pulse against the
-# paper's 25.5 ns mean). A conservative alternative that charges every 1-bit
-# read the paper's mean 8-bit MVM energy: time_ns=25.5 for the cells and
-# time_ns=38.4 for "osg" (63.9 ns in all, the paper's OSG on-time).
+# Every read of a 1-bit spike is charged the paper's mean MVM: the input
+# pulse lasts 25.5 ns and the OSG is on for 63.9 ns (step "osg" = 38.4 ns
+# after the pulse), so a read of the full array with every row spiking costs
+# the paper's 134.5 pJ, as the other macros are charged their papers' energy
+# per operation. (Scaling the pulse to one input bit, 0.2 ns, with T_out
+# <= 128 x 0.2 ns x (1/3 MOhm) x alpha = 0.142 ns, would cut the energy per
+# read ~100x below the paper's own efficiency, since almost all of it is
+# bias current during the pulse; the paper reports no fixed per-conversion
+# energy that would bound it.)
 # Weights: the paper's 2-bit cells (cell_bits=2, within the 3-bit limit) and
 # unsigned 2-bit weights (one cell). Our signed weights use differential
 # encoding: 6-bit weights, 5 magnitude bits in 2-bit cells -> 3 columns per
@@ -163,23 +165,23 @@ SOT_MRAM = compose(
         # (Table I); J2 has twice J1's resistance (Sec. III-A): J1 in {1, 2},
         # J2 in {2, 4} MOhm -> 3, 4, 5, 6 MOhm, the four distinct states (in
         # parallel they would not be distinct). V_read = V_clamp - V_in,clamp
-        # = 0.4 - 0.3 = 0.1 V (Sec. IV-A); read pulse 0.2 ns (one input bit).
+        # = 0.4 - 0.3 = 0.1 V (Sec. IV-A); read pulse 25.5 ns (the mean).
         # cell_supply_v: the array share, 34.71 pJ, over 128 x 128 cells x the
         # mean level conductance 0.2375 uS x 0.1 V x 25.5 ns (= 9.92 pC) gives
         # 3.50 V: the paper's "MRAM array" share is ~35x the cells' own
         # 0.99 pJ, so it must include the clamping bias; kept in the array so
         # that it follows the cell currents.
         crossbars.conv_xbar(cell_bits=2, levels_s=(1 / 6e6, 1 / 5e6, 1 / 4e6, 1 / 3e6),
-                            rows=128, cols=128, v_read=0.1, cell_supply_v=3.50, time_ns=0.2),
+                            rows=128, cols=128, v_read=0.1, cell_supply_v=3.50, time_ns=25.5),
         # SMU (input clamp per row): 1.211 pJ / 128 rows / 25.5 ns = 0.371 uW
         # per driven row -> 0.337 uA at 1.1 V, while its pulse is on.
         Component("smu", count="physical_rows", powered="spiking_rows", when="cells",
                   supply_v=1.1, static_ua=0.337),
         # OSG: 97.66 pJ / 128 columns / 63.9 ns = 11.94 uW per column ->
         # 10.85 uA at 1.1 V, on from the input pulse until its output spike
-        # (step "osg": T_out for a 1-bit input, at most 0.142 ns).
+        # (step "osg": 63.9 - 25.5 = 38.4 ns after the pulse).
         Component("osg", count="physical_columns",
-                  powered={"rule": "used_columns", "gated": True}, time_ns=0.142,
+                  powered={"rule": "used_columns", "gated": True}, time_ns=38.4,
                   when=("cells.start", "osg.end"), supply_v=1.1, static_ua=10.85),
         # Other: 0.942 pJ / 63.9 ns = 14.7 uW per array -> 13.4 uA at 1.1 V,
         # during the same window.
@@ -422,14 +424,15 @@ def check():
                      torch.ones(n_in, 300))
         energy, latency = energy + cost.energy_nj, cost.latency_ns
     results.append((MEMRISTIVE_SNN, "average power (mW)", energy / latency * 1e3, 43.83))
-    # SOT-MRAM: the paper's condition (8-bit inputs) cannot run in the engine;
-    # its per-MVM energy is rebuilt from the calibrated blocks at the paper's
-    # 8-bit durations (mean pulse 25.5 ns, OSG on 63.9 ns): see the derivation.
-    g_mean = sum(1 / r for r in (6e6, 5e6, 4e6, 3e6)) / 4
-    rebuilt = (3.50 * 0.1 * 128 * 128 * g_mean * 25.5              # array, pJ (A x V x ns = nJ)
-               * 1e3 + 1.1 * 0.337e-3 * 128 * 25.5                 # SMU
-               + 1.1 * 10.85e-3 * 128 * 63.9 + 1.1 * 13.4e-3 * 63.9)   # OSG, other
-    results.append((SOT_MRAM, "energy per 8-bit MVM (pJ), rebuilt", rebuilt, 32768 / 243.6))
+    # SOT-MRAM: all 128 rows; the paper's uniform 2-bit weights have a mean
+    # cell conductance of 0.2375 uS. Here each weight is a differential pair
+    # (one column at level 0, 1/6 uS), so 45 weights of 3 and 19 of 2 give
+    # the same mean over the 128 columns (0.2376 uS). Paper: 134.5 pJ per MVM
+    # (243.6 TOPS/W), OSG on for 63.9 ns.
+    w = torch.tensor([3] * 45 + [2] * 19).repeat(128, 1).T
+    cost = dense(native(SOT_MRAM, 3), w, torch.ones(128, 1))
+    results.append((SOT_MRAM, "energy per MVM (pJ)", 1e3 * cost.energy_nj, 32768 / 243.6))
+    results.append((SOT_MRAM, "time per MVM (ns)", cost.latency_ns, 63.9))
     return results
 
 
