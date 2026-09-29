@@ -36,22 +36,31 @@ What differs from the papers (applies to all):
     the papers' multi-bit (latency / dual-spike / bit-serial) inputs. Energies
     of blocks that scale with the input pulse length are scaled to one 1-bit
     pulse (stated per macro).
-  * Weights use each paper's own weight precision and layout (weight_bits
-    below), so each macro records its own quantized forward pass (accuracy
-    therefore differs between macros).
+  * Weights: every macro stores run.py's 6-bit weights (WEIGHT_BITS), so all
+    rows share one recorded forward pass and one accuracy. Each keeps its
+    paper's cell precision (at most MAX_CELL_BITS = 3 bits) and weight layout
+    (differential or two's complement), and splits the 6-bit weight over as
+    many columns as that needs. The component energies are per row, column,
+    weight or neuron, so a weight on more columns than in the paper costs
+    proportionally more. check() runs each macro at its paper's own weight
+    precision (native()).
   * Macros without a neuron (the ANN macros) are charged no neuron: the table
     shows their array + periphery only.
   * The mapping (conv="parallel", contiguous columns) is the same as our
     designs', so every macro runs the same workload.
   * specs["label"]: a dagger marks simulated (not measured) papers.
 """
+import dataclasses
+
 import crossbars
-from hardware import Component, Mapping, compose
+from hardware import Architecture, Component, Mapping, Memory, compose
 
+WEIGHT_BITS = 6           # as in run.py: all rows share its recorded forward pass
 WEIGHT_SCALING = "std3"   # as in run.py
+MAX_CELL_BITS = 3         # cells store at most 3 bits, whatever the device allows
 
 
-def mapping(weight_bits, encoding):
+def mapping(encoding, weight_bits=WEIGHT_BITS):
     return Mapping(weight_bits=weight_bits, weight_scaling=WEIGHT_SCALING,
                    weight_encoding=encoding, conv="parallel", columns="contiguous")
 
@@ -73,14 +82,15 @@ def mapping(weight_bits, encoding):
 #   preprocessing (64)        0.49 nJ
 #   DS-neuron (64)            0.21 nJ
 #   total                     1.47 nJ
-# Weights: signed 4-bit = 8 binary MRAM cells, 4 positive + 4 negative
-# columns (preprocessing circuit, Fig. 9(a)) = differential encoding with
-# 4 magnitude bits:
-# weight_bits=5 (codes -15..15), cell_bits=1 -> 8 columns per weight, 64
-# outputs per 512 columns (the 64 preprocessing circuits and neurons).
+# Weights: the paper's signed 4-bit weight is 8 binary MRAM cells, 4 positive
+# + 4 negative columns (preprocessing circuit, Fig. 9(a)): differential
+# encoding with binary cells (cell_bits=1, within the 3-bit limit). Paper:
+# 4 magnitude bits -> 8 columns per weight, 64 weights per 512 columns (its
+# 64 preprocessing circuits and neurons). Here: 6-bit weights, 5 magnitude
+# bits -> 10 columns per weight, 51 weights per 512 columns.
 DS_CIM = compose(
     "ds_cim_tcas24",
-    mapping(weight_bits=5, encoding="differential"),
+    mapping("differential"),
     [
         # Cells: Rp = 89.15 kOhm, Rap = 157.14 kOhm (measured at 0.1 V, text
         # with Fig. 4); V_read = 0.17 V (Sec. V-A); one 10 ns read pulse per
@@ -102,10 +112,11 @@ DS_CIM = compose(
         # readout circuit).
         Component("readout", count="physical_columns",
                   powered={"rule": "used_columns", "gated": True}, event_pj=0.0540),
-        # Preprocessing (current mirrors combining a weight's 8 columns):
-        # 0.49 nJ / 64 = 7.656 pJ per weight (group of 8 columns) per read.
-        Component("preprocessing", count={"rule": "column_groups", "size": 8},
-                  powered={"rule": "used_column_groups", "gated": True}, event_pj=7.656),
+        # Preprocessing: a scaling current mirror per column, combining a
+        # weight's columns (Fig. 9(a)): 0.49 nJ / 512 columns = 0.957 pJ per
+        # column per read.
+        Component("preprocessing", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.957),
         # DS-neuron: 0.21 nJ / 64 = 3.281 pJ per neuron per time bin in which
         # its inputs spike (asynchronous: it fires within the read, no step).
         Component("ds_neuron", count="outputs", powered={"rule": "outputs", "gated": True},
@@ -140,12 +151,13 @@ DS_CIM = compose(
 # paper's 25.5 ns mean). A conservative alternative that charges every 1-bit
 # read the paper's mean 8-bit MVM energy: time_ns=25.5 for the cells and
 # time_ns=38.4 for "osg" (63.9 ns in all, the paper's OSG on-time).
-# Weights: 2-bit cells; our signed weights use differential encoding with
-# weight_bits=3 (codes -3..3, 2 magnitude bits = one 2-bit cell) -> 2 columns
-# per weight (the paper's weights are unsigned).
+# Weights: the paper's 2-bit cells (cell_bits=2, within the 3-bit limit) and
+# unsigned 2-bit weights (one cell). Our signed weights use differential
+# encoding: 6-bit weights, 5 magnitude bits in 2-bit cells -> 3 columns per
+# sign, 6 per weight.
 SOT_MRAM = compose(
     "sot_mram_spiking_28nm",
-    mapping(weight_bits=3, encoding="differential"),
+    mapping("differential"),
     [
         # Cells: two MTJs in series, R_LRS = 1 MOhm, TMR 100% -> R_HRS = 2 MOhm
         # (Table I); J2 has twice J1's resistance (Sec. III-A): J1 in {1, 2},
@@ -202,10 +214,11 @@ SOT_MRAM = compose(
 # whose position in a window of 16 units encodes the 4-bit value; the unit
 # delay is 1584.5 / 16 = 99 ns (the paper tests its neuron with 100 ns
 # pulses). A 1-bit spike is one such pulse, so the per-pulse energies hold.
-# Weights: twos_complement, weight_bits=4, cell_bits=1 -> 4 columns per weight.
+# Weights: two's complement in binary cells (cell_bits=1), as in the paper;
+# paper: 4-bit weights in 4 columns; here: 6-bit weights in 6 columns.
 TEMPO_CIM = compose(
     "tempo_cim_jetcas23",
-    mapping(weight_bits=4, encoding="twos_complement"),
+    mapping("twos_complement"),
     [
         # Cells: HRS 600 kOhm, LRS 20 kOhm (measured, text with Fig. 10); one
         # 99 ns pulse per spike; 64 rows per bank (one tile = 64 rows x 64
@@ -256,19 +269,22 @@ TEMPO_CIM = compose(
 # Time: inputs at a temporal resolution of 100 ns (a 30 us sample is 300
 # steps): one time bin = 100 ns. The paper's 14.31 us circuit latency after
 # the input is not added.
-# Weights: 15 evenly spaced conductance states within 150 uS (Fig. 3b), taken
-# as 10..150 uS in 10 uS steps, plus the off state (~0 uS, below the 4 uS
-# stuck-off limit) for a zero magnitude: 16 levels = cell_bits 4. Signed
-# weights are differential pairs (Methods): weight_bits=5 (codes -15..15) ->
-# one 4-bit cell per sign, 2 columns per weight, 12 outputs per 24 columns.
+# Weights: the device holds 15 evenly spaced conductance states within
+# 150 uS (Fig. 3b), taken as 10..150 uS in 10 uS steps, plus the off state
+# (~0 uS, below the 4 uS stuck-off limit): 16 levels, a 4-bit cell. Limited
+# to 3 bits: 8 levels, every second programmed state, 0, 20, ..., 140 uS.
+# Signed weights are differential pairs (Methods): 6-bit weights, 5 magnitude
+# bits in 3-bit cells -> 2 columns per sign, 4 per weight, 6 outputs per 24
+# columns (the paper: 4-bit cells, 2 columns per weight, 12 outputs; so
+# twice the PEs, each with the per-PE power below).
 MEMRISTIVE_SNN = compose(
     "memristive_snn_180nm",
-    mapping(weight_bits=5, encoding="differential"),
+    mapping("differential"),
     [
         # Cells: 0.2 V read pulses (retention test, text with Fig. 3); their
         # energy is inside the array's average power below, so the cell
         # current itself is not charged again (cell_supply_v=0).
-        crossbars.conv_xbar(cell_bits=4, levels_s=tuple(i * 10e-6 for i in range(16)),
+        crossbars.conv_xbar(cell_bits=MAX_CELL_BITS, levels_s=tuple(i * 20e-6 for i in range(8)),
                             rows=128, cols=24, v_read=0.2, cell_supply_v=0.0, time_ns=100.0),
         # Per PE (tile), always on (average power over the inference):
         #   array 10.51% x 43.83 mW / 321 = 14.35 uW -> 7.97 uA
@@ -290,7 +306,7 @@ MEMRISTIVE_SNN = compose(
         Component("io", count="outputs", when="bin", supply_v=1.8, static_ua=5.57),
     ],
     specs={"label": r"Memristive SNN (180nm)", "tech": 180, "supply": "--", "device": "RRAM",
-           "cell": "analog (16 lvl)", "bitcell": "1T1R", "r_ratio": "100/6.67",
+           "cell": "3", "bitcell": "1T1R", "r_ratio": "50/7.14",
            "sensing": "Current (TIA)"},
 )
 
@@ -311,17 +327,17 @@ MEMRISTIVE_SNN = compose(
 # the chain's two lines (DBP / DBN): the columns below are DB-cell columns,
 # 2 x 128 = 256, and a ternary weight is one DB column of each sign.
 # Weights: the paper maps a signed m-bit weight to m TD cells of a column;
-# we use its ternary TD cell as a sign pair with bit-sliced magnitude
-# (differential, weight_bits=4, codes -7..7: 3 magnitude columns per sign ->
-# 6 DB columns per weight), shifted-and-added after the array as in the
-# paper (Sec. III-A).
+# we use its ternary TD cell as a sign pair of binary DB cells (cell_bits=1)
+# with bit-sliced magnitude (differential): 6-bit weights, 5 magnitude
+# columns per sign -> 10 DB columns per weight, shifted-and-added after the
+# array as in the paper (Sec. III-A).
 # Timing: each LPOSC-TDC serves 8 chains (16 DB columns) with one 8-bit SAR
 # ADC at 333 MHz: 8 x 3 ns = 24 ns per chain, 12 ns per DB column; 8 chains
 # = 192 ns. The rest of the 240.2 ns MVM, 48.2 ns, is the TD evaluation and
 # sampling phase (step "cells").
 TD_CIM = compose(
     "td_cim_sscl25",
-    mapping(weight_bits=4, encoding="differential"),
+    mapping("differential"),
     [
         # Cells: RH / RL = 500 / 50 kOhm (the device values of Fig. 4). The TD
         # cells draw no DC current ("static-power-free"): the cell current is
@@ -360,6 +376,16 @@ LITERATURE_MACROS = [DS_CIM, SOT_MRAM, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
 # ============================================================================
 # Calibration check: each macro on its paper's test condition
 # ============================================================================
+def native(arch, weight_bits, memory=None):
+    """`arch` with its paper's own weight precision (and memory cell), as
+    calibrated."""
+    crossbar = arch.crossbar if memory is None else dataclasses.replace(arch.crossbar,
+                                                                        memory=memory)
+    return Architecture(arch.name, crossbar,
+                        dataclasses.replace(arch.mapping, weight_bits=weight_bits),
+                        arch.components, specs=arch.specs)
+
+
 def check():
     """Run every macro on its paper's test condition and return
     [(macro, what, engine value, paper value)]."""
@@ -374,28 +400,25 @@ def check():
     # (all 4 magnitude cells in P on one sign, half the cells in P).
     w = torch.tensor([15, -15] * 32).repeat(512, 1).T
     s = (torch.arange(512) % 2 == 0).float()[:, None]
-    results.append((DS_CIM, "Table I energy (nJ)", dense(DS_CIM, w, s).energy_nj, 1.47))
+    cost = dense(native(DS_CIM, 5), w, s)
+    results.append((DS_CIM, "Table I energy (nJ)", cost.energy_nj, 1.47))
     # Tempo-CIM: all 256 rows, 16 weights with half their bits 1 (5 = 0101,
     # -6 = 1010); paper: 36.44 pJ per MVM (224.8 TOPS/W at 5.17 GOPS).
     w = torch.tensor([5, -6] * 8).repeat(256, 1).T
-    cost = dense(TEMPO_CIM, w, torch.ones(256, 1))
+    cost = dense(native(TEMPO_CIM, 4), w, torch.ones(256, 1))
     results.append((TEMPO_CIM, "energy per MVM (pJ)", 1e3 * cost.energy_nj, 8192 / 224.8))
     # TD-CIM: the paper's ternary weights (one DB column per sign, 128 x 2 =
     # 256 DB columns), all 320 inputs: 65.48 pJ and 240.2 ns per MVM.
-    ternary = compose("td_ternary", mapping(weight_bits=2, encoding="differential"),
-                      [crossbars.conv_xbar(cell_bits=1, r_on=50e3, r_off=500e3, rows=320,
-                                           cols=256, v_read=0.55, cell_supply_v=0.0,
-                                           time_ns=48.2)] + TD_CIM.components[1:],
-                      specs=TD_CIM.specs)
     w = torch.tensor([1, -1] * 64).repeat(320, 1).T
-    cost = dense(ternary, w, torch.ones(320, 1))
+    cost = dense(native(TD_CIM, 2), w, torch.ones(320, 1))
     results.append((TD_CIM, "energy per MVM (pJ)", 1e3 * cost.energy_nj, 81920 / 1251))
     results.append((TD_CIM, "time per MVM (ns)", cost.latency_ns, 81920 / 0.341e3))
     # Memristive SNN: the paper's 800-480-120-11 network, 300 time bins of
-    # 100 ns (a 30 us sample): average power 43.83 mW.
+    # 100 ns (a 30 us sample), 4-bit cells: average power 43.83 mW.
+    paper = native(MEMRISTIVE_SNN, 5, Memory(4, levels_s=tuple(i * 10e-6 for i in range(16))))
     energy = latency = 0.0
     for n_in, n_out in ((800, 480), (480, 120), (120, 11)):
-        cost = dense(MEMRISTIVE_SNN, torch.ones(n_out, n_in, dtype=torch.long),
+        cost = dense(paper, torch.ones(n_out, n_in, dtype=torch.long),
                      torch.ones(n_in, 300))
         energy, latency = energy + cost.energy_nj, cost.latency_ns
     results.append((MEMRISTIVE_SNN, "average power (mW)", energy / latency * 1e3, 43.83))

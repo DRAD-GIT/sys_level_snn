@@ -144,8 +144,8 @@ C3CIM_OP_XBAR = compose(
 )
 
 # Published macros (literature_macros.py: how each number follows from its
-# paper). Each stores weights at its paper's precision (5, 3, 4, 5 and 4
-# bits), so each precision records its own forward pass on first use.
+# paper). They store the same 6-bit weights (literature_macros.WEIGHT_BITS),
+# each in its paper's cells (at most 3 bits), so all rows share one recording.
 LITERATURE = [DS_CIM, SOT_MRAM, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
 
 # Designs evaluated and compared side by side (architectures with the same
