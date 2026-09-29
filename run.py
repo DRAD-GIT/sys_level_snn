@@ -75,7 +75,8 @@ RRAM_1BIT_XBAR = compose(
     ],
     # Descriptive specifications for the paper table (no effect on any cost);
     # cell precision, R_High/R_Low and accumulation are read from the crossbar.
-    specs={"device": "Resistive", "supply": VDD, "sensing": "Current"},
+    specs={"tech": "40nm", "supply": 1.1, "device": "Resistive", "bitcell": "1T1R",
+           "sensing": "Current"},
 )
 
 C3CIM_XBAR = compose(
@@ -104,7 +105,7 @@ C3CIM_XBAR = compose(
                   time_ns=2.0,                                      # step: once per time bin, after the reads
                   supply_v=VDD, static_ua=6.0),                     # powered during its step
     ],
-    specs={"tech": 40, "supply": 1.1, "device": "Resistive", "bitcell": "2T1R",
+    specs={"tech": "40nm", "supply": 1.1, "device": "Resistive", "bitcell": "2T1R",
            "sensing": "Voltage"},
 )
 
@@ -134,7 +135,7 @@ C3CIM_OP_XBAR = compose(
                   time_ns=2.0,                                      # step: once per time bin, after the reads
                   supply_v=VDD, static_ua=6.0),                     # powered during its step
     ],
-    specs={"tech": 40, "supply": 1.1, "device": "Resistive", "bitcell": "2T1R",
+    specs={"tech": "40nm", "supply": 1.1, "device": "Resistive", "bitcell": "2T1R",
            "sensing": "Voltage"},
 )
 
