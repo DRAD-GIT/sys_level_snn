@@ -127,70 +127,56 @@ DS_CIM = compose(
 )
 
 # ============================================================================
-# 2. SOT-MRAM spiking CIM: 28 nm event-driven spiking SOT-MRAM CIM macro with
-#    3T-2MTJ cells and output spike generators (243.6 TOPS/W). SIMULATED.
-#    Zotero ULHYFD4K.
+# 2. PCM: Khwa et al., "A 40-nm, 2M-Cell, 8b-Precision, Hybrid SLC-MLC PCM
+#    Computing-in-Memory Macro with 20.5 - 65.0TOPS/W for Tiny-AI Edge
+#    Devices", ISSCC 2022, paper 11.3. Measured. Zotero DEZEP3DX.
 # ----------------------------------------------------------------------------
-# Test condition (Sec. IV, Table I, Fig. 6(a)): 128 x 128 array, supply 1.1 V,
-# all 128 rows driven with uniformly distributed 8-bit inputs, uniformly
-# distributed 2-bit weights, 0.2 ns per input bit (a value v is an input
-# pulse of v x 0.2 ns; 0..51 ns), 243.6 TOPS/W.
-#   ops per MVM = 2 x 128 x 128 = 32768 -> 32768 / 243.6 = 134.5 pJ per MVM
-#   power breakdown (Fig. 6(a)): output spike generator (OSG) 72.6% =
-#   97.66 pJ, MRAM array 25.8% = 34.71 pJ, spike modulation unit (SMU) 0.9%
-#   = 1.211 pJ, other 0.7% = 0.942 pJ.
-# Durations in that test: mean input pulse 127.5 x 0.2 = 25.5 ns; the OSG
-# charges while any input is on (up to 255 x 0.2 = 51 ns) and then takes
-# T_out to convert; T_out = alpha x sum(T_in x G), with alpha from Fig. 7(a)
-# (20 ns at 1.2e-12 s.S): mean sum = 128 rows x 25.5 ns x 0.2375 uS = 7.75e-13
-# s.S -> 12.9 ns, so the OSG is on for ~63.9 ns per MVM.
-# Every read of a 1-bit spike is charged the paper's mean MVM: the input
-# pulse lasts 25.5 ns and the OSG is on for 63.9 ns (step "osg" = 38.4 ns
-# after the pulse), so a read of the full array with every row spiking costs
-# the paper's 134.5 pJ, as the other macros are charged their papers' energy
-# per operation. (Scaling the pulse to one input bit, 0.2 ns, with T_out
-# <= 128 x 0.2 ns x (1/3 MOhm) x alpha = 0.142 ns, would cut the energy per
-# read ~100x below the paper's own efficiency, since almost all of it is
-# bias current during the pulse; the paper reports no fixed per-conversion
-# energy that would bound it.)
-# Weights: the paper's 2-bit cells (cell_bits=2, within the 3-bit limit) and
-# unsigned 2-bit weights (one cell). Our signed weights use differential
-# encoding: 6-bit weights, 5 magnitude bits in 2-bit cells -> 3 columns per
-# sign, 6 per weight.
-SOT_MRAM = compose(
-    "sot_mram_spiking_28nm",
-    mapping("differential"),
+# The paper gives no power breakdown, only per-precision totals (Fig. 11.3.7).
+# We calibrate at its 1-bit-input point, the one closest to our spikes:
+#   1bIN-2bW-5bOUT: access time 3.25 ns, 3.9 TOPS, 261 TOPS/W (0.85 V,
+#   hybrid SLC-MLC, input reordering (IN-R), 55% input sparsity).
+# Array (Fig. 11.3.2, chip summary): sub-banks of 256 rows x 1024 columns of
+# 1T1R PCM; 8 word lines are driven at once (1-bit inputs, 8 accumulations);
+# each column is read by a current-controlled voltage-metric block, a fixed
+# current I_M through the column's 8 cells (so the read energy does not
+# depend on the stored data), then a 4-bit voltage-swing-remapping sense
+# amplifier (VSR-VSA), shared by 8 columns through an 8-to-1 MUX, and a
+# digital shifter and adder.
+# Energy per sensed column: one read of a column is 8 rows x a 2-bit weight
+# (one MLC cell) = 8 MACs = 16 ops; 16 / 261 = 61.3 fJ per column read,
+# counting every input (the paper's ops are dense). IN-R skips a group of 8
+# inputs when all are zero: at 55% sparsity 0.55 x 256 = 140.8 zero inputs
+# fill 17 of the 32 groups, so 15 of 32 groups are read, and the energy of
+# a read group is 61.3 fJ x 32 / 15 = 130.8 fJ per column. The engine skips
+# a row phase (8 rows) that holds no spike in the same way (gated).
+# Timing: 3.25 ns per read of a column (the access time); the 8 columns of
+# a VSA are read one after another (8-to-1 MUX): 26 ns per group of 8 rows.
+# Weights: two's complement across neighbouring cells, as in the paper; 2-bit
+# MLC cells (cell_bits=2, within the 3-bit limit): 6-bit weights -> 3 columns
+# per weight (the paper's 8-bit weights use 2 SLC + 3 MLC cells).
+PCM_KHWA = compose(
+    "pcm_khwa_isscc22",
+    mapping("twos_complement"),
     [
-        # Cells: two MTJs in series, R_LRS = 1 MOhm, TMR 100% -> R_HRS = 2 MOhm
-        # (Table I); J2 has twice J1's resistance (Sec. III-A): J1 in {1, 2},
-        # J2 in {2, 4} MOhm -> 3, 4, 5, 6 MOhm, the four distinct states (in
-        # parallel they would not be distinct). V_read = V_clamp - V_in,clamp
-        # = 0.4 - 0.3 = 0.1 V (Sec. IV-A); read pulse 25.5 ns (the mean).
-        # cell_supply_v: the array share, 34.71 pJ, over 128 x 128 cells x the
-        # mean level conductance 0.2375 uS x 0.1 V x 25.5 ns (= 9.92 pC) gives
-        # 3.50 V: the paper's "MRAM array" share is ~35x the cells' own
-        # 0.99 pJ, so it must include the clamping bias; kept in the array so
-        # that it follows the cell currents.
-        crossbars.conv_xbar(cell_bits=2, levels_s=(1 / 6e6, 1 / 5e6, 1 / 4e6, 1 / 3e6),
-                            rows=128, cols=128, v_read=0.1, cell_supply_v=3.50, time_ns=25.5),
-        # SMU (input clamp per row): 1.211 pJ / 128 rows / 25.5 ns = 0.371 uW
-        # per driven row -> 0.337 uA at 1.1 V, while its pulse is on.
-        Component("smu", count="physical_rows", powered="spiking_rows", when="cells",
-                  supply_v=1.1, static_ua=0.337),
-        # OSG: 97.66 pJ / 128 columns / 63.9 ns = 11.94 uW per column ->
-        # 10.85 uA at 1.1 V, on from the input pulse until its output spike
-        # (step "osg": 63.9 - 25.5 = 38.4 ns after the pulse).
-        Component("osg", count="physical_columns",
-                  powered={"rule": "used_columns", "gated": True}, time_ns=38.4,
-                  when=("cells.start", "osg.end"), supply_v=1.1, static_ua=10.85),
-        # Other: 0.942 pJ / 63.9 ns = 14.7 uW per array -> 13.4 uA at 1.1 V,
-        # during the same window.
-        Component("other", count="tiles", powered={"rule": "tiles", "gated": True},
-                  when=("cells.start", "osg.end"), supply_v=1.1, static_ua=13.4),
+        # Cells: 256 x 1024, 8 rows per activation. The paper gives no PCM
+        # resistances; the cell current is the fixed bias I_M, charged in
+        # "sense" below, so the cells are not charged (cell_supply_v=0) and
+        # r_on / r_off (1 k / 1 M) only satisfy the cell model. The word-line
+        # settling is inside the 3.25 ns access time (step "sense").
+        crossbars.conv_xbar(cell_bits=2, r_on=1e3, r_off=1e6, rows=256, cols=1024,
+                            active_rows=8, v_read=0.1, cell_supply_v=0.0, time_ns=0.0),
+        # Column read (I_M bias + VSR-VSA + shifter/adder): 130.8 fJ per used
+        # column in every row phase that holds a spike.
+        Component("sense", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.1308),
+        # VSA timing: one per 8 columns (8-to-1 MUX), 3.25 ns per column, one
+        # column after another.
+        Component("vsa", count={"rule": "column_groups", "size": 8},
+                  powered="used_column_groups", time_ns=3.25, serial=True),
     ],
-    specs={"label": r"SOT-MRAM spiking$^\dagger$", "tech": 28, "supply": 1.1,
-           "device": "SOT-MRAM", "cell": "2", "bitcell": "3T-2MTJ", "r_ratio": "6000/3000",
-           "sensing": "Current (time)"},
+    specs={"label": r"ISSCC'22 PCM~\cite{khwa_40-nm_2022}", "tech": 40, "supply": 0.85,
+           "device": "PCM", "cell": "2 (MLC)", "bitcell": "1T1R", "r_ratio": "--",
+           "sensing": "Voltage"},
 )
 
 # ============================================================================
@@ -372,7 +358,7 @@ TD_CIM = compose(
            "sensing": "Time (TDC)"},
 )
 
-LITERATURE_MACROS = [DS_CIM, SOT_MRAM, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
+LITERATURE_MACROS = [DS_CIM, PCM_KHWA, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
 
 
 # ============================================================================
@@ -424,15 +410,13 @@ def check():
                      torch.ones(n_in, 300))
         energy, latency = energy + cost.energy_nj, cost.latency_ns
     results.append((MEMRISTIVE_SNN, "average power (mW)", energy / latency * 1e3, 43.83))
-    # SOT-MRAM: all 128 rows; the paper's uniform 2-bit weights have a mean
-    # cell conductance of 0.2375 uS. Here each weight is a differential pair
-    # (one column at level 0, 1/6 uS), so 45 weights of 3 and 19 of 2 give
-    # the same mean over the 128 columns (0.2376 uS). Paper: 134.5 pJ per MVM
-    # (243.6 TOPS/W), OSG on for 63.9 ns.
-    w = torch.tensor([3] * 45 + [2] * 19).repeat(128, 1).T
-    cost = dense(native(SOT_MRAM, 3), w, torch.ones(128, 1))
-    results.append((SOT_MRAM, "energy per MVM (pJ)", 1e3 * cost.energy_nj, 32768 / 243.6))
-    results.append((SOT_MRAM, "time per MVM (ns)", cost.latency_ns, 63.9))
+    # PCM: 1-bit inputs, 2-bit weights (one MLC cell per weight, 1024
+    # weights), 15 of the 32 groups of 8 inputs spiking (IN-R at 55%
+    # sparsity): the paper's 261 TOPS/W counts every input.
+    w = torch.ones(1024, 256, dtype=torch.long)
+    s = (torch.arange(256) < 15 * 8).float()[:, None]
+    cost = dense(native(PCM_KHWA, 2), w, s)
+    results.append((PCM_KHWA, "TOPS/W (1bIN-2bW)", 2 * cost.macs / cost.energy_nj * 1e-3, 261))
     return results
 
 

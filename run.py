@@ -26,7 +26,7 @@ from evaluation.report import export, format_results
 from evaluation.runner import evaluate
 from hardware import Component, Mapping, compose
 # Published macros calibrated to their papers (each with its own weight precision).
-from literature_macros import DS_CIM, MEMRISTIVE_SNN, SOT_MRAM, TD_CIM, TEMPO_CIM
+from literature_macros import DS_CIM, MEMRISTIVE_SNN, PCM_KHWA, TD_CIM, TEMPO_CIM
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -146,7 +146,7 @@ C3CIM_OP_XBAR = compose(
 # Published macros (literature_macros.py: how each number follows from its
 # paper). They store the same 6-bit weights (literature_macros.WEIGHT_BITS),
 # each in its paper's cells (at most 3 bits), so all rows share one recording.
-LITERATURE = [DS_CIM, SOT_MRAM, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
+LITERATURE = [DS_CIM, PCM_KHWA, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
 
 # Designs evaluated and compared side by side (architectures with the same
 # weight quantization share one recorded forward pass).
