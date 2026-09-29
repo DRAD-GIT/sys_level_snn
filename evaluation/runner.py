@@ -136,6 +136,3 @@ def _precision_key(bits, scaling):
     """(bits, scaling); float weights have no scaling."""
     return (None, None) if bits is None else (bits, scaling)
 
-
-def _label(bits, scaling):
-    return "float" if bits is None else f"{bits}-bit {scaling}"

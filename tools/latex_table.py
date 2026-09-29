@@ -15,11 +15,11 @@ is reported with a warning. An architecture's hardware specifications come
 from its definition: those given in compose(..., specs={...}) (and its row
 name, specs["label"]), else, for cell precision, R_High/R_Low and
 accumulation (rows summed per read), read from the crossbar; unknown ones
-stay empty. Units: power mW,
-latency us and energy uJ per inference, TOPS/W. In every result column the
-best value of any row (lowest power, latency and energy, highest TOPS/W) is
-red, and a value of our work is bold where it beats every row that is not
-our work (literature and other architectures).
+stay empty. Units: power mW, latency us and energy uJ per inference,
+TOPS/W. In every result column the best value of any row (lowest power,
+latency and energy, highest TOPS/W) is red, and a value of our work is bold
+where it beats every row that is not our work (literature and other
+architectures).
 
 Include the output with \\input{comparison_table}; the preamble needs
 booktabs, multirow, makecell, adjustbox and xcolor with [table] (colortbl).
@@ -33,6 +33,8 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+from hardware import architecture  # noqa: E402
 
 # ============================================================================
 # THE TABLE
@@ -49,8 +51,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #    "nmnist": (531.6, 9.8, 5.2, 44.4), "gesture": (1040.2, 37.7, 39.2, 113.8)},
 LITERATURE = []
 
-# The specification columns, in order (keys of an architecture's specs).
-SPEC_KEYS = ("tech", "supply", "device", "cell", "bitcell", "r_ratio", "sensing", "accumulation")
+# The specification columns, in order: an architecture's specs (all but its label).
+SPEC_KEYS = tuple(key for key in architecture.SPEC_KEYS if key != "label")
 MODELS = ("nmnist", "gesture")
 FULL_TEST_SET = {"nmnist": 10000, "gesture": 264}
 # ============================================================================
@@ -171,13 +173,10 @@ def architecture_rows(architectures, ourwork=()):
 
 
 def row_values(row, runs, warn=print):
-    """(nmnist values, gesture values) of a row; values are 4 floats or None."""
-    architecture = row.get("architecture")
-    values = []
-    for model in MODELS:
-        name = architecture.get(model) if isinstance(architecture, dict) else architecture
-        values.append(pick_run(runs, model, name, warn) if name else row.get(model))
-    return values
+    """(nmnist values, gesture values) of a row, each 4 floats or None: an
+    architecture's results, or a literature row's published numbers."""
+    name = row.get("architecture")
+    return [pick_run(runs, model, name, warn) if name else row.get(model) for model in MODELS]
 
 
 def build_table(rows, runs, warn=print):
@@ -238,7 +237,6 @@ def main():
                         help="names of run.py architectures to include (default: ARCHITECTURES; "
                              "OURWORK is always included)")
     args = parser.parse_args()
-    sys.path.insert(0, ROOT)
     import run
     architectures = run.ARCHITECTURES
     if args.architectures:
@@ -248,7 +246,11 @@ def main():
         if missing:
             parser.error(f"not defined in run.py: {missing}; defined: {sorted(known)}")
         architectures = [known[n] for n in args.architectures]
-    runs = load_results(os.path.join(args.logs, "comparison_summary.csv"))
+    summary = os.path.join(args.logs, "comparison_summary.csv")
+    if not os.path.exists(summary):
+        parser.error(f"no results in {summary}: run python run.py --model nmnist and "
+                     "--model gesture first (or pass --logs)")
+    runs = load_results(summary)
     rows = LITERATURE + architecture_rows(architectures, getattr(run, "OURWORK", []))
     table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr))
     out = args.out or os.path.join(args.logs, "comparison_table.tex")

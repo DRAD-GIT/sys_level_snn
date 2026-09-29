@@ -251,33 +251,33 @@ def reference_cost(arch, spikes, weights, stride, padding, output_spikes=0.0):
                     bin_powered[c.name] += per_unit(rule) * (
                         not rule["gated"] or any(any(v) for v in patches.values()))
 
-    def duration(stage):
-        if stage.serial_size is None:
-            return stage.time_ns
+    def duration(step):
+        if step.serial_size is None:
+            return step.time_ns
         load, fullest = {}, 0
         for slot in slots:           # physical tiles: the slot's columns, cols at a time
             columns = len(slot) * used
             for first in range(0, columns, xb.cols):
                 load = {}
                 for column in range(min(xb.cols, columns - first)):
-                    group = group_of(column, stage.serial_size)
+                    group = group_of(column, step.serial_size)
                     load[group] = load.get(group, 0) + 1
                 fullest = max(fullest, max(load.values()))
-        return fullest * stage.time_ns
+        return fullest * step.time_ns
 
     # Serial step positions: within one activation, and within a time bin,
     # where the per-activation steps repeat reads_per_bin times and the
     # time-bin steps follow.
     in_activation, t = {}, 0.0
-    for stage in (s for s in arch.stages if s.level == "activation"):
-        in_activation[stage.name] = (t, t + duration(stage))
-        t += duration(stage)
+    for step in (s for s in arch.steps if s.level == "activation"):
+        in_activation[step.name] = (t, t + duration(step))
+        t += duration(step)
     span = t
     edges = {name: (a, (reads_per_bin - 1) * span + b) for name, (a, b) in in_activation.items()}
     t = reads_per_bin * span
-    for stage in (s for s in arch.stages if s.level == "time_bin"):
-        edges[stage.name] = (t, t + duration(stage))
-        t += duration(stage)
+    for step in (s for s in arch.steps if s.level == "time_bin"):
+        edges[step.name] = (t, t + duration(step))
+        t += duration(step)
     bin_span = t
     edges["bin"] = (0.0, bin_span)
     energy = {}
@@ -475,7 +475,7 @@ class HandCalculationTests(unittest.TestCase):
         weights = torch.randint(-31, 32, (10, 64, 1, 1), generator=g)      # 60 of 64 columns
         spikes = (torch.rand(1, 64, 1, 1, 1, generator=g) < 0.2).float()  # one time bin
         r = evaluate_layer(design(8), spikes, weights)
-        self.assertEqual(r.timeline.stages, (("cells", 5.0, "activation"), ("adc", 48.0, "activation"),
+        self.assertEqual(r.timeline.steps, (("cells", 5.0, "activation"), ("adc", 48.0, "activation"),
                                              ("lif", 2.0, "time_bin")))
         self.assertEqual(r.geometry.activations_per_bin, 8)
         self.assertEqual(r.latency_ns, 8 * (5.0 + 48.0) + 2.0)                # 426 ns
@@ -539,9 +539,9 @@ class HandCalculationTests(unittest.TestCase):
                 crossbars.c3cim_xbar(r_on=2e3, r_off=20e3, active_rows=64, time_ns=50.0, **window),
                 Component("lif", count="outputs", time_ns=2.0)])
             return evaluate_layer(arch, x, w).components
-        step, bin_end = run(), run(when=("column_source.start", "bin.end"))
+        own, bin_end = run(), run(when=("column_source.start", "bin.end"))
         for name in ("column_source", "column_driver"):
-            self.assertAlmostEqual(bin_end[name].energy_nj, step[name].energy_nj * 52.0 / 50.0,
+            self.assertAlmostEqual(bin_end[name].energy_nj, own[name].energy_nj * 52.0 / 50.0,
                                    places=12, msg=name)
 
     def test_worked_examples(self):
@@ -587,7 +587,7 @@ class HandCalculationTests(unittest.TestCase):
         self.assertAlmostEqual(par.components["sl_ota"].energy_nj, 1.1 * 10e-6 * 25 * 16 * 5.0, places=12)
 
 
-def stage(name, ns, **kw):
+def step(name, ns, **kw):
     """A component that only defines a step (per activation unless its count
     makes it per time bin)."""
     return Component(name, time_ns=ns, **kw)
@@ -601,11 +601,11 @@ class TimelineTests(unittest.TestCase):
                               torch.ones(1, 64, 1, 1))
 
     def test_serial_parallel_and_overlap(self):
-        r = self.run_arch([stage("a", 4.0),
-                           stage("c", 3.0, at="a.start"),                   # c parallel with a
-                           stage("b", 6.0),                                 # after a and c
-                           stage("d", 5.0, at="b.end-2"),                   # d overlaps b by 2 ns
-                           stage("e", 1.0),                                 # after all of them
+        r = self.run_arch([step("a", 4.0),
+                           step("c", 3.0, at="a.start"),                   # c parallel with a
+                           step("b", 6.0),                                 # after a and c
+                           step("d", 5.0, at="b.end-2"),                   # d overlaps b by 2 ns
+                           step("e", 1.0),                                 # after all of them
                            Component("bd", when=("b.start", "d.end"), static_ua=1.0)])
         self.assertEqual(r.timeline.activation,
                          {"a": (0, 4), "c": (0, 3), "b": (4, 10), "d": (8, 13), "e": (13, 14)})
@@ -613,7 +613,7 @@ class TimelineTests(unittest.TestCase):
         self.assertAlmostEqual(r.components["bd"].energy_nj, 1.1e-6 * 3 * 9.0, places=15)  # 4..13
 
     def test_pipelined_activations_and_overlapping_bins(self):
-        comps = [stage("drive", 2.0), stage("sense", 3.0),
+        comps = [step("drive", 2.0), step("sense", 3.0),
                  Component("neuron", count="outputs", time_ns=1.0, **WHOLE_BIN, static_ua=1.0),
                  Component("amp", when="sense", static_ua=1.0)]
         r = self.run_arch(comps, x=torch.ones(1, 64, 1, 1, 2),
@@ -627,65 +627,65 @@ class TimelineTests(unittest.TestCase):
 
     def test_component_cannot_serve_overlapping_activations(self):
         with self.assertRaisesRegex(ValueError, "two activations at once"):
-            self.run_arch([stage("drive", 2.0), stage("sense", 3.0),
+            self.run_arch([step("drive", 2.0), step("sense", 3.0),
                            Component("both", when=("drive.start", "sense.end"), static_ua=1.0)],
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=32), activation_interval_ns=3.0)
 
     def test_power_interval_between_step_edges(self):
         # 4 activations per bin of drive 2 + sense 3 ns, then fire 1 ns: sense
         # starts at 2 in the first activation; fire ends at 4 * 5 + 1 = 21.
-        r = self.run_arch([stage("drive", 2.0), stage("sense", 3.0),
+        r = self.run_arch([step("drive", 2.0), step("sense", 3.0),
                            Component("ota", when=("sense.start+1", "fire.end-1"), static_ua=1.0),
-                           stage("fire", 1.0, count="outputs")],        # defined after its use
+                           step("fire", 1.0, count="outputs")],        # defined after its use
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=16))
         self.assertEqual(r.timeline.anchor("sense", "start"), 2.0)
         self.assertEqual(r.timeline.anchor("sense", "end"), 20.0)
         self.assertAlmostEqual(r.components["ota"].energy_nj, 1.1e-6 * 3 * (21.0 - 1.0 - 3.0), places=15)
         with self.assertRaisesRegex(ValueError, "ends before it starts"):
-            self.run_arch([stage("read", 5.0),
+            self.run_arch([step("read", 5.0),
                            Component("x", when=("read.end", "read.start"), static_ua=1.0)])
 
     def test_time_bin_steps_at_anchors(self):
-        r = self.run_arch([stage("read", 5.0),
-                           stage("precharge", 1.0, count="outputs", at="bin.start"),
-                           stage("fire", 2.0, count="outputs")])       # after the activations
+        r = self.run_arch([step("read", 5.0),
+                           step("precharge", 1.0, count="outputs", at="bin.start"),
+                           step("fire", 2.0, count="outputs")])       # after the activations
         self.assertEqual(r.timeline.time_bin["precharge"], (0.0, 1.0))
         self.assertEqual(r.timeline.time_bin["fire"], (5.0, 7.0))
         self.assertEqual(r.latency_ns, 3 * 7.0)
         # A time-bin step at a per-activation step: its last activation's end
         # (2 activations of 5 ns), and a step placed at one defined later.
-        r = self.run_arch([stage("read", 5.0),
-                           stage("early", 1.0, count="outputs", at="fire.start-1"),
-                           stage("fire", 2.0, count="outputs", at="read.end-1")],
+        r = self.run_arch([step("read", 5.0),
+                           step("early", 1.0, count="outputs", at="fire.start-1"),
+                           step("fire", 2.0, count="outputs", at="read.end-1")],
                           crossbar=Crossbar(LINEAR_1BIT, active_rows=32))
         self.assertEqual((r.timeline.time_bin["fire"], r.timeline.time_bin["early"]),
                          ((9.0, 11.0), (8.0, 9.0)))
         with self.assertRaisesRegex(ValueError, "cycle"):
-            self.run_arch([stage("read", 5.0), stage("x", 1.0, at="y.end"),
-                           stage("y", 1.0, at="x.end")])
+            self.run_arch([step("read", 5.0), step("x", 1.0, at="y.end"),
+                           step("y", 1.0, at="x.end")])
         with self.assertRaisesRegex(ValueError, "before its level starts"):
-            self.run_arch([stage("read", 5.0), stage("x", 1.0, at="read.start-1")])
+            self.run_arch([step("read", 5.0), step("x", 1.0, at="read.start-1")])
 
 
 class CompositionTests(unittest.TestCase):
     def test_parts_compose_in_order(self):
         arch = rram_ota_design()
-        self.assertEqual([(s.name, s.level) for s in arch.stages],
+        self.assertEqual([(s.name, s.level) for s in arch.steps],
                          [("cells", "activation"), ("lif", "time_bin")])
         self.assertEqual([c.name for c in arch.components],
                          ["cells", "sl_ota", "slice_mirrors", "lif"])
         self.assertEqual(arch.power["sl_ota"].level, "activation")
         self.assertIsNone(Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
-            stage("read", 1.0), Component("area_only", area_um2=5.0)]).power["area_only"])
+            step("read", 1.0), Component("area_only", area_um2=5.0)]).power["area_only"])
 
     def test_step_frequency_inferred_or_set(self):
         arch = Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
-            stage("read", 1.0),                                              # tiles: per activation
+            step("read", 1.0),                                              # tiles: per activation
             Component("adc", count={"rule": "column_groups", "size": 4}, time_ns=2.0, serial=True),
             Component("acc", count="outputs", time_ns=1.0, per="activation"),
             Component("lif", count="outputs", time_ns=1.0),                  # neurons: per time bin
             Component("ctrl", count="one", time_ns=1.0)])
-        self.assertEqual({s.name: (s.time_ns, s.serial_size, s.level) for s in arch.stages},
+        self.assertEqual({s.name: (s.time_ns, s.serial_size, s.level) for s in arch.steps},
                          {"read": (1.0, None, "activation"), "adc": (2.0, 4, "activation"),
                           "acc": (1.0, None, "activation"), "lif": (1.0, None, "time_bin"),
                           "ctrl": (1.0, None, "time_bin")})
@@ -700,7 +700,7 @@ class CompositionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "bad anchor"):     # a point needs its edge
                 parse_anchor(bad)
         arch = Architecture("x", Crossbar(LINEAR_1BIT), Mapping(), [
-            stage("read", 1.0), stage("lif", 1.0, count="outputs"),
+            step("read", 1.0), step("lif", 1.0, count="outputs"),
             Component("own", time_ns=1.0), Component("during", when="read"),
             Component("span", when=("read.start", "lif.end")), Component("whole", when="bin")])
         self.assertEqual({name: (p.level, p.start, p.end) for name, p in arch.power.items() if p},
@@ -713,7 +713,7 @@ class CompositionTests(unittest.TestCase):
 
     def test_compose_needs_one_crossbar(self):
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
-            compose("x", Mapping(), [stage("read", 1.0)])
+            compose("x", Mapping(), [step("read", 1.0)])
         with self.assertRaisesRegex(ValueError, "exactly one crossbar"):
             compose("x", Mapping(), [crossbars.conv_xbar(r_on=1e3, r_off=1e6),
                                      crossbars.c3cim_xbar(r_on=1e3, r_off=1e6)])
@@ -728,6 +728,9 @@ class ValidationTests(unittest.TestCase):
         self.assertAlmostEqual(scale, 1 / 7)
         weights = torch.tensor([0.3])
         self.assertIs(quantize_weights(weights, None)[0], weights)
+        for bad in (1, 0, 2.5):
+            with self.assertRaisesRegex(ValueError, "at least 2 bits"):
+                quantize_weights(weights, bad)
 
     def test_quantization_scalings(self):
         g = torch.Generator().manual_seed(3)
@@ -763,13 +766,13 @@ class ValidationTests(unittest.TestCase):
             evaluate_layer(arch, torch.ones(1, 1, 1, 1, 1), torch.ones(1, 1, 1, 1))
 
     def test_invalid_architectures(self):
-        read = stage("read", 1.0)
-        fire = stage("fire", 1.0, count="outputs")
+        read = step("read", 1.0)
+        fire = step("fire", 1.0, count="outputs")
         bad = {
-            "no per-activation step": [stage("t", 1.0, count="outputs")],
+            "no per-activation step": [step("t", 1.0, count="outputs")],
             "unknown step in when": [read, Component("x", when=("missing.start", "read.end"))],
             "pair without edges": [read, fire, Component("x", when=("read", "fire"))],
-            "at without an edge": [read, stage("x", 1.0, at="read")],
+            "at without an edge": [read, step("x", 1.0, at="read")],
             "static current, no power": [read, Component("x", static_ua=1.0)],
             "data model, no power": [read, Component("x", model="crossbar_read")],
             "column_groups without size": [read, Component("x", count={"rule": "column_groups"})],
@@ -781,18 +784,18 @@ class ValidationTests(unittest.TestCase):
             "at without time_ns": [read, Component("x", at="read.end")],
             "serial without time_ns": [read, Component("x", count={"rule": "column_groups",
                                                                    "size": 2}, serial=True)],
-            "serial without column groups": [read, stage("x", 1.0, serial=True)],
+            "serial without column groups": [read, step("x", 1.0, serial=True)],
             "when is a point": [read, Component("x", when="read.start")],
             "when of three": [read, Component("x", when=("read.start", "read.end", "read.end"))],
             "bad anchor": [read, Component("x", when=("read.middle", "read.end"))],
-            "at unknown step": [read, stage("x", 1.0, at="missing.end")],
-            "activation step at a time-bin step": [read, fire, stage("x", 1.0, at="fire.end")],
-            "activation step at the bin": [read, stage("x", 1.0, at="bin.start")],
-            "step at the bin's end": [read, stage("x", 1.0, count="outputs", at="bin.end")],
-            "duplicate name": [read, stage("read", 2.0, count="outputs")],
-            "bad per": [read, stage("x", 1.0, per="cycle")],
-            "reserved step name": [read, stage("bin", 1.0)],
-            "step name not an identifier": [read, stage("my adc", 1.0)],
+            "at unknown step": [read, step("x", 1.0, at="missing.end")],
+            "activation step at a time-bin step": [read, fire, step("x", 1.0, at="fire.end")],
+            "activation step at the bin": [read, step("x", 1.0, at="bin.start")],
+            "step at the bin's end": [read, step("x", 1.0, count="outputs", at="bin.end")],
+            "duplicate name": [read, step("read", 2.0, count="outputs")],
+            "bad per": [read, step("x", 1.0, per="cycle")],
+            "reserved step name": [read, step("bin", 1.0)],
+            "step name not an identifier": [read, step("my adc", 1.0)],
         }
         for label, components in bad.items():
             with self.subTest(label), self.assertRaises(ValueError):

@@ -100,6 +100,33 @@ def samples_argument(text):
             f"expected a positive number of samples, or -1 for all, got {text!r}") from None
 
 
+def positive_argument(text):
+    """argparse type for counts that must be positive (--every, --parallel)."""
+    import argparse
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {text!r}")
+    return value
+
+
+def bits_argument(text):
+    """argparse type for weight bit widths: 'float' -> None, else an integer
+    of at least 2 (signed codes)."""
+    import argparse
+    if text == "float":
+        return None
+    try:
+        bits = int(text)
+    except ValueError:
+        bits = 0
+    if bits < 2:
+        raise argparse.ArgumentTypeError(f"expected 'float' or a bit width >= 2, got {text!r}")
+    return bits
+
+
 def test_loader(spec, net_params, data_dir, max_samples=None, parallel=None, num_workers=4):
     """The test set (its first max_samples, if given; None or -1 = all) in
     groups of `parallel` samples evaluated at once (default: spec.batch_size)."""

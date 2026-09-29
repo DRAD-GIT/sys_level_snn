@@ -130,10 +130,9 @@ class Component:
     ceil(weight columns in the fullest tile / groups per tile) conversions
     (32 weight columns, 8 groups of 8: 4); with "contiguous" they fill the
     groups one after another, min(group size, weight columns) (here 8).
-    A step runs in
-    every activation or once per time bin: inferred from `count` (columns,
-    rows, column groups, tiles: per activation; neurons and layer-wide parts:
-    per time bin), or per="activation" / per="time_bin". By default a step
+    A step runs in every activation or once per time bin: inferred from
+    `count` (columns, rows, column groups, tiles: per activation; neurons and
+    layer-wide parts: per time bin), or per="activation" / per="time_bin". By default a step
     starts when all steps of its level defined before it have ended (a
     time-bin step: also after all activations); `at` starts it at an anchor
     instead.
@@ -142,9 +141,10 @@ class Component:
     the time bin; "activations": all activations of the bin); an anchor is a
     point, always with its edge: "name.start" or "name.end", with an offset
     in ns ("cells.start+1", "lif.end-0.5"); "bin.start", "bin.end",
-    "activations.start", "activations.end". A per-activation step can only be anchored to
-    per-activation steps; seen from the time bin, a per-activation step
-    starts with the first activation and ends with the last.
+    "activations.start", "activations.end". A per-activation step can only
+    be anchored to per-activation steps; seen from the time bin, a
+    per-activation step starts with the first activation and ends with the
+    last.
 
     Power: `when` = a window ("vi": during that step; "bin": the whole time
     bin) or a (from, to) pair of anchors (("cells.start", "lif.end")).
@@ -193,7 +193,7 @@ class Component:
 
 
 @dataclass(frozen=True)
-class Stage:
+class Step:
     """A step of the timeline, from the component of the same name."""
     name: str
     time_ns: float                  # per operation
@@ -222,7 +222,7 @@ class Architecture:
     specs: dict = field(default_factory=dict)    # descriptive only (SPEC_KEYS), no cost
 
     def __post_init__(self):
-        self.stages, self.power = validate(self)
+        self.steps, self.power = validate(self)
 
 
 @dataclass
@@ -365,7 +365,7 @@ def _validate_mapping(arch):
 
 
 def _step_of(c):
-    """The Stage (timeline step) a timed component defines."""
+    """The Step (timeline step) a timed component defines."""
     if not re.fullmatch(r"[A-Za-z_]\w*", c.name) or c.name in (BIN, ACTIVATIONS):
         raise ValueError(f"{c.name}: a component with time_ns is a step named after it: its "
                          f"name must be an identifier other than '{BIN}' and '{ACTIVATIONS}'")
@@ -380,7 +380,7 @@ def _step_of(c):
                              "each instance converts one after another)")
         size = count["size"]
     at = None if c.at is None else parse_anchor(c.at)
-    return Stage(c.name, float(c.time_ns), size, step_level(c), at)
+    return Step(c.name, float(c.time_ns), size, step_level(c), at)
 
 
 def _point(anchor, levels, label):
@@ -445,7 +445,7 @@ def validate(arch):
         if isinstance(value, bool) or not isinstance(value, (str, int, float)):
             raise ValueError(f"{arch.name}: specs[{key!r}] must be a string or a number")
 
-    names, stages = set(), []
+    names, steps = set(), []
     for c in arch.components:
         if not isinstance(c.name, str) or not c.name or c.name in names:
             raise ValueError(f"component names must be unique: {c.name!r}")
@@ -454,13 +454,13 @@ def validate(arch):
         if not isinstance(c.serial, bool):
             raise ValueError(f"{c.name}: serial must be True or False")
         if c.time_ns is not None:
-            stages.append(_step_of(c))
+            steps.append(_step_of(c))
         elif c.at is not None or c.serial or c.per is not None:
             raise ValueError(f"{c.name}: at, serial and per describe a step: give it time_ns")
-    if not any(s.level == "activation" for s in stages):
+    if not any(s.level == "activation" for s in steps):
         raise ValueError("a per-activation step is required (the crossbar's read)")
-    levels = {s.name: s.level for s in stages}
-    for s in stages:
+    levels = {s.name: s.level for s in steps}
+    for s in steps:
         if s.at is None:
             continue
         target = _point(s.at, levels, f"{s.name}.at")
@@ -493,4 +493,4 @@ def validate(arch):
                                  f"gain per weight slice ({slices_per_group(arch)})")
             for gain in c.slice_gains:
                 _number(gain, f"{c.name}.slice_gains")
-    return stages, power
+    return steps, power

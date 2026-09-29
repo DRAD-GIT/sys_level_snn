@@ -12,28 +12,28 @@ from dataclasses import dataclass
 from hardware.architecture import ACTIVATIONS, BIN
 
 
-def conversions(stage, geometry):
+def conversions(step, geometry):
     """Operations one after another in a step: 1, or for a serial step the
     weight columns of the fullest column group (see Mapping.columns)."""
-    return 1 if stage.serial_size is None else geometry.fullest_group(stage.serial_size)
+    return 1 if step.serial_size is None else geometry.fullest_group(step.serial_size)
 
 
-def _place(stages, durations, placed, outside=None):
-    """Place `stages` (one level) after the already `placed` intervals.
+def _place(steps, durations, placed, outside=None):
+    """Place `steps` (one level) after the already `placed` intervals.
     outside: name -> (start, end) of other-level steps they may be anchored to."""
     placed, outside = dict(placed), outside or {}
     base = list(placed)                      # "activations" for the time-bin level
-    pending = list(stages)
+    pending = list(steps)
     while pending:
         progress = False
-        for stage in list(pending):
-            earlier = [s.name for s in stages[:stages.index(stage)]]
-            if stage.at is None:
+        for step in list(pending):
+            earlier = [s.name for s in steps[:steps.index(step)]]
+            if step.at is None:
                 if any(name not in placed for name in earlier):
                     continue
                 start = max((placed[name][1] for name in base + earlier), default=0.0)
             else:
-                name, edge, offset = stage.at
+                name, edge, offset = step.at
                 if name == BIN:
                     edges = (0.0, None)
                 elif name in outside:
@@ -44,10 +44,10 @@ def _place(stages, durations, placed, outside=None):
                     continue
                 start = edges[edge == "end"] + offset
                 if start < 0:
-                    raise ValueError(f"step {stage.name} would start before its level starts "
+                    raise ValueError(f"step {step.name} would start before its level starts "
                                      f"(at {start:g} ns)")
-            placed[stage.name] = (start, start + durations[stage.name])
-            pending.remove(stage)
+            placed[step.name] = (start, start + durations[step.name])
+            pending.remove(step)
             progress = True
         if not progress:
             raise ValueError("steps placed at each other form a cycle: "
@@ -65,7 +65,7 @@ class Timeline:
     time_bin_span: float
     time_bin_interval: float
     time_bins: int
-    stages: tuple = ()           # (name, duration, level) in order, for reports
+    steps: tuple = ()            # (name, duration, level) in order, for reports
 
     @property
     def latency_ns(self):
@@ -100,23 +100,23 @@ class Timeline:
         """One line: every step with its duration and how often it runs."""
         parts = [f"{name} {duration:g} ns ("
                  + (f"per activation, x{self.activations}" if level == "activation" else "per time bin")
-                 + ")" for name, duration, level in self.stages]
+                 + ")" for name, duration, level in self.steps]
         return " | ".join(parts) + f" = {self.time_bin_span:g} ns per time bin"
 
 
 def build_timeline(arch, geometry, time_bins):
     """The timeline of a layer (serial steps depend on its columns)."""
-    durations = {s.name: s.time_ns * conversions(s, geometry) for s in arch.stages}
+    durations = {s.name: s.time_ns * conversions(s, geometry) for s in arch.steps}
     activations = geometry.activations_per_bin
-    activation = _place([s for s in arch.stages if s.level == "activation"], durations, {})
+    activation = _place([s for s in arch.steps if s.level == "activation"], durations, {})
     span = max(end for _, end in activation.values())
     interval = arch.activation_interval_ns or span
     block = (activations - 1) * interval + span
     in_bin = {name: (start, (activations - 1) * interval + end)
               for name, (start, end) in activation.items()}
-    time_bin = _place([s for s in arch.stages if s.level == "time_bin"], durations,
+    time_bin = _place([s for s in arch.steps if s.level == "time_bin"], durations,
                       {ACTIVATIONS: (0.0, block)}, in_bin)
     bin_span = max(end for _, end in time_bin.values())
     return Timeline(activation, time_bin, span, interval, activations, bin_span,
                     arch.time_bin_interval_ns or bin_span, time_bins,
-                    tuple((s.name, durations[s.name], s.level) for s in arch.stages))
+                    tuple((s.name, durations[s.name], s.level) for s in arch.steps))

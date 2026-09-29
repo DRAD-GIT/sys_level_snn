@@ -135,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--data", help="dataset folder, or a folder holding it (for --full)")
     parser.add_argument("--device", help="where SRMLayer runs (cpu / cuda); default cuda if available")
-    parser.add_argument("--parallel", type=int,
+    parser.add_argument("--parallel", type=models.positive_argument,
                         help="samples evaluated at once for --full (default: N-MNIST 50, gesture 2)")
     args = parser.parse_args()
     for reference_path in args.reference:

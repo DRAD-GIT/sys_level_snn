@@ -28,15 +28,11 @@ from evaluation.runner import accuracy_sweep  # noqa: E402
 from hardware.architecture import scaling_std  # noqa: E402
 
 
-def bit_width(text):
-    return None if text == "float" else int(text)
-
-
 def layer_bits(text):
     layer, _, bits = text.partition("=")
     if not layer or not bits:
         raise argparse.ArgumentTypeError(f"expected LAYER=BITS (e.g. SF2=8), got {text!r}")
-    return layer, bit_width(bits)
+    return layer, models.bits_argument(bits)
 
 
 def bits_label(bits):
@@ -70,7 +66,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", nargs="+", default=["nmnist", "gesture"],
                         choices=["nmnist", "gesture"])
-    parser.add_argument("--bits", nargs="+", type=bit_width, default=[2, 3, 4, 5, 6, 8, None],
+    parser.add_argument("--bits", nargs="+", type=models.bits_argument, default=[2, 3, 4, 5, 6, 8, None],
                         help="weight bit widths; 'float' = trained weights")
     parser.add_argument("--scaling", nargs="+", default=["std3"],
                         help="quantization ranges to compare: max, mse, std<k> (e.g. std3)")
@@ -81,10 +77,10 @@ def main():
     parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
     parser.add_argument("--samples", type=models.samples_argument, default=None,
                         help="first N test samples to evaluate; -1 = all (default: all)")
-    parser.add_argument("--parallel", type=int,
+    parser.add_argument("--parallel", type=models.positive_argument,
                         help="samples evaluated at once (default: N-MNIST 50, gesture 2); "
                              "only speed and GPU memory depend on it")
-    parser.add_argument("--every", type=int, default=1000,
+    parser.add_argument("--every", type=models.positive_argument, default=1000,
                         help="print the accuracy so far every N samples (default 1000)")
     args = parser.parse_args()
     args.layer_bits = dict(args.layer_bits)

@@ -26,8 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", nargs="+", default=["nmnist", "gesture"],
                         choices=["nmnist", "gesture"])
-    parser.add_argument("--bits", nargs="+", default=[run.WEIGHT_BITS],
-                        type=lambda text: None if text == "float" else int(text),
+    parser.add_argument("--bits", nargs="+", default=[run.WEIGHT_BITS], type=models.bits_argument,
                         help="weight bit widths (default: run.py's WEIGHT_BITS); 'float' = trained weights")
     parser.add_argument("--scaling", nargs="+", default=[run.WEIGHT_SCALING],
                         help="quantization ranges (default: run.py's WEIGHT_SCALING)")
@@ -35,10 +34,10 @@ def main():
     parser.add_argument("--recordings", default=run.RECORDING_DIR, help="where to save the recordings")
     parser.add_argument("--samples", type=models.samples_argument, default=None,
                         help="first N test samples to record; -1 = all (default: all)")
-    parser.add_argument("--parallel", type=int, help="samples run at once (default: N-MNIST 50, gesture 2)")
+    parser.add_argument("--parallel", type=models.positive_argument, help="samples run at once (default: N-MNIST 50, gesture 2)")
     parser.add_argument("--full-outputs", action="store_true",
                         help="also save every layer's output spikes (not only their counts)")
-    parser.add_argument("--every", type=int, default=1000, help="print progress every N samples")
+    parser.add_argument("--every", type=models.positive_argument, default=1000, help="print progress every N samples")
     args = parser.parse_args()
     for scaling in args.scaling:
         scaling_std(scaling)

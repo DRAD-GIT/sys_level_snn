@@ -85,8 +85,9 @@ C3CIM_XBAR = compose(
             weight_encoding="twos_complement", conv="parallel",
             columns="contiguous"),  # drivers of empty column groups stay off
     [
-        # Crossbar: 64x64 tiles of 1-bit cells, 8 rows driven per activation;
-        # its step "column_source" runs in every activation. Built in:
+        # Crossbar: 64x64 tiles of 1-bit cells, all rows driven at once (set
+        # active_rows for row phases); its step "column_source" runs in every
+        # activation. Built in:
         #   column_source  a constant current source per column, column_ua
         #                  each, on for the used columns (during `when`);
         #   column_driver  one per driver_group columns, driver_ua each, on
@@ -115,8 +116,9 @@ C3CIM_OP_XBAR = compose(
             weight_encoding="twos_complement", conv="parallel",
             columns="contiguous"),  # drivers of empty column groups stay off
     [
-        # Crossbar: 64x64 tiles of 1-bit cells, 8 rows driven per activation;
-        # its step "column_source" runs in every activation. Built in:
+        # Crossbar: 64x64 tiles of 1-bit cells, all rows driven at once (set
+        # active_rows for row phases); its step "column_source" runs in every
+        # activation. Built in:
         #   column_source  a constant current source per column, column_ua
         #                  each, on for the used columns (during `when`);
         #   column_driver  one per driver_group columns, driver_ua each, on
@@ -171,9 +173,9 @@ def main():
     parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
     parser.add_argument("--samples", type=models.samples_argument, default=MAX_SAMPLES,
                         help="first N test samples to evaluate; -1 = all (default: MAX_SAMPLES)")
-    parser.add_argument("--every", type=int, default=1000,
+    parser.add_argument("--every", type=models.positive_argument, default=1000,
                         help="print progress every N samples (default 1000)")
-    parser.add_argument("--parallel", type=int, default=PARALLEL,
+    parser.add_argument("--parallel", type=models.positive_argument, default=PARALLEL,
                         help="samples processed at once: when recording (default: N-MNIST 50, "
                              "gesture 2) and per hardware evaluation step (default: one recorded file)")
     parser.add_argument("--recordings", default=RECORDING_DIR, help="folder of recorded forward passes")

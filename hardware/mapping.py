@@ -134,6 +134,8 @@ def quantize_weights(weights, bits, scaling="std3"):
     """
     if bits is None:
         return weights, 1.0
+    if isinstance(bits, bool) or not isinstance(bits, int) or bits < 2:
+        raise ValueError(f"signed weights need an integer of at least 2 bits, got {bits!r}")
     weights = weights.detach()
     top = 2 ** (bits - 1) - 1
     peak = float(weights.abs().max())
