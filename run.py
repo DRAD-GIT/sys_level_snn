@@ -26,7 +26,7 @@ from evaluation.report import export, format_results
 from evaluation.runner import evaluate
 from hardware import Component, Mapping, compose
 # Published macros calibrated to their papers (each with its own weight precision).
-from literature_macros import DS_CIM, MEMRISTIVE_SNN, PCM_KHWA, TD_CIM, TEMPO_CIM
+from literature_macros import ASSCC25_SF, DS_CIM, ESSERC24_RRAM, MEMRISTIVE_SNN, TD_CIM
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -53,34 +53,6 @@ WEIGHT_SCALING = "std3"  # "std<k>", "max" or "mse" (see README, Mapping)
 # 3. HARDWARE: the crossbar first, then its components (names must be unique)
 # ============================================================================
 VDD = 1.1
-RRAM_1BIT_XBAR = compose(
-    "rram_1bit_conv_xbar",
-    # conv="parallel": one weight copy per output position (copies that fit
-    # share a tile), so every analog LIF has its own columns; it cannot store
-    # and restore its membrane potential to serve several pixels.
-    Mapping(weight_bits=WEIGHT_BITS, weight_scaling=WEIGHT_SCALING,
-            weight_encoding="twos_complement", conv="parallel",
-            columns="contiguous"),   # weight columns from column 0 on, filling one group after another
-    [
-        # Crossbar: 64x64 tiles of 1-bit RRAM, 0.2 V read made from VDD; its
-        # read, the step "cells" (5 ns), runs in every activation.
-        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=200e3, rows=64, cols=64,
-                            v_read=0.2, cell_supply_v=1.1, time_ns=5.0,
-                            when=("cells.start", "lif.end")),       # conducts until the LIF has fired
-        Component("sl_ota", count="physical_columns",               # one per column,
-                  powered={"rule": "used_columns"},                 # on for the used columns
-                  when=("cells.start", "lif.end"),                  # from the read until the LIF has fired
-                  supply_v=1.1, static_ua=10.0),
-        Component("lif", count="outputs",                           # one per output neuron
-                  time_ns=2.0,                                      # step: once per time bin, after the reads
-                  supply_v=VDD, static_ua=10.0),                    # powered during its step
-    ],
-    # Descriptive specifications for the paper table (no effect on any cost);
-    # cell precision, R_High/R_Low and accumulation are read from the crossbar.
-    specs={"tech": "40nm", "supply": 1.1, "device": "RRAM", "bitcell": "1T1R",
-           "sensing": "Current"},
-)
-
 C3CIM_XBAR = compose(
     "c3cim_xbar",
     Mapping(weight_bits=WEIGHT_BITS, weight_scaling=WEIGHT_SCALING,
@@ -103,7 +75,7 @@ C3CIM_XBAR = compose(
                   powered="used_columns",                           # on for the used columns
                   time_ns=10.0,                                     # step: after the sources, per activation
                   when=("vi.start", "lif.end"),                     # from its first step until the LIF has fired
-                  supply_v=1.1, static_ua=24.3),
+                  supply_v=1.0, static_ua=24.3),
         Component("lif", count="outputs",                           # one per output neuron
                   time_ns=2.0,                                      # step: once per time bin, after the reads
                   supply_v=VDD, static_ua=6.0),                     # powered during its step
@@ -134,7 +106,7 @@ C3CIM_OP_XBAR = compose(
                   powered="used_columns",                           # on for the used columns
                   time_ns=10.0,                                     # step: after the sources, per activation
                   when=("vi.start", "lif.end"),                     # from its first step until the LIF has fired
-                  supply_v=1.1, static_ua=24.3),
+                  supply_v=1.0, static_ua=24.3),
         Component("lif", count="outputs",                           # one per output neuron
                   time_ns=2.0,                                      # step: once per time bin, after the reads
                   supply_v=VDD, static_ua=6.0),                     # powered during its step
@@ -146,11 +118,11 @@ C3CIM_OP_XBAR = compose(
 # Published macros (literature_macros.py: how each number follows from its
 # paper). They store the same 6-bit weights (literature_macros.WEIGHT_BITS),
 # each in its paper's cells (at most 3 bits), so all rows share one recording.
-LITERATURE = [DS_CIM, PCM_KHWA, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
+LITERATURE = [DS_CIM, TD_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
 
 # Designs evaluated and compared side by side (architectures with the same
 # weight quantization share one recorded forward pass).
-ARCHITECTURES = [RRAM_1BIT_XBAR, C3CIM_XBAR, C3CIM_OP_XBAR] + LITERATURE
+ARCHITECTURES = [C3CIM_XBAR, C3CIM_OP_XBAR] + LITERATURE
 # Our work: listed last in the paper table (tools/latex_table.py), where its
 # values that beat every other row are bold.
 OURWORK = [C3CIM_XBAR, C3CIM_OP_XBAR]

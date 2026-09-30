@@ -4,50 +4,59 @@ run.py evaluates them with its ARCHITECTURES (list LITERATURE).
 
     python literature_macros.py      # checks every macro against its paper
 
+  1. DS_CIM          Fu et al., "DS-CIM: A 40nm Asynchronous Dual-Spike Driven, MRAM
+                     Compute-In-Memory Macro for Spiking Neural Network", TCAS-I 2024
+  2. TD_CIM          Wei et al., "A 28-nm Static-Power-Free Fully Parallel RRAM-Based TD
+                     CIM Macro With 1982 TOPS/W/Bit for Edge Applications", SSC-L 2025
+  3. MEMRISTIVE_SNN  Wang et al., "Fully Integrated Memristive Spiking Neural Network with
+                     Analog Neurons for High-Speed Event-Based Data Processing", arXiv 2025
+  4. ASSCC25_SF      Li et al., "A 28nm RRAM-Based 17.0 TOPS/mm2 and 89.7 TOPS/W Compute-
+                     In-Memory Macro Enabled by Source-Follower Cell and IR-Drop-Freed
+                     Array", A-SSCC 2025
+  5. ESSERC24_RRAM   Yao et al., "A 28 nm RRAM-Based 81.1 TOPS/mm2/bit Compute-In-Memory
+                     Macro with Uniform and Linear 64 Read Channels under 512 4-bit
+                     Inputs", ESSERC 2024
+
 Each macro is calibrated to its own paper: the paper's reported numbers (a
-per-block energy table, or its TOPS/W or power with its power/energy
-breakdown) are turned into per-instance component energies and powers, and
-the check at the bottom runs each macro on the paper's own test condition and
-compares the engine's energy with the paper's. The derivation of every number
-is written next to it.
+per-block energy table, power at several parallelisms, or its TOPS/W or power
+with its power/energy breakdown) are turned into per-instance component
+energies and powers, and check() runs each macro on the paper's own test
+condition and compares the engine's result with the paper's. The derivation
+of every number is written next to it.
 
 How the numbers are derived, for every macro:
-  1. The reference energy: the paper's energy per operation of its whole
-     array (a matrix-vector multiplication, MVM) at a stated test condition,
-     from a per-block energy table, or from TOPS/W (1 TOPS/W = 1 op/pJ; ops =
-     2 x MACs, the convention of all five papers), or power x time.
-  2. It is split by the paper's own energy/power breakdown (a pie chart or
-     table) into the blocks of the macro.
-  3. Each block's share is divided among the instances that work in that test
-     condition (the driven rows, the used columns, the neurons) and becomes an
-     event energy (pJ per instance per operation), or, for a block that draws
-     current for as long as it is on, a static current during its window.
-  4. The array (component "cells") uses the paper's cell resistances and read
-     voltage; the engine computes its current from the spikes and the stored
-     weights. Where the paper's array energy differs from V_read x I x t (the
-     read bias changes the resistance, or the paper's "array" share includes
-     clamps or mirrors), cell_supply_v is the effective rail that makes the
-     array reproduce the paper's array energy at the test condition.
-  5. Timing: the read time is the paper's read pulse (or read phase); steps
-     that the paper runs serially (e.g. a shared ADC) are serial steps.
+  1. The reference energy: the paper's energy per operation of its array (a
+     matrix-vector multiplication, MVM) at a stated test condition, from a
+     per-block energy table, measured power x time per operation, or TOPS/W
+     (1 TOPS/W = 1 op/pJ; ops = 2 x MACs, the convention of all the papers).
+  2. It is split by the paper's own breakdown (a pie chart, a table, or power
+     measured at several numbers of driven rows: a per-row and a fixed part).
+  3. Each part is divided among the instances that work in that test
+     condition (driven rows, used columns, neurons) and becomes an event
+     energy per instance, or, for a block drawing current while on, a static
+     current during its window.
+  4. The array ("cells") uses the paper's resistances and read voltage where
+     it gives them (DS-CIM); elsewhere the array's measured energy is charged
+     through the components and the cells are not charged (cell_supply_v=0).
+  5. Timing: the paper's read pulse or clock cycles; converters shared by
+     several columns convert them one after another (serial steps).
 
-What differs from the papers (applies to all):
-  * Inputs are our networks' binary spikes, one per input per time bin, not
-    the papers' multi-bit (latency / dual-spike / bit-serial) inputs. Energies
-    of blocks that scale with the input pulse length are scaled to one 1-bit
-    pulse (stated per macro).
-  * Weights: every macro stores run.py's 6-bit weights (WEIGHT_BITS), so all
-    rows share one recorded forward pass and one accuracy. Each keeps its
-    paper's cell precision (at most MAX_CELL_BITS = 3 bits) and weight layout
-    (differential or two's complement), and splits the 6-bit weight over as
-    many columns as that needs. The component energies are per row, column,
-    weight or neuron, so a weight on more columns than in the paper costs
-    proportionally more. check() runs each macro at its paper's own weight
-    precision (native()).
-  * Macros without a neuron (the ANN macros) are charged no neuron: the table
-    shows their array + periphery only.
-  * The mapping (conv="parallel", contiguous columns) is the same as our
-    designs', so every macro runs the same workload.
+Rules for all macros:
+  * Weights: run.py's 6-bit weights (WEIGHT_BITS), so every row shares one
+    recorded forward pass and one accuracy. Each macro keeps its paper's cell
+    precision (at most MAX_CELL_BITS = 3 bits) and weight layout, and splits
+    the 6-bit weight over as many columns as that needs; the component
+    energies are per row, column or neuron, so a weight on more columns than
+    in the paper costs proportionally more. check() runs each macro at its
+    paper's own weight precision (native()).
+  * Inputs are binary spikes: a spike drives its row, a zero does not (the
+    cells on a row are on or off). A paper's energy for n-bit inputs is
+    normalised to 1-bit inputs by dividing it by n, as in the papers' own
+    TOPS/W/bit figures; timing is kept at the paper's.
+  * Macros without a neuron are charged no neuron: the table shows their
+    array and periphery only.
+  * The mapping (conv="parallel", contiguous columns) is our designs', so
+    every macro runs the same workload.
   * specs["label"]: a dagger marks simulated (not measured) papers.
 """
 import dataclasses
@@ -66,7 +75,7 @@ def mapping(encoding, weight_bits=WEIGHT_BITS):
 
 
 # ============================================================================
-# 1. DS-CIM: Fu et al., "DS-CIM: A 40nm Asynchronous Dual-Spike Driven, MRAM
+# 1. MRAM: DS-CIM, Fu et al., "DS-CIM: A 40nm Asynchronous Dual-Spike Driven, MRAM
 #    CIM Macro for SNN", IEEE TCAS-I 71(4), 2024. SIMULATED.
 #    Zotero R9PBCTVH. Reports DVS Gesture: 90.00%, 729.35 nJ, 40.46 us.
 # ----------------------------------------------------------------------------
@@ -127,115 +136,67 @@ DS_CIM = compose(
 )
 
 # ============================================================================
-# 2. PCM: Khwa et al., "A 40-nm, 2M-Cell, 8b-Precision, Hybrid SLC-MLC PCM
-#    Computing-in-Memory Macro with 20.5 - 65.0TOPS/W for Tiny-AI Edge
-#    Devices", ISSCC 2022, paper 11.3. Measured. Zotero DEZEP3DX.
+# 2. RRAM: TD-CIM, Wei et al., "A 28-nm Static-Power-Free Fully Parallel RRAM-Based
+#    TD CIM Macro With 1982 TOPS/W/Bit for Edge Applications", IEEE SSC-L 8,
+#    2025. Measured. Zotero SB7696M8.
 # ----------------------------------------------------------------------------
-# The paper gives no power breakdown, only per-precision totals (Fig. 11.3.7).
-# We calibrate at its 1-bit-input point, the one closest to our spikes:
-#   1bIN-2bW-5bOUT: access time 3.25 ns, 3.9 TOPS, 261 TOPS/W (0.85 V,
-#   hybrid SLC-MLC, input reordering (IN-R), 55% input sparsity).
-# Array (Fig. 11.3.2, chip summary): sub-banks of 256 rows x 1024 columns of
-# 1T1R PCM; 8 word lines are driven at once (1-bit inputs, 8 accumulations);
-# each column is read by a current-controlled voltage-metric block, a fixed
-# current I_M through the column's 8 cells (so the read energy does not
-# depend on the stored data), then a 4-bit voltage-swing-remapping sense
-# amplifier (VSR-VSA), shared by 8 columns through an 8-to-1 MUX, and a
-# digital shifter and adder.
-# Energy per sensed column: one read of a column is 8 rows x a 2-bit weight
-# (one MLC cell) = 8 MACs = 16 ops; 16 / 261 = 61.3 fJ per column read,
-# counting every input (the paper's ops are dense). IN-R skips a group of 8
-# inputs when all are zero: at 55% sparsity 0.55 x 256 = 140.8 zero inputs
-# fill 17 of the 32 groups, so 15 of 32 groups are read, and the energy of
-# a read group is 61.3 fJ x 32 / 15 = 130.8 fJ per column. The engine skips
-# a row phase (8 rows) that holds no spike in the same way (gated).
-# Timing: 3.25 ns per read of a column (the access time); the 8 columns of
-# a VSA are read one after another (8-to-1 MUX): 26 ns per group of 8 rows.
-# Weights: two's complement across neighbouring cells, as in the paper; 2-bit
-# MLC cells (cell_bits=2, within the 3-bit limit): 6-bit weights -> 3 columns
-# per weight (the paper's 8-bit weights use 2 SLC + 3 MLC cells).
-PCM_KHWA = compose(
-    "pcm_khwa_isscc22",
-    mapping("twos_complement"),
+# Test condition (Sec. III-A, Fig. 7, Table I): 320 x 128 time-domain (TD)
+# cells, all 320 inputs in parallel, 1-bit inputs, ternary weights,
+# 0.6 / 0.75 / 0.55 V analog / digital / array supplies, SAR clock 333 MHz:
+# 1251 TOPS/W, 0.341 TOPS, total power 0.27 mW.
+#   ops per MVM = 2 x 320 x 128 = 81920 -> 81920 / 1251 = 65.48 pJ per MVM
+#   (check: 0.27 mW x 240.2 ns = 64.9 pJ), in 81920 / 0.341 TOPS = 240.2 ns.
+#   measured power breakdown (Fig. 7): input driver (DIN) 36% = 23.57 pJ,
+#   array 28% = 18.34 pJ, TDC 34% = 22.26 pJ, others 2% = 1.310 pJ.
+# A TD cell is a pair of delay-buffer (DB) cells, each a 1T1R RRAM on one of
+# the chain's two lines (DBP / DBN): the columns below are DB-cell columns,
+# 2 x 128 = 256, and a ternary weight is one DB column of each sign.
+# Weights: the paper maps a signed m-bit weight to m TD cells of a column;
+# we use its ternary TD cell as a sign pair of binary DB cells (cell_bits=1)
+# with bit-sliced magnitude (differential): 6-bit weights, 5 magnitude
+# columns per sign -> 10 DB columns per weight, shifted-and-added after the
+# array as in the paper (Sec. III-A).
+# Timing: each LPOSC-TDC serves 8 chains (16 DB columns) with one 8-bit SAR
+# ADC at 333 MHz: 8 x 3 ns = 24 ns per chain, 12 ns per DB column; 8 chains
+# = 192 ns. The rest of the 240.2 ns MVM, 48.2 ns, is the TD evaluation and
+# sampling phase (step "cells").
+TD_CIM = compose(
+    "td_cim_sscl25",
+    mapping("differential"),
     [
-        # Cells: 256 x 1024, 8 rows per activation. The paper gives no PCM
-        # resistances; the cell current is the fixed bias I_M, charged in
-        # "sense" below, so the cells are not charged (cell_supply_v=0) and
-        # r_on / r_off (1 k / 1 M) only satisfy the cell model. The word-line
-        # settling is inside the 3.25 ns access time (step "sense").
-        crossbars.conv_xbar(cell_bits=2, r_on=1e3, r_off=1e6, rows=256, cols=1024,
-                            active_rows=8, v_read=0.1, cell_supply_v=0.0, time_ns=0.0),
-        # Column read (I_M bias + VSR-VSA + shifter/adder): 130.8 fJ per used
-        # column in every row phase that holds a spike.
-        Component("sense", count="physical_columns",
-                  powered={"rule": "used_columns", "gated": True}, event_pj=0.1308),
-        # VSA timing: one per 8 columns (8-to-1 MUX), 3.25 ns per column, one
-        # column after another.
-        Component("vsa", count={"rule": "column_groups", "size": 8},
-                  powered="used_column_groups", time_ns=3.25, serial=True),
+        # Cells: RH / RL = 500 / 50 kOhm (the device values of Fig. 4). The TD
+        # cells draw no DC current ("static-power-free"): the cell current is
+        # not charged (cell_supply_v=0); the array's switching energy is the
+        # event below. v_read: the array supply, 0.55 V (no effect).
+        crossbars.conv_xbar(cell_bits=1, r_on=50e3, r_off=500e3, rows=320, cols=256,
+                            v_read=0.55, cell_supply_v=0.0, time_ns=48.2),
+        # Array: 18.34 pJ / 256 DB columns = 71.6 fJ per DB column per MVM
+        # (every cell of a chain switches whatever its input, so per column,
+        # not per spike); skipped when the tile gets no spike.
+        Component("array", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.0716),
+        # Input driver: 23.57 pJ / 320 rows = 73.7 fJ per row per MVM (it
+        # launches the rising edge on every row).
+        Component("input_driver", count="physical_rows",
+                  powered={"rule": "physical_rows", "gated": True}, event_pj=0.0737),
+        # TDC energy: 22.26 pJ / 256 DB columns = 87.0 fJ per DB column converted.
+        Component("tdc", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.0870),
+        # TDC timing: one TDC per 16 DB columns (8 chains), 12 ns per DB
+        # column, one column after another.
+        Component("tdc_conversion", count={"rule": "column_groups", "size": 16},
+                  powered="used_column_groups", time_ns=12.0, serial=True),
+        # Others: 1.310 pJ per MVM.
+        Component("others", count="tiles", powered={"rule": "tiles", "gated": True},
+                  event_pj=1.310),
     ],
-    specs={"label": r"ISSCC'22 PCM~\cite{khwa_40-nm_2022}", "tech": 40, "supply": 0.85,
-           "device": "PCM", "cell": "2 (MLC)", "bitcell": "1T1R", "r_ratio": "--",
-           "sensing": "Voltage"},
+    specs={"label": r"SSCL'25 TD-CIM", "tech": 28, "supply": "0.55/0.6/0.75",
+           "device": "RRAM", "cell": "ternary", "bitcell": "1T1R (DB cell)",
+           "sensing": "Time (TDC)"},
 )
 
 # ============================================================================
-# 3. Tempo-CIM: Jiang et al., "Tempo-CIM: A RRAM Compute-in-Memory
-#    Neuromorphic Accelerator with Area-Efficient LIF Neuron and Split-Train-
-#    Merged-Inference Algorithm for Edge AI Applications", IEEE JETCAS 13(4),
-#    2023. Chip measured; power breakdown and efficiency post-layout simulated.
-#    Zotero 5TY7UBXG.
-# ----------------------------------------------------------------------------
-# The paper gives two efficiencies for "4b input, 8b weight" (68.51 TOPS/W
-# in the abstract, 117.9 in Fig. 17 and the conclusion); we calibrate to the
-# array's native 4-bit weights, Fig. 17 (chip summary, 0.9 V core):
-# 4bIN-4bW: 5.17 GOPS, 224.8 TOPS/W.
-#   array: 256 rows x 64 columns (16 Kb), in banks of 64 rows x 4 columns;
-#   a signed 4-bit weight uses 4 binary cells of a bank's row, one per bit
-#   (architecture overview) -> 16 outputs, 64 rows summed per output.
-#   ops per MVM = 2 x 256 x 16 = 8192 -> 8192 / 224.8 = 36.44 pJ per MVM,
-#   in 8192 / 5.17 GOPS = 1584.5 ns per MVM.
-#   power breakdown (Fig. 18(b), simulated at 0.9 V): array 35.2% = 12.83 pJ,
-#   encoder 28.8% = 10.49 pJ, digital 24.3% = 8.855 pJ, neuron 11.7% =
-#   4.263 pJ.
-# Single-spike latency coding: each input is one pulse of one unit delay,
-# whose position in a window of 16 units encodes the 4-bit value; the unit
-# delay is 1584.5 / 16 = 99 ns (the paper tests its neuron with 100 ns
-# pulses). A 1-bit spike is one such pulse, so the per-pulse energies hold.
-# Weights: two's complement in binary cells (cell_bits=1), as in the paper;
-# paper: 4-bit weights in 4 columns; here: 6-bit weights in 6 columns.
-TEMPO_CIM = compose(
-    "tempo_cim_jetcas23",
-    mapping("twos_complement"),
-    [
-        # Cells: HRS 600 kOhm, LRS 20 kOhm (measured, text with Fig. 10); one
-        # 99 ns pulse per spike; 64 rows per bank (one tile = 64 rows x 64
-        # columns).
-        # V_read is not given: with the cells' energy alone (cell_supply_v =
-        # v_read), the array share 12.83 pJ for all 256 rows x 64 columns with
-        # half the cells in LRS (sum G = 0.4232 S) over 99 ns needs
-        # v_read = sqrt(12.83 pJ / (0.4232 S x 99 ns)) = 17.5 mV (an effective
-        # value: the paper does not give the read bias or the conducting time).
-        crossbars.conv_xbar(cell_bits=1, r_on=20e3, r_off=600e3, rows=64, cols=64,
-                            v_read=0.0175, cell_supply_v=0.0175, time_ns=99.0),
-        # Encoder (latency coder + WL/SL driver per row): 10.49 pJ / 256
-        # rows = 41.0 fJ per input pulse.
-        Component("encoder", count="physical_rows", powered="spiking_rows", event_pj=0.0410),
-        # Digital control: 8.855 pJ per MVM of the 4 tiles of 64 x 64 =
-        # 2.214 pJ per tile per read.
-        Component("digital", count="tiles", powered={"rule": "tiles", "gated": True},
-                  event_pj=2.214),
-        # Charge-pump LIF: 4.263 pJ / 16 neurons = 266.5 fJ per neuron per
-        # time bin in which its inputs spike.
-        Component("lif", count="outputs", powered={"rule": "outputs", "gated": True},
-                  events="time_bin", event_pj=0.2665),
-    ],
-    specs={"label": r"JETCAS'23 Tempo-CIM", "tech": 40, "supply": 0.9, "device": "RRAM",
-           "bitcell": "1T1R", "sensing": "Charge (LIF)"},
-)
-
-# ============================================================================
-# 4. Memristive SNN: fully integrated memristive SNN with a 128 x 24 memristor
+# 3. RRAM: Memristive SNN, fully integrated memristive SNN with a 128 x 24 memristor
 #    array and analog SRM neurons on a 180 nm CMOS chip (DVS Gesture 93.06%,
 #    N-MNIST 94.73%, 101.05 TSOPS/W). Measured, with simulated layers.
 #    Zotero Q5FRQAVH.
@@ -299,66 +260,146 @@ MEMRISTIVE_SNN = compose(
 )
 
 # ============================================================================
-# 5. TD-CIM: Wei et al., "A 28-nm Static-Power-Free Fully Parallel RRAM-Based
-#    TD CIM Macro With 1982 TOPS/W/Bit for Edge Applications", IEEE SSC-L 8,
-#    2025. Measured. Zotero SB7696M8.
+# 4. RRAM: Li et al., "A 28nm RRAM-Based 17.0 TOPS/mm2 and 89.7 TOPS/W
+#    Compute-In-Memory Macro Enabled by Source-Follower Cell and IR-Drop-Freed
+#    Array", IEEE A-SSCC 2025, paper 25.4. Measured. Zotero 8FCZIK6X.
 # ----------------------------------------------------------------------------
-# Test condition (Sec. III-A, Fig. 7, Table I): 320 x 128 time-domain (TD)
-# cells, all 320 inputs in parallel, 1-bit inputs, ternary weights,
-# 0.6 / 0.75 / 0.55 V analog / digital / array supplies, SAR clock 333 MHz:
-# 1251 TOPS/W, 0.341 TOPS, total power 0.27 mW.
-#   ops per MVM = 2 x 320 x 128 = 81920 -> 81920 / 1251 = 65.48 pJ per MVM
-#   (check: 0.27 mW x 240.2 ns = 64.9 pJ), in 81920 / 0.341 TOPS = 240.2 ns.
-#   measured power breakdown (Fig. 7): input driver (DIN) 36% = 23.57 pJ,
-#   array 28% = 18.34 pJ, TDC 34% = 22.26 pJ, others 2% = 1.310 pJ.
-# A TD cell is a pair of delay-buffer (DB) cells, each a 1T1R RRAM on one of
-# the chain's two lines (DBP / DBN): the columns below are DB-cell columns,
-# 2 x 128 = 256, and a ternary weight is one DB column of each sign.
-# Weights: the paper maps a signed m-bit weight to m TD cells of a column;
-# we use its ternary TD cell as a sign pair of binary DB cells (cell_bits=1)
-# with bit-sliced magnitude (differential): 6-bit weights, 5 magnitude
-# columns per sign -> 10 DB columns per weight, shifted-and-added after the
-# array as in the paper (Sec. III-A).
-# Timing: each LPOSC-TDC serves 8 chains (16 DB columns) with one 8-bit SAR
-# ADC at 333 MHz: 8 x 3 ns = 24 ns per chain, 12 ns per DB column; 8 chains
-# = 192 ns. The rest of the 240.2 ns MVM, 48.2 ns, is the TD evaluation and
-# sampling phase (step "cells").
-TD_CIM = compose(
-    "td_cim_sscl25",
+# Macro (Fig. 2, Fig. 7): 512 input rows x 512 output channels of 2T2R
+# source-follower (SF) cells, each output a differential pair of source lines
+# (SL+ / SL-): 1024 RRAM columns. 512 input buffers (RAB), 512 ADCs (WC-ADC).
+# 28 nm, VDD = 0.9 V (analog), VDDP = 1.2 V (ADC clamps).
+# The SF cell's transistor works in saturation with the input as an analog
+# word-line voltage: its current is set by the WL voltage and the RRAM, not
+# by V_read / R, and the paper gives no RRAM resistances. So the array is
+# charged from the measured power, not from conductances (cell_supply_v=0).
+#
+# Operating point (Figs. 5, 6, 7): 512 x 512 parallelism, 4-bit inputs, 2-bit
+# weights, 9-bit outputs, 50% weight sparsity: 195 mW, 89.7 TOPS/W, 17.5 TOPS.
+# Timing: 15 ADC clock cycles per MVM, 4 for the array to settle and 11 for
+# the SAR conversion (Fig. 4 text); at the 500 MHz maximum clock, 30 ns.
+#   check: ops per MVM = 2 x 512 x 512 = 524288; / 30 ns = 17.5 TOPS (Fig. 7);
+#   195 mW x 30 ns = 5.85 nJ per MVM -> 524288 / 5850 pJ = 89.6 TOPS/W.
+# Power vs input parallelism (driven rows), 512 outputs (Fig. S2):
+#     rows   total    array          periphery
+#       64   67.2 mW  52% = 34.94    48% = 32.26
+#      128   87.0     57% = 49.59    43% = 37.41
+#      256  126.6     67% = 84.82    33% = 41.78
+#      512  195.0     77% = 150.15   23% = 44.85
+# A straight-line fit over the four points (within 2.6% for the array, 7.2%
+# for the periphery) splits each into a per-driven-row and a fixed part;
+# x 30 ns per MVM:
+#     array      0.2589 mW/row -> 7.768 pJ per driven row per MVM (all 1024
+#                cells on its word line conduct); 17.73 mW fixed -> 0.532 nJ
+#                per MVM over 1024 columns = 0.519 pJ per column
+#     periphery  0.0255 mW/row -> 0.764 pJ per driven row (input DAC, MUX and
+#                buffer); 32.96 mW fixed -> 0.989 nJ per MVM over 512 ADCs
+#                = 1.931 pJ per ADC = 0.966 pJ per column
+# 1-bit input normalisation: our inputs are spikes, a row either driven or
+# not (its cells on or off), as the paper's lower parallelisms leave rows
+# undriven. The energies above are for 4-bit inputs; as in the paper's own
+# 1-bit-normalised efficiency (717.6 TOPS/W/bit = 89.7 x 4 input bits x 2
+# weight bits), each is divided by the 4 input bits:
+#     array      1.942 pJ per driven row, 0.1298 pJ per column
+#     periphery  0.191 pJ per driven row, 0.2415 pJ per column (ADC)
+# Timing is kept at 30 ns (1-bit inputs do not shorten the conversion).
+# Weights: the SF 2T2R cell holds -1 / 0 / +1 (Fig. 5), a differential pair
+# of binary cells (cell_bits=1); 6-bit weights -> 5 magnitude columns per
+# sign, 10 columns per weight, 102 weights per 1024 columns.
+ASSCC25_SF = compose(
+    "sf_rram_asscc25",
     mapping("differential"),
     [
-        # Cells: RH / RL = 500 / 50 kOhm (the device values of Fig. 4). The TD
-        # cells draw no DC current ("static-power-free"): the cell current is
-        # not charged (cell_supply_v=0); the array's switching energy is the
-        # event below. v_read: the array supply, 0.55 V (no effect).
-        crossbars.conv_xbar(cell_bits=1, r_on=50e3, r_off=500e3, rows=320, cols=256,
-                            v_read=0.55, cell_supply_v=0.0, time_ns=48.2),
-        # Array: 18.34 pJ / 256 DB columns = 71.6 fJ per DB column per MVM
-        # (every cell of a chain switches whatever its input, so per column,
-        # not per spike); skipped when the tile gets no spike.
-        Component("array", count="physical_columns",
-                  powered={"rule": "used_columns", "gated": True}, event_pj=0.0716),
-        # Input driver: 23.57 pJ / 320 rows = 73.7 fJ per row per MVM (it
-        # launches the rising edge on every row).
-        Component("input_driver", count="physical_rows",
-                  powered={"rule": "physical_rows", "gated": True}, event_pj=0.0737),
-        # TDC energy: 22.26 pJ / 256 DB columns = 87.0 fJ per DB column converted.
-        Component("tdc", count="physical_columns",
-                  powered={"rule": "used_columns", "gated": True}, event_pj=0.0870),
-        # TDC timing: one TDC per 16 DB columns (8 chains), 12 ns per DB
-        # column, one column after another.
-        Component("tdc_conversion", count={"rule": "column_groups", "size": 16},
-                  powered="used_column_groups", time_ns=12.0, serial=True),
-        # Others: 1.310 pJ per MVM.
-        Component("others", count="tiles", powered={"rule": "tiles", "gated": True},
-                  event_pj=1.310),
+        # Cells: 512 rows x 1024 columns, all rows at once; settling 4 cycles
+        # x 2 ns = 8 ns. No resistances in the paper: r_on / r_off only
+        # satisfy the cell model (cell_supply_v=0: no cell-current charge).
+        crossbars.conv_xbar(cell_bits=1, r_on=10e3, r_off=100e3, rows=512, cols=1024,
+                            v_read=0.9, cell_supply_v=0.0, time_ns=8.0),
+        # Array, per driven row: 1.942 pJ per spike (its whole word line).
+        Component("array_row", count="physical_rows", powered="spiking_rows",
+                  event_pj=1.942),
+        # Array, fixed part: 0.1298 pJ per used column per MVM.
+        Component("array_column", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.1298),
+        # Input DAC + MUX + ring-amplifier buffer: 0.191 pJ per driven row.
+        Component("input_buffer", count="physical_rows", powered="spiking_rows",
+                  event_pj=0.191),
+        # WC-ADC, one per SL+/SL- pair (2 columns): 0.483 pJ per conversion =
+        # 0.2415 pJ per used column; 11 cycles x 2 ns = 22 ns after settling.
+        Component("adc", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, time_ns=22.0,
+                  event_pj=0.2415),
     ],
-    specs={"label": r"SSCL'25 TD-CIM", "tech": 28, "supply": "0.55/0.6/0.75",
-           "device": "RRAM", "cell": "ternary", "bitcell": "1T1R (DB cell)",
-           "sensing": "Time (TDC)"},
+    specs={"label": r"A-SSCC'25 SF-RRAM", "tech": 28, "supply": "0.9/1.2",
+           "device": "RRAM", "cell": "ternary", "bitcell": "2T2R (SF)", "r_ratio": "--",
+           "sensing": "Current (SAR)"},
 )
 
-LITERATURE_MACROS = [DS_CIM, PCM_KHWA, TEMPO_CIM, MEMRISTIVE_SNN, TD_CIM]
+# ============================================================================
+# 5. RRAM: Yao et al., "A 28nm RRAM-Based 81.1 TOPS/mm2/bit Compute-In-Memory
+#    Macro with Uniform and Linear 64 Read Channels under 512 4-bit Inputs",
+#    ESSERC 2024, pp. 577-580. Measured. Zotero PMB6SNCI.
+# ----------------------------------------------------------------------------
+# Macro (Figs. 1, 2, 9): 512 x 512 2T2R RRAM array, 28 nm HPC+, 512 Kb. A
+# signed 4-bit weight is one 2T2R cell (WP / WN), each device at one of 8
+# conductance levels (3 bits). Inputs are differential voltages on the bit
+# lines (BLP / BLN = VCM +/- 0..150 mV) from R2R DACs through BL buffers; the
+# 2T2R's SL current is read by one of 64 dual-loop-clamping SAR ADCs (8
+# columns share an ADC): 512 inputs x 64 outputs per calculation.
+# Operating point (Figs. 7, 9, 10): 650 MHz, 4bIN/4bW/8bO, VDDC 0.9 V, VDDP
+# 1.2 V, 50% weight sparsity: one calculation 23.08 ns, 2.84 TOPS.
+#   check: ops per calculation = 2 x 512 x 64 = 65536; / 23.08 ns = 2.84 TOPS.
+# Power vs driven rows (Fig. 7): 128: 77.05, 256: 88.93, 384: 100.23,
+# 512: 111.43 mW. A straight-line fit (within 0.3%): 0.08941 mW per driven
+# row + 65.80 mW fixed; x 23.08 ns per calculation:
+#   per driven row  2.064 pJ   = the BL buffers, which also carry the cell
+#                   current (per-row part at 512 rows, 45.8 mW, matches
+#                   Fig. 9's "Buffer" 42.8% x 115.7 mW = 49.5 mW)
+#   fixed           1518.7 pJ per calculation = 23.73 pJ per ADC channel,
+#                   split as Fig. 9's other shares: ADC 31.8%, DAC 16.8%,
+#                   digital & driver 8.6% (65.8 mW vs Fig. 9's 66.2 mW)
+#   (111.43 mW x 23.08 ns = 2.57 nJ -> 25.5 TOPS/W, in the paper's
+#   19.3-39.3 TOPS/W range, Fig. 10)
+# 1-bit input normalisation: our inputs are spikes, a BL either driven or not
+# (the cells on its row on or off). The paper's energy is for 4-bit inputs;
+# as in its own 1-bit-normalised efficiency (x input bits), each energy is
+# divided by 4: 0.5159 pJ per driven row; per ADC channel 5.932 pJ = per
+# device column (WP or WN) 2.966 pJ: ADC 1.649, DAC 0.871, digital 0.446.
+# Timing kept at the paper's 23.08 ns per conversion (1-bit inputs do not
+# shorten the 8-bit SAR conversion).
+# Weights: differential (WP / WN) in 3-bit cells (8 levels, within the
+# 3-bit limit): 6-bit weights -> 5 magnitude bits = 2 columns per sign, 4
+# device columns per weight. Device columns: 512 2T2R x 2 = 1024 per tile.
+ESSERC24_RRAM = compose(
+    "rram_esserc24",
+    mapping("differential"),
+    [
+        # Cells: 512 rows x 1024 device columns, all rows at once. The cell
+        # current is in the BL buffers' measured power, so it is not charged
+        # again (cell_supply_v=0); the paper gives only the array's load
+        # range (1.1-10 mS), not the device levels: r_on / r_off only
+        # satisfy the cell model. v_read: the 150 mV input swing.
+        crossbars.conv_xbar(cell_bits=3, r_on=10e3, r_off=100e3, rows=512, cols=1024,
+                            v_read=0.15, cell_supply_v=0.0, time_ns=0.0),
+        # BL buffer (+ cell current), per driven row: 0.5159 pJ per spike.
+        Component("bl_buffer", count="physical_rows", powered="spiking_rows",
+                  event_pj=0.5159),
+        # ADC, DAC and digital, per used device column (half an ADC channel).
+        Component("adc", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=1.649),
+        Component("dac", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.871),
+        Component("digital", count="physical_columns",
+                  powered={"rule": "used_columns", "gated": True}, event_pj=0.446),
+        # ADC timing: 64 ADCs, 16 device columns (8 2T2R columns) each, one
+        # 2T2R after another: 23.08 ns per 2T2R = 11.54 ns per device column.
+        Component("adc_conversion", count={"rule": "column_groups", "size": 16},
+                  powered="used_column_groups", time_ns=11.54, serial=True),
+    ],
+    specs={"label": r"ESSERC'24 RRAM", "tech": 28, "supply": "0.9/1.2", "device": "RRAM",
+           "bitcell": "2T2R", "r_ratio": "--", "sensing": "Current (SAR)"},
+)
+
+LITERATURE_MACROS = [DS_CIM, TD_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
 
 
 # ============================================================================
@@ -375,52 +416,44 @@ def native(arch, weight_bits, memory=None):
 
 
 def check():
-    """Run every macro on its paper's test condition and return
-    [(macro, what, engine value, paper value)]."""
+    """[(macro, what, engine, paper)] at each paper's own condition (energies
+    x the input bits, to undo the 1-bit normalisation)."""
     import torch
     from hardware import evaluate_layer
 
     def dense(arch, weights, spikes):
         return evaluate_layer(arch, spikes[None, :, None, None, :], weights[:, :, None, None])
 
-    results = []
-    # DS-CIM: Table I vector: 256 of 512 inputs spike; 64 weights of +-15
-    # (all 4 magnitude cells in P on one sign, half the cells in P).
-    w = torch.tensor([15, -15] * 32).repeat(512, 1).T
-    s = (torch.arange(512) % 2 == 0).float()[:, None]
-    cost = dense(native(DS_CIM, 5), w, s)
-    results.append((DS_CIM, "Table I energy (nJ)", cost.energy_nj, 1.47))
-    # Tempo-CIM: all 256 rows, 16 weights with half their bits 1 (5 = 0101,
-    # -6 = 1010); paper: 36.44 pJ per MVM (224.8 TOPS/W at 5.17 GOPS).
-    w = torch.tensor([5, -6] * 8).repeat(256, 1).T
-    cost = dense(native(TEMPO_CIM, 4), w, torch.ones(256, 1))
-    results.append((TEMPO_CIM, "energy per MVM (pJ)", 1e3 * cost.energy_nj, 8192 / 224.8))
-    # TD-CIM: the paper's ternary weights (one DB column per sign, 128 x 2 =
-    # 256 DB columns), all 320 inputs: 65.48 pJ and 240.2 ns per MVM.
+    r = []
     w = torch.tensor([1, -1] * 64).repeat(320, 1).T
-    cost = dense(native(TD_CIM, 2), w, torch.ones(320, 1))
-    results.append((TD_CIM, "energy per MVM (pJ)", 1e3 * cost.energy_nj, 81920 / 1251))
-    results.append((TD_CIM, "time per MVM (ns)", cost.latency_ns, 81920 / 0.341e3))
-    # Memristive SNN: the paper's 800-480-120-11 network, 300 time bins of
-    # 100 ns (a 30 us sample), 4-bit cells: average power 43.83 mW.
+    c = dense(native(TD_CIM, 2), w, torch.ones(320, 1))
+    r += [(TD_CIM, "pJ per MVM", 1e3 * c.energy_nj, 81920 / 1251),
+          (TD_CIM, "ns per MVM", c.latency_ns, 81920 / 0.341e3)]
+    p = native(ESSERC24_RRAM, 4)
+    p = dataclasses.replace(p, mapping=dataclasses.replace(p.mapping, columns="interleaved"))
+    w = torch.tensor([7, -7] * 32).repeat(512, 1).T
+    for rows, mw in ((128, 77.05), (256, 88.93), (384, 100.23), (512, 111.43)):
+        c = dense(p, w, (torch.arange(512) < rows).float()[:, None])
+        r.append((ESSERC24_RRAM, f"mW at {rows} rows (x4)", 4e3 * c.energy_nj / c.latency_ns, mw))
+    r.append((ESSERC24_RRAM, "ns per calculation", c.latency_ns, 23.08))
+    p, w = native(ASSCC25_SF, 2), torch.tensor([1, -1] * 256).repeat(512, 1).T
+    for rows, mw in ((64, 67.2), (128, 87.0), (256, 126.6), (512, 195.0)):
+        c = dense(p, w, (torch.arange(512) < rows).float()[:, None])
+        r.append((ASSCC25_SF, f"mW at {rows} rows (x4)", 4e3 * c.energy_nj / c.latency_ns, mw))
+    r.append((ASSCC25_SF, "ns per MVM", c.latency_ns, 30.0))
+    w = torch.tensor([15, -15] * 32).repeat(512, 1).T
+    c = dense(native(DS_CIM, 5), w, (torch.arange(512) % 2 == 0).float()[:, None])
+    r.append((DS_CIM, "nJ, Table I vector", c.energy_nj, 1.4722))
     paper = native(MEMRISTIVE_SNN, 5, Memory(4, levels_s=tuple(i * 10e-6 for i in range(16))))
-    energy = latency = 0.0
+    energy = 0.0
     for n_in, n_out in ((800, 480), (480, 120), (120, 11)):
-        cost = dense(paper, torch.ones(n_out, n_in, dtype=torch.long),
-                     torch.ones(n_in, 300))
-        energy, latency = energy + cost.energy_nj, cost.latency_ns
-    results.append((MEMRISTIVE_SNN, "average power (mW)", energy / latency * 1e3, 43.83))
-    # PCM: 1-bit inputs, 2-bit weights (one MLC cell per weight, 1024
-    # weights), 15 of the 32 groups of 8 inputs spiking (IN-R at 55%
-    # sparsity): the paper's 261 TOPS/W counts every input.
-    w = torch.ones(1024, 256, dtype=torch.long)
-    s = (torch.arange(256) < 15 * 8).float()[:, None]
-    cost = dense(native(PCM_KHWA, 2), w, s)
-    results.append((PCM_KHWA, "TOPS/W (1bIN-2bW)", 2 * cost.macs / cost.energy_nj * 1e-3, 261))
-    return results
+        c = dense(paper, torch.ones(n_out, n_in, dtype=torch.long), torch.ones(n_in, 300))
+        energy += c.energy_nj
+    r.append((MEMRISTIVE_SNN, "mW, DVS Gesture network", energy / c.latency_ns * 1e3, 43.83))
+    return r
 
 
 if __name__ == "__main__":
     for arch, what, engine, paper in check():
-        print(f"{arch.name:<24} {what:<38} engine {engine:10.4g}   paper {paper:10.4g}   "
+        print(f"{arch.name:<22} {what:<26} engine {engine:9.4g}  paper {paper:9.4g}  "
               f"({100 * (engine / paper - 1):+.1f}%)")
