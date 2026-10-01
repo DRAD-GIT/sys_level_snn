@@ -9,20 +9,20 @@
 # Adapt the #SBATCH lines to the cluster (sinfo -o "%P %G %l" lists partitions,
 # GPUs and time limits).
 #SBATCH --job-name=cifar10-snn
-#SBATCH --partition=gpu              # the cluster's GPU partition
-#SBATCH --gres=gpu:2                 # GPUs (match GPUS below); e.g. gpu:a100:2 for a type
+#SBATCH --partition=general          # GPU nodes: 4x RTX 2080 Ti, 1-day limit
+#SBATCH --gres=gpu:RTX2080Ti:2       # GPUs (match GPUS below)
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time=12:00:00              # within the partition's limit
+#SBATCH --time=12:00:00              # ~5 h expected; within the partition's 1-day limit
 #SBATCH --output=logs/slurm_cifar10_%j.out
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
-# Python environment: edit to the cluster's setup.
-# module load cuda
-source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || true
-conda activate "${CONDA_ENV:-snn}"
+# Python environment: the python module and a virtual environment holding
+# torch, numpy and pyyaml (VENV; see README).
+module load python/3.12
+source "${VENV:-$HOME/venvs/snn}/bin/activate"
 
 DATA=${DATA:-/work/yashbiyani/datasets}   # folder holding cifar-10-batches-py
 GPUS=${GPUS:-2}
