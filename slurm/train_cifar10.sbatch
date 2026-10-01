@@ -22,9 +22,9 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 # Python environment: the python module and a virtual environment holding
 # torch, numpy and pyyaml (VENV; see README).
 module load python/3.12
-source "${VENV:-$HOME/venvs/snn}/bin/activate"
+source "${VENV:-/shares/bulk/yashbiyani/c3cim_sys_cluster/venv}/bin/activate"
 
-DATA=${DATA:-$HOME/c3cim_sys_cluster/datasets}   # folder holding cifar-10-batches-py
+DATA=${DATA:-/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets}   # folder holding cifar-10-batches-py
 GPUS=${GPUS:-2}
 BATCH=${BATCH:-256}
 LR=${LR:-0.1}

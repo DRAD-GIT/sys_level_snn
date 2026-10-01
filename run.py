@@ -36,7 +36,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 MODEL = "nmnist"       # "nmnist", "gesture" or "cifar10" (pretrained weights in pretrained/)
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
-DATASET_DIR = os.path.expanduser("~/c3cim_sys_cluster/datasets/")   # None = none set
+DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets/"   # None = none set
 MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 PARALLEL = None        # samples processed at once; None = defaults (recording: N-MNIST 50,
                        # gesture 2; hardware evaluation: one recorded file per step)
