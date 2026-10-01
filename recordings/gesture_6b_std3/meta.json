@@ -1,0 +1,286 @@
+{
+  "format": 1,
+  "model": "gesture",
+  "weight_bits": 6,
+  "weight_scaling": "std3",
+  "fingerprint": "78406d0e4eedadf88b4b3fdc48f35a5a91ee7423a3b29846c651baada2134067",
+  "layers": [
+    "SC1",
+    "SC2",
+    "SF1",
+    "SF2"
+  ],
+  "samples": 264,
+  "complete": true,
+  "full_outputs": false,
+  "accuracy": 87.5,
+  "chunks": [
+    {
+      "file": "chunk_000000.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000004.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000008.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000012.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000016.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000020.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000024.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000028.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000032.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000036.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000040.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000044.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000048.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000052.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000056.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000060.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000064.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000068.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000072.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000076.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000080.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000084.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000088.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000092.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000096.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000100.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000104.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000108.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000112.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000116.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000120.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000124.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000128.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000132.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000136.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000140.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000144.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000148.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000152.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000156.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000160.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000164.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000168.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000172.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000176.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000180.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000184.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000188.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000192.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000196.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000200.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000204.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000208.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000212.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000216.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000220.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000224.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000228.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000232.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000236.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000240.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000244.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000248.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000252.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000256.npz",
+      "samples": 4
+    },
+    {
+      "file": "chunk_000260.npz",
+      "samples": 4
+    }
+  ],
+  "finished": true,
+  "recorded": "2026-09-28 19:22:42",
+  "seconds": 157.1
+}
