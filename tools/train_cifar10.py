@@ -144,6 +144,8 @@ def main():
         line = (f"epoch {epoch + 1}/{args.epochs}: loss {loss_sum / len(order):.4f}, "
                 f"train {100.0 * correct / len(order):.2f}%, lr {scheduler.get_last_lr()[0]:.4f}, "
                 f"{time.time() - t0:.0f} s")
+        if device.type == "cuda":
+            line += f", GPU memory peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB"
         if (epoch + 1) % args.eval_every == 0 or epoch + 1 == args.epochs:
             accuracy = evaluate(net, test_x, test_y, n_steps, 256, device)
             line += f", test {accuracy:.2f}%"
