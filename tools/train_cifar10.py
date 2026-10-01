@@ -4,6 +4,7 @@ pretrained/cifar10_vgg11.pth, with BatchNorm folded into the weights.
     python tools/train_cifar10.py                         # dataset from run.py's DATASET_DIR
     python tools/train_cifar10.py --data /path/to/datasets --epochs 200 --amp
     python tools/train_cifar10.py --resume                # continue from the last epoch
+    python tools/train_cifar10.py --amp --gpus 2 --batch 256 --lr 0.1   # both GPUs, larger batches
 
 Needs the CIFAR-10 python release (https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz)
 extracted, i.e. a folder cifar-10-batches-py in the dataset folder, and a GPU.
@@ -88,6 +89,8 @@ def main():
                         help="folded checkpoint (default: the model's pretrained file)")
     parser.add_argument("--resume", action="store_true", help="continue from --work/last.pth")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--gpus", type=int, default=1,
+                        help="GPUs to split each batch across (default 1; CUDA_VISIBLE_DEVICES picks which)")
     parser.add_argument("--progress-every", type=int, default=100,
                         help="print progress every N training batches (default 100)")
     args = parser.parse_args()
@@ -106,6 +109,9 @@ def main():
     train_y = train_y.to(device)
 
     net = VGG11Network(params, do_enable=True, batchnorm=True).to(device)
+    # Several GPUs: each batch is split across them (net keeps the weights).
+    gpus = min(args.gpus, torch.cuda.device_count()) if device.type == "cuda" else 1
+    model = torch.nn.DataParallel(net, device_ids=list(range(gpus))) if gpus > 1 else net
     decay, no_decay = [], []
     for name, p in net.named_parameters():
         (no_decay if p.dim() == 1 else decay).append(p)       # no decay on BN and biases
@@ -113,6 +119,8 @@ def main():
                                  {"params": no_decay, "weight_decay": 0.0}],
                                 lr=args.lr, momentum=0.9, nesterov=True)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
+    if gpus > 1:
+        print(f"training on {gpus} GPUs, {args.batch // gpus} images per GPU per batch", flush=True)
     scaler = torch.amp.GradScaler(device.type, enabled=args.amp)
     os.makedirs(args.work, exist_ok=True)
     start, best = 0, -1.0        # the first evaluation is always saved
@@ -126,7 +134,7 @@ def main():
         print(f"resumed after epoch {start}, best test accuracy so far {best:.2f}%")
 
     for epoch in range(start, args.epochs):
-        net.train()
+        model.train()
         t0, loss_sum, correct = time.time(), 0.0, 0
         order = torch.randperm(len(train_y), device=device)
         for i in range(0, len(order), args.batch):
@@ -134,7 +142,7 @@ def main():
             x = augment(train_x[idx].float().div_(255))
             y = train_y[idx]
             with torch.autocast(device.type, enabled=args.amp):
-                rates = firing_rates(net(rate_code(x, n_steps)))
+                rates = firing_rates(model(rate_code(x, n_steps)))
                 loss = F.mse_loss(rates.float(), F.one_hot(y, 10).float())
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -155,7 +163,7 @@ def main():
         if device.type == "cuda":
             line += f", GPU memory peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB"
         if (epoch + 1) % args.eval_every == 0 or epoch + 1 == args.epochs:
-            accuracy = evaluate(net, test_x, test_y, n_steps, 256, device)
+            accuracy = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device)
             line += f", test {accuracy:.2f}%"
             if accuracy > best:
                 best = accuracy
