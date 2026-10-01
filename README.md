@@ -84,6 +84,8 @@ python tools/train_cifar10.py --amp             # 200 epochs; saves pretrained/c
 python tools/train_cifar10.py --amp --resume    # continue an interrupted run
 ```
 
+On a Slurm cluster: `mkdir -p logs && sbatch slurm/train_cifar10.sbatch` (edit its `#SBATCH` lines and environment first; `DATA=/path sbatch ...` sets the dataset folder). Submitting it again continues from the last finished epoch.
+
 Training uses BatchNorm after every convolution, an arctan surrogate gradient, random crop and flip, SGD with a cosine learning rate and a mean-squared error on the output firing rates; the best test epoch is saved with BatchNorm folded into the convolutions' weights and biases (the bias is a constant input current to each neuron, not a crossbar row), and the script ends by evaluating the saved file exactly as `run.py` loads it. Then `python run.py --model cifar10` evaluates it like the other models; check its accuracy at 6 bits first with `python tools/accuracy_sweep.py --model cifar10 --bits 6 float`.
 
 **Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `--samples 1000`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Mapping**). `--sensitivity` also quantizes one layer at a time (the others float) to show which layers limit the accuracy, and `--layer-bits SF1=8 SF2=float` fixes named layers' bit widths for mixed precision. The accuracy so far is printed every `--every` samples (default 1000) and at the end.
