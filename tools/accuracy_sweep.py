@@ -65,7 +65,7 @@ def configurations(layers, args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", nargs="+", default=["nmnist", "gesture"],
-                        choices=["nmnist", "gesture"])
+                        choices=sorted(models.MODEL_MODULES))
     parser.add_argument("--bits", nargs="+", type=models.bits_argument, default=[2, 3, 4, 5, 6, 8, None],
                         help="weight bit widths; 'float' = trained weights")
     parser.add_argument("--scaling", nargs="+", default=["std3"],

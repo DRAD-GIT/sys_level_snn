@@ -33,7 +33,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # ============================================================================
 # 1. MODEL, PRETRAINED WEIGHTS AND DATASET
 # ============================================================================
-MODEL = "nmnist"       # "nmnist" or "gesture" (pretrained weights in pretrained/)
+MODEL = "nmnist"       # "nmnist", "gesture" or "cifar10" (pretrained weights in pretrained/)
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_dats/"   # None = none set
@@ -149,7 +149,7 @@ LOG_DIR = os.path.join(ROOT, "logs")
 def main():
     """4. Record the forward pass (or reuse the recording), 5. estimate the metrics."""
     parser = argparse.ArgumentParser(description="SNN inference + CIM hardware metrics")
-    parser.add_argument("--model", default=MODEL, choices=["nmnist", "gesture"])
+    parser.add_argument("--model", default=MODEL, choices=sorted(models.MODEL_MODULES))
     parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
     parser.add_argument("--samples", type=models.samples_argument, default=MAX_SAMPLES,
                         help="first N test samples to evaluate; -1 = all (default: MAX_SAMPLES)")

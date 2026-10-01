@@ -25,7 +25,7 @@ from hardware.architecture import scaling_std  # noqa: E402
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", nargs="+", default=["nmnist", "gesture"],
-                        choices=["nmnist", "gesture"])
+                        choices=sorted(models.MODEL_MODULES))
     parser.add_argument("--bits", nargs="+", default=[run.WEIGHT_BITS], type=models.bits_argument,
                         help="weight bit widths (default: run.py's WEIGHT_BITS); 'float' = trained weights")
     parser.add_argument("--scaling", nargs="+", default=[run.WEIGHT_SCALING],

@@ -1,0 +1,17 @@
+# CIFAR-10 VGG-11 SNN with LIF neurons (models/cifar10.py, models/lif.py).
+simulation:
+    Ts: 1.0
+    tSample: 16      # time steps: each image is rate-coded into 16 binary frames
+neuron:
+    type:  LIF
+    theta: 1.0       # firing threshold (soft reset subtracts it)
+    beta:  0.9       # membrane decay per time step
+    alpha: 2.0       # surrogate-gradient sharpness (training only)
+training:
+    path:
+        # CIFAR-10 python release (cifar-10-python.tar.gz, extracted): the
+        # folder cifar-10-batches-py, found from run.py's DATASET_DIR.
+        dir_train:  ""
+        dir_test:   ""
+        list_train: data_batch_1      # data_batch_1 ... data_batch_5
+        list_test:  test_batch

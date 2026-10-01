@@ -111,5 +111,18 @@ class LatexTableTests(unittest.TestCase):
         self.assertEqual(len(warnings), 3)          # rram on gesture, c3cim on both
 
 
+    def test_three_datasets(self):
+        runs = summary([["nmnist", "ours", "c", 10000, 1400, 93, 15.3, 161.7],
+                        ["cifar10", "ours", "c", 10000, 9000, 500, 18, 120]])
+        rows = [{"work": "Ours", "specs": ["40"], "architecture": "ours", "ours": True},
+                {"work": "Empty"}]
+        models = ("nmnist", "gesture", "cifar10")
+        table = latex_table.build_table(rows, runs, warn=lambda _: None, models=models)
+        self.assertIn("CIFAR-10", table)
+        self.assertIn("\\multicolumn{12}{c}{\\textbf{Evaluation results}}", table)
+        self.assertIn(" & 15.3 & 93 & 1.4 & 161.7\n & & & &\n & 18 & 500 & 9 & 120 \\\\\n", table)
+        self.assertIn("Empty\n" + " &" * 20 + " \\\\\n", table)
+
+
 if __name__ == "__main__":
     unittest.main()

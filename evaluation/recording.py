@@ -30,7 +30,6 @@ from hardware import quantize_weights
 
 FORMAT = 1
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SNN_SOURCES = ("models/srm.py", "models/events.py")
 
 
 def quantized_network(net, layer_names, bits, scaling="std3"):
@@ -70,7 +69,7 @@ def fingerprint(spec, bits, scaling):
     """Identifies everything a recording depends on."""
     digest = hashlib.sha256(f"format {FORMAT}; {spec.name}; {bits}; {scaling}".encode())
     for path in (spec.path(spec.checkpoint), spec.path(spec.params_yaml),
-                 *(os.path.join(_ROOT, p) for p in _SNN_SOURCES)):
+                 *(os.path.join(_ROOT, p) for p in spec.sources)):
         with open(path, "rb") as file:
             digest.update(file.read())
     return digest.hexdigest()

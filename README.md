@@ -1,6 +1,6 @@
 # SNN inference and modular CIM hardware estimation
 
-This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IBM DVS-Gesture**) in software, records the input spikes of every weighted layer, and estimates the energy, latency and area of those layers on compute-in-memory (CIM) hardware that you describe as a set of modular components. Hardware estimation uses the real spike activity; it does not simulate analog nonidealities or their effect on accuracy.
+This repository runs trained spiking neural networks (**N-MNIST LeNet**, **IBM DVS-Gesture** and a **CIFAR-10 VGG-11** with LIF neurons on rate-coded images) in software, records the input spikes of every weighted layer, and estimates the energy, latency and area of those layers on compute-in-memory (CIM) hardware that you describe as a set of modular components. Hardware estimation uses the real spike activity; it does not simulate analog nonidealities or their effect on accuracy.
 
 ## 1. Repository layout
 
@@ -19,7 +19,9 @@ hardware/              the hardware model
 models/                SNN networks, dataset readers and their neuron/simulation YAMLs
   srm.py               plain-PyTorch SRM spiking layers (replaces slayerSNN)
   events.py            event-file readers and spike binning
-pretrained/            trained weights (nmnist_lenet.pth, gesture.pth)
+  lif.py               trainable LIF spiking layers (surrogate gradient), BatchNorm folding, rate coding
+  cifar10.py           CIFAR-10 VGG-11 SNN and the rate-coded test set
+pretrained/            trained weights (nmnist_lenet.pth, gesture.pth; cifar10_vgg11.pth from tools/train_cifar10.py)
 evaluation/            pipeline used by run.py
   runner.py            evaluate(): recordings -> per-layer hardware evaluation; accuracy sweep
   recording.py         the recorded forward pass: layer inputs and outputs, compressed
@@ -28,7 +30,8 @@ evaluation/            pipeline used by run.py
   software.py          predicted class from the output spikes
 examples/              run_dense_layer.py: run.py for one random dense layer, checked by hand
 tools/                 record.py (record forward passes ahead), accuracy_sweep.py (accuracy vs weight bits),
-                       latex_table.py (the paper's comparison table from the results);
+                       latex_table.py (the paper's comparison table from the results),
+                       train_cifar10.py (trains the CIFAR-10 SNN);
                        checkpoint conversion and slayerSNN verification
 recordings/            recorded forward passes (created on first use; not in git)
 tests/                 reference-model, hand-calculation and pipeline tests
@@ -64,13 +67,24 @@ N-MNIST.../                        Gesture.../
 └── Test.txt  "<index> <label>"    └── DvsGesture/trials_to_test.txt  (e.g. user24_led.aedat)
 ```
 
-Only the test split is needed. Gesture reads `DvsGestureNpy/<trial name without extension>/<class>.npy` for every trial listed in `trials_to_test.txt`.
+CIFAR-10 is the python release (`cifar-10-python.tar.gz` from https://www.cs.toronto.edu/~kriz/cifar-10.html), extracted as is: the folder `cifar-10-batches-py/` (`data_batch_1` ... `data_batch_5`, `test_batch`) in `DATASET_DIR`.
+
+Only the test split is needed (CIFAR-10 training also reads the training batches). Gesture reads `DvsGestureNpy/<trial name without extension>/<class>.npy` for every trial listed in `trials_to_test.txt`.
 
 Results are printed and saved under `logs/`: a JSON per architecture (with the full architecture description) and `logs/comparison_summary.csv`, one row per model, architecture, configuration and sample count. Only enabled metrics are reported.
 
-**Paper table**: `python tools/latex_table.py` writes `logs/comparison_table.tex` (the hardware comparison table, `\input` it in the paper). It has one row per architecture in `run.py`'s `ARCHITECTURES` (or `--architectures name ...`), named after it, and last, after a rule, the architectures of `run.py`'s `OURWORK` (our work), each with its N-MNIST and DVS-Gesture results from `comparison_summary.csv` (the architecture's latest configuration, its run with the most samples; a warning if that is not the full test set, and empty cells if it has not been run). Rows of published works can be added with their published numbers in `tools/latex_table.py`'s `LITERATURE` (none by default); published macros that should run our workloads are defined in `literature_macros.py` (see below). The specification columns come from each architecture's definition: `compose(..., specs={"tech": 40, "supply": 1.1, "device": "Resistive", "bitcell": "2T1R", "sensing": "Voltage"})` (keys `label` for the row name, e.g. `r"\textbf{This work}"`, `tech`, `supply`, `device`, `cell`, `bitcell`, `r_ratio`, `sensing`, `accumulation`; they change no cost); cell precision, R_High/R_Low and accumulation (rows summed per read) are otherwise read from the crossbar, and unknown ones stay empty. Units: power mW, latency us and energy uJ per inference, TOPS/W. In each result column the best value of any row (lowest power, latency and energy, highest TOPS/W) is **red**, and our work's values that beat every other row are **bold**. Run `run.py` for both models first (with power, latency, energy and TOPS/W switched on).
+**Paper table**: `python tools/latex_table.py` writes `logs/comparison_table.tex` (the hardware comparison table, `\input` it in the paper). It has one row per architecture in `run.py`'s `ARCHITECTURES` (or `--architectures name ...`), named after it, and last, after a rule, the architectures of `run.py`'s `OURWORK` (our work), each with its N-MNIST and DVS-Gesture results from `comparison_summary.csv` (the architecture's latest configuration, its run with the most samples; a warning if that is not the full test set, and empty cells if it has not been run). Rows of published works can be added with their published numbers in `tools/latex_table.py`'s `LITERATURE` (none by default); published macros that should run our workloads are defined in `literature_macros.py` (see below). The specification columns come from each architecture's definition: `compose(..., specs={"tech": 40, "supply": 1.1, "device": "Resistive", "bitcell": "2T1R", "sensing": "Voltage"})` (keys `label` for the row name, e.g. `r"\textbf{This work}"`, `tech`, `supply`, `device`, `cell`, `bitcell`, `r_ratio`, `sensing`, `accumulation`; they change no cost); cell precision, R_High/R_Low and accumulation (rows summed per read) are otherwise read from the crossbar, and unknown ones stay empty. Units: power mW, latency us and energy uJ per inference, TOPS/W. In each result column the best value of any row (lowest power, latency and energy, highest TOPS/W) is **red**, and our work's values that beat every other row are **bold**. Run `run.py` for each model first (with power, latency, energy and TOPS/W switched on). The table has a column group per dataset: by default every dataset with results in the summary, or `--datasets nmnist gesture cifar10`.
 
 **Published macros** (`literature_macros.py`, evaluated through `run.py`'s `LITERATURE`): DS-CIM (TCAS-I'24, 40 nm SOT-MRAM, simulated), a 28 nm time-domain RRAM macro (SSC-L'25), a 180 nm memristive SNN chip (arXiv'25), a 28 nm source-follower RRAM macro (A-SSCC'25) and a 28 nm 2T2R RRAM macro (ESSERC'24), each defined with `compose` so it runs the same recorded N-MNIST and DVS-Gesture workloads as our designs. Every number is derived from its paper next to it: the paper's energy per operation at its own test condition (a per-block energy table, power at several numbers of driven rows, or TOPS/W or power x time), split by the paper's breakdown, divided among the instances working in that condition, with the array from the paper's cell resistances and read voltage where it gives them. `python literature_macros.py` runs each macro on its paper's test condition and prints the engine's value against the paper's (all within 2.5%; `tests/test_literature_macros.py`). All macros store the same 6-bit weights as our designs (one recording, one accuracy), each in its paper's cell precision limited to 3 bits (`MAX_CELL_BITS`), with the weight split over as many columns as that needs; the calibration check runs them at their papers' own precision. Inputs are binary spikes (a spike drives its row); a paper's energy for n-bit inputs is divided by n; macros without a neuron are charged none; the file states these and every other assumption.
+
+**CIFAR-10** (`models/cifar10.py`, `models/lif.py`): VGG-11 (conv 64-M-128-M-256-256-M-512-512-M-512-512-M, fc 10; 3x3 convolutions, 2x2 max pooling), the network Han et al. (TCAS-I'22) evaluate on CIFAR-10, with leaky integrate-and-fire neurons (`v = beta v + I`, fire at `theta`, soft reset; `models/cifar10.yaml`: `tSample` 16 time steps, `beta` 0.9, `theta` 1). Each image is rate-coded: every pixel channel spikes at each time step with probability equal to its intensity (a fixed seed per test image, so recordings are reproducible). So every weighted layer, the first included, receives binary spikes and maps onto the crossbars, and max pooling keeps them binary. There is no published SLAYER checkpoint for it; train it once on a GPU:
+
+```bash
+python tools/train_cifar10.py --amp             # 200 epochs; saves pretrained/cifar10_vgg11.pth
+python tools/train_cifar10.py --amp --resume    # continue an interrupted run
+```
+
+Training uses BatchNorm after every convolution, an arctan surrogate gradient, random crop and flip, SGD with a cosine learning rate and a mean-squared error on the output firing rates; the best test epoch is saved with BatchNorm folded into the convolutions' weights and biases (the bias is a constant input current to each neuron, not a crossbar row), and the script ends by evaluating the saved file exactly as `run.py` loads it. Then `python run.py --model cifar10` evaluates it like the other models; check its accuracy at 6 bits first with `python tools/accuracy_sweep.py --model cifar10 --bits 6 float`.
 
 **Accuracy vs weight precision** without any hardware estimation: `python tools/accuracy_sweep.py` runs both test sets with the weights quantized to 2, 3, 4, 5, 6 and 8 bits and in float (`--model`, `--bits 3 4 float`, `--data`, `--samples 1000`), reading each test set once, and saves `logs/weight_quantization.csv`. `--scaling max mse std3` compares quantization ranges side by side (see **Mapping**). `--sensitivity` also quantizes one layer at a time (the others float) to show which layers limit the accuracy, and `--layer-bits SF1=8 SF2=float` fixes named layers' bit widths for mixed precision. The accuracy so far is printed every `--every` samples (default 1000) and at the end.
 

@@ -58,6 +58,8 @@ class ModelSpec:
         of memory.
     dataset_folders: name prefixes of the dataset's folder (ignoring case and
         separators: "N-MNIST" also matches "N_MNIST" or "nmnist_v2").
+    sources: the network's code (paths relative to the repository root); a
+        recording made with other code is recorded again.
     """
     name: str
     display_name: str
@@ -68,6 +70,7 @@ class ModelSpec:
     layers: tuple[str, ...]
     batch_size: int = 32
     dataset_folders: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ("models/srm.py", "models/events.py")
 
     def path(self, relative: str) -> str:
         return os.path.join(REPO_ROOT, relative)

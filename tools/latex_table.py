@@ -6,7 +6,8 @@
 The table holds the LITERATURE rows (published numbers; none by default),
 then one row per architecture of run.py's ARCHITECTURES (or --architectures),
 named after it, and last, after a rule, the architectures of run.py's
-OURWORK. Every architecture row gets its N-MNIST and DVS-Gesture results from
+OURWORK. Every architecture row gets its results per dataset (N-MNIST, DVS
+Gesture and, if run, CIFAR-10; --datasets to choose) from
 logs/comparison_summary.csv, written by run.py. For each model it uses the
 architecture's latest configuration (the last run of it, so a design changed
 since then is not mixed in) and, of that, the run with the most samples; a
@@ -41,8 +42,8 @@ from hardware import architecture  # noqa: E402
 # ============================================================================
 # Literature rows (none by default). specs: Tech. (nm), Supply (V), Storage
 # device, Cell/precision, Bit-cell, R_High/R_Low (kOhm), Sensing mode,
-# Accumulation (LaTeX allowed); "nmnist" / "gesture" = (power mW, latency us,
-# energy uJ, TOPS/W); None = empty cells. For example:
+# Accumulation (LaTeX allowed); "nmnist" / "gesture" / "cifar10" = (power mW,
+# latency us, energy uJ, TOPS/W); None = empty cells. For example:
 #   {"work": r"ISSCC'22~\cite{khwa_40-nm_2022}",
 #    "specs": ["40", "0.9", "PCM", "1", "1T1R", "--", "Voltage", "8"],
 #    "nmnist": (396, 22.9, 9.1, 25.4), "gesture": (1970.4, 88.5, 174.3, 25.6)},
@@ -53,16 +54,40 @@ LITERATURE = []
 
 # The specification columns, in order: an architecture's specs (all but its label).
 SPEC_KEYS = tuple(key for key in architecture.SPEC_KEYS if key != "label")
-MODELS = ("nmnist", "gesture")
-FULL_TEST_SET = {"nmnist": 10000, "gesture": 264}
+# Datasets that can have a column group, in table order, with their headings.
+MODELS = ("nmnist", "gesture", "cifar10")
+HEADINGS = {"nmnist": "N-MNIST", "gesture": "IBM DVS128 Gesture", "cifar10": "CIFAR-10"}
+CAPTION_NAMES = {"nmnist": "N-MNIST", "gesture": "IBM-Gesture", "cifar10": "CIFAR-10"}
+FULL_TEST_SET = {"nmnist": 10000, "gesture": 264, "cifar10": 10000}
+DEFAULT_MODELS = ("nmnist", "gesture")
 # ============================================================================
 
-CAPTION = "Hardware comparison of deploying SNN models trained on the N-MNIST and IBM-Gesture datasets"
+CAPTION = "Hardware comparison of deploying SNN models trained on the %s datasets"
 LABEL = "table:comp"
 # The best value per column: min for power, latency, energy; max for TOPS/W.
 BEST = (min, min, min, max)
 
-HEADER = r"""\providecolor{nmband}{gray}{0.92}  %% N-MNIST column shade (kept if already defined)
+COLUMNS = (r"\makecell{Power\\(mW)}", r"\makecell{Latency\\($\mu$s)}",
+           r"\makecell{Energy\\($\mu$J)}", "TOPS/W")
+
+
+def caption(models):
+    names = [CAPTION_NAMES[m] for m in models]
+    return CAPTION % (names[0] if len(names) == 1 else
+                      ", ".join(names[:-1]) + " and " + names[-1])
+
+
+def header(models, caption_text, label):
+    """Table head with one 4-column result group per dataset; every other
+    group (from the first) is shaded."""
+    n, last = len(models), 9 + 4 * len(models)
+    groups = " ".join("*{4}{>{\\columncolor{nmband}}c}" if i % 2 == 0 else "cccc"
+                      for i in range(n))
+    rules = "".join(f"\\cmidrule({'l' if i == n - 1 else 'lr'}){{{10 + 4 * i}-{13 + 4 * i}}}"
+                    for i in range(n))
+    names = "\n".join(f" & \\multicolumn{{4}}{{c}}{{\\textit{{{HEADINGS[m]}}}}}" for m in models)
+    columns = "\n".join(" & " + " & ".join(COLUMNS) for _ in models)
+    return (r"""\providecolor{nmband}{gray}{0.92}  % N-MNIST column shade (kept if already defined)
 \begin{table*}[t]
 \centering
 \footnotesize
@@ -70,25 +95,17 @@ HEADER = r"""\providecolor{nmband}{gray}{0.92}  %% N-MNIST column shade (kept if
 \renewcommand{\arraystretch}{1.25}
 \setlength{\aboverulesep}{0pt}
 \setlength{\belowrulesep}{0pt}
-\caption{%(caption)s}
-\label{%(label)s}
-\begin{adjustbox}{max width=\textwidth}
-\begin{tabular}{@{}l cccccccc *{4}{>{\columncolor{nmband}}c} cccc@{}}
-\toprule
+""" + f"\\caption{{{caption_text}}}\n\\label{{{label}}}\n" + r"""\begin{adjustbox}{max width=\textwidth}
+""" + f"\\begin{{tabular}}{{@{{}}l cccccccc {groups}@{{}}}}\n" + r"""\toprule
  & \multicolumn{8}{c}{\multirow{2}{*}{\textbf{Hardware specifications}}}
- & \multicolumn{8}{c}{\textbf{Evaluation results}} \\
-\cmidrule(l){10-17}
- & \multicolumn{8}{c}{}
- & \multicolumn{4}{c}{\textit{N-MNIST}}
- & \multicolumn{4}{c}{\textit{IBM DVS128 Gesture}} \\
-\cmidrule(r){2-9}\cmidrule(lr){10-13}\cmidrule(l){14-17}
-\textbf{Work}
+""" + f" & \\multicolumn{{{4 * n}}}{{c}}{{\\textbf{{Evaluation results}}}} \\\\\n"
+            + f"\\cmidrule(l){{10-{last}}}\n & \\multicolumn{{8}}{{c}}{{}}\n{names} \\\\\n"
+            + f"\\cmidrule(r){{2-9}}{rules}\n" + r"""\textbf{Work}
  & \makecell{Tech.\\(nm)} & \makecell{Supply\\(V)} & \makecell{Storage\\device} & \makecell{Cell/\\precision}
  & Bit-cell & \makecell{$R_\mathrm{High}/R_\mathrm{Low}$\\(k$\Omega$)} & \makecell{Sensing\\mode} & \makecell{Accumu-\\lation}
- & \makecell{Power\\(mW)} & \makecell{Latency\\($\mu$s)} & \makecell{Energy\\($\mu$J)} & TOPS/W
- & \makecell{Power\\(mW)} & \makecell{Latency\\($\mu$s)} & \makecell{Energy\\($\mu$J)} & TOPS/W \\
-\midrule
-"""
+""" + columns + " \\\\\n\\midrule\n")
+
+
 FOOTER = r"""\bottomrule
 \end{tabular}
 \end{adjustbox}
@@ -172,21 +189,22 @@ def architecture_rows(architectures, ourwork=()):
     return rows
 
 
-def row_values(row, runs, warn=print):
-    """(nmnist values, gesture values) of a row, each 4 floats or None: an
+def row_values(row, runs, warn=print, models=DEFAULT_MODELS):
+    """The row's values per dataset in `models`, each 4 floats or None: an
     architecture's results, or a literature row's published numbers."""
     name = row.get("architecture")
-    return [pick_run(runs, model, name, warn) if name else row.get(model) for model in MODELS]
+    return [pick_run(runs, model, name, warn) if name else row.get(model) for model in models]
 
 
-def build_table(rows, runs, warn=print):
-    """The LaTeX table for `rows` with results from `runs` (load_results).
-    Per result column: the best value of any row in red; a value of a row
-    with "ours" in bold where it beats every row without it."""
-    values = [row_values(row, runs, warn) for row in rows]
+def build_table(rows, runs, warn=print, models=DEFAULT_MODELS):
+    """The LaTeX table for `rows` with results from `runs` (load_results), a
+    column group per dataset in `models`. Per result column: the best value
+    of any row in red; a value of a row with "ours" in bold where it beats
+    every row without it."""
+    values = [row_values(row, runs, warn, models) for row in rows]
     # Compared as printed, so equal printed values are marked alike.
     best, best_other = {}, {}
-    for m in range(len(MODELS)):
+    for m in range(len(models)):
         for k, pick in enumerate(BEST):
             column = [float(number(v[m][k])) for v in values if v[m] is not None]
             others = [float(number(v[m][k])) for row, v in zip(rows, values)
@@ -195,13 +213,13 @@ def build_table(rows, runs, warn=print):
                 best[m, k] = pick(column)
             if others:
                 best_other[m, k] = pick(others)
-    lines = [HEADER % {"caption": CAPTION, "label": LABEL}]
+    lines = [header(models, caption(models), LABEL)]
     for i, (row, row_vals) in enumerate(zip(rows, values)):
         if row.get("midrule") and i > 0:        # the header already ends with a rule
             lines.append("\\midrule\n")
         comment = f" % {row['comment']}" if row.get("comment") else ""
         if not row.get("specs") and all(v is None for v in row_vals):   # an empty row
-            lines.append(f"{row['work']}{comment}\n{' &' * 16} \\\\\n")
+            lines.append(f"{row['work']}{comment}\n{' &' * (8 + 4 * len(models))} \\\\\n")
             continue
         specs = list(row.get("specs") or []) + [""] * (8 - len(row.get("specs") or []))
         cells = []
@@ -218,10 +236,10 @@ def build_table(rows, runs, warn=print):
                 if best.get((m, k)) == value:                    # best of the column
                     text = f"\\textcolor{{red}}{{{text}}}"
                 cells.append(text)
+        groups = "\n".join(f" & {' & '.join(cells[4 * m:4 * m + 4])}" for m in range(len(models)))
         lines.append(f"{row['work']}{comment}\n"
                      f" & {' & '.join(specs)}\n"
-                     f" & {' & '.join(cells[:4])}\n"
-                     f" & {' & '.join(cells[4:])} \\\\\n")
+                     f"{groups} \\\\\n")
     lines.append(FOOTER)
     # Empty cells as "& &", as written by hand; no trailing spaces.
     table = re.sub(r"(?<=&) +(?=&|\\\\)", " ", "".join(lines))
@@ -236,6 +254,9 @@ def main():
     parser.add_argument("--architectures", nargs="+",
                         help="names of run.py architectures to include (default: ARCHITECTURES; "
                              "OURWORK is always included)")
+    parser.add_argument("--datasets", nargs="+", choices=MODELS,
+                        help="dataset column groups, in this order (default: every dataset "
+                             "with results or literature numbers)")
     args = parser.parse_args()
     import run
     architectures = run.ARCHITECTURES
@@ -252,7 +273,10 @@ def main():
                      "--model gesture first (or pass --logs)")
     runs = load_results(summary)
     rows = LITERATURE + architecture_rows(architectures, getattr(run, "OURWORK", []))
-    table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr))
+    models = args.datasets or [m for m in MODELS
+                               if any(key[0] == m for key in runs) or any(r.get(m) for r in rows)]
+    table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr),
+                        models=models or list(DEFAULT_MODELS))
     out = args.out or os.path.join(args.logs, "comparison_table.tex")
     with open(out, "w", encoding="utf-8") as file:
         file.write(table)
