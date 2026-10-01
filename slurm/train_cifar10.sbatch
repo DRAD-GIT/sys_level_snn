@@ -24,7 +24,7 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 module load python/3.12
 source "${VENV:-$HOME/venvs/snn}/bin/activate"
 
-DATA=${DATA:-/work/yashbiyani/datasets}   # folder holding cifar-10-batches-py
+DATA=${DATA:-$HOME/c3cim_sys_cluster/datasets}   # folder holding cifar-10-batches-py
 GPUS=${GPUS:-2}
 BATCH=${BATCH:-256}
 LR=${LR:-0.1}
