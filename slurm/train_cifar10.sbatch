@@ -16,7 +16,7 @@
 #SBATCH --time=12:00:00              # ~5 h expected; within the partition's 1-day limit
 #SBATCH --output=logs/slurm_cifar10_%j.out
 
-set -euo pipefail
+set -eo pipefail      # no -u: module and venv scripts read unset variables
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 # Python environment: the python module and a virtual environment holding
