@@ -88,6 +88,8 @@ def main():
                         help="folded checkpoint (default: the model's pretrained file)")
     parser.add_argument("--resume", action="store_true", help="continue from --work/last.pth")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--progress-every", type=int, default=100,
+                        help="print progress every N training batches (default 100)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -99,7 +101,7 @@ def main():
     train_x, train_y = read_batches([os.path.join(root, f"data_batch_{i}") for i in range(1, 6)])
     test_x, test_y = read_batches([os.path.join(root, "test_batch")])
     print(f"CIFAR-10 from {root}: {len(train_y)} training, {len(test_y)} test images, "
-          f"{n_steps} time steps, on {device}")
+          f"{n_steps} time steps, on {device}", flush=True)
     train_x = train_x.to(device)
     train_y = train_y.to(device)
 
@@ -140,6 +142,12 @@ def main():
             scaler.update()
             loss_sum += loss.item() * len(idx)
             correct += int((rates.argmax(1) == y).sum())
+            done = i + len(idx)
+            if done == len(idx) or done // args.batch % args.progress_every == 0:
+                elapsed = time.time() - t0
+                print(f"  epoch {epoch + 1}: {done}/{len(order)} images, loss {loss_sum / done:.4f}, "
+                      f"train {100.0 * correct / done:.2f}%, {done / elapsed:.0f} images/s, "
+                      f"epoch ends in {elapsed * (len(order) - done) / done / 60:.1f} min", flush=True)
         scheduler.step()
         line = (f"epoch {epoch + 1}/{args.epochs}: loss {loss_sum / len(order):.4f}, "
                 f"train {100.0 * correct / len(order):.2f}%, lr {scheduler.get_last_lr()[0]:.4f}, "
