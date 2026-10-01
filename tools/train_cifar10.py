@@ -138,7 +138,7 @@ def main():
     os.makedirs(args.work, exist_ok=True)
     start, best = 0, -1.0        # the first evaluation is always saved
     if args.resume:
-        state = torch.load(os.path.join(args.work, "last.pth"), map_location=device)
+        state = torch.load(os.path.join(args.work, "last.pth"), map_location=device, weights_only=True)
         net.load_state_dict(state["net"])
         optimizer.load_state_dict(state["optimizer"])
         scheduler.load_state_dict(state["scheduler"])
@@ -146,7 +146,7 @@ def main():
         start, best = state["epoch"] + 1, state["best"]
         print(f"resumed after epoch {start}, best test accuracy so far {best:.2f}%")
     elif args.init:
-        state = torch.load(args.init, map_location=device)
+        state = torch.load(args.init, map_location=device, weights_only=True)
         net.load_state_dict(state.get("net", state.get("state_dict")))
         best = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device)
         print(f"starting from {args.init}: test accuracy {best:.2f}% (saved only if beaten)", flush=True)
