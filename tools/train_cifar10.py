@@ -5,6 +5,9 @@ pretrained/cifar10_vgg11.pth, with BatchNorm folded into the weights.
     python tools/train_cifar10.py --data /path/to/datasets --epochs 200 --amp
     python tools/train_cifar10.py --resume                # continue from the last epoch
     python tools/train_cifar10.py --amp --gpus 2 --batch 256 --lr 0.1   # both GPUs, larger batches
+    # fine-tune a trained network (its unfolded best.pth) with cross-entropy, in a new --work folder
+    python tools/train_cifar10.py --amp --gpus 2 --batch 256 --init logs/cifar10_train/best.pth \
+        --loss ce --lr 0.01 --epochs 50 --work logs/cifar10_finetune
 
 Needs the CIFAR-10 python release (https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz)
 extracted, i.e. a folder cifar-10-batches-py in the dataset folder, and a GPU.
@@ -13,8 +16,14 @@ Training: rate-coded inputs (tSample binary frames per image, from
 models/cifar10.yaml), LIF neurons with an arctan surrogate gradient,
 BatchNorm after every convolution, random crop (padding 4) and horizontal
 flip, SGD with momentum 0.9 and a cosine learning rate, and a mean-squared
-error between each output neuron's firing rate and the one-hot label (the
-class is the output neuron with the most spikes, as at evaluation).
+error between each output neuron's firing rate and the one-hot label
+(--loss mse) or a cross-entropy on the output spike counts (--loss ce); the
+class is the output neuron with the most spikes, as at evaluation.
+
+--init starts from a trained network (a best.pth or last.pth of an earlier
+run, which keep the BatchNorm layers) instead of random weights; its test
+accuracy is measured first, so the checkpoint is only overwritten by an epoch
+that beats it.
 
 Every --eval-every epochs the test accuracy is measured (rate coding drawn
 on the GPU, so it differs slightly from the fixed per-image coding of the
@@ -88,6 +97,10 @@ def main():
     parser.add_argument("--out", default=SPEC.path(SPEC.checkpoint),
                         help="folded checkpoint (default: the model's pretrained file)")
     parser.add_argument("--resume", action="store_true", help="continue from --work/last.pth")
+    parser.add_argument("--init", help="start from this trained network (best.pth or last.pth of a "
+                                       "run) instead of random weights")
+    parser.add_argument("--loss", choices=("mse", "ce"), default="mse",
+                        help="mse: firing rates vs one-hot labels; ce: cross-entropy on spike counts")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--gpus", type=int, default=1,
                         help="GPUs to split each batch across (default 1; CUDA_VISIBLE_DEVICES picks which)")
@@ -132,6 +145,11 @@ def main():
         scaler.load_state_dict(state["scaler"])
         start, best = state["epoch"] + 1, state["best"]
         print(f"resumed after epoch {start}, best test accuracy so far {best:.2f}%")
+    elif args.init:
+        state = torch.load(args.init, map_location=device)
+        net.load_state_dict(state.get("net", state.get("state_dict")))
+        best = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device)
+        print(f"starting from {args.init}: test accuracy {best:.2f}% (saved only if beaten)", flush=True)
 
     for epoch in range(start, args.epochs):
         model.train()
@@ -143,7 +161,10 @@ def main():
             y = train_y[idx]
             with torch.autocast(device.type, enabled=args.amp):
                 rates = firing_rates(model(rate_code(x, n_steps)))
-                loss = F.mse_loss(rates.float(), F.one_hot(y, 10).float())
+                if args.loss == "ce":
+                    loss = F.cross_entropy(rates.float() * n_steps, y)     # spike counts as logits
+                else:
+                    loss = F.mse_loss(rates.float(), F.one_hot(y, 10).float())
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -178,6 +199,9 @@ def main():
                     "scheduler": scheduler.state_dict(), "scaler": scaler.state_dict(),
                     "epoch": epoch, "best": best}, os.path.join(args.work, "last.pth"))
 
+    if not os.path.exists(args.out):
+        print(f"no epoch beat the starting network ({best:.2f}%); nothing saved to {args.out}")
+        return
     # The saved checkpoint, as run.py builds the network, on the recordings' exact rate coding.
     folded = VGG11Network(params)
     folded.load_state_dict(models.load_tensors(args.out)["state_dict"])
