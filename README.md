@@ -33,7 +33,7 @@ tools/                 record.py (record forward passes ahead), accuracy_sweep.p
                        latex_table.py (the paper's comparison table from the results),
                        train_cifar10.py (trains the CIFAR-10 SNN);
                        checkpoint conversion and slayerSNN verification
-recordings/            recorded forward passes (created on first use; not in git)
+recordings/            recorded forward passes (committed, so the hardware evaluation runs without the datasets)
 tests/                 reference-model, hand-calculation and pipeline tests
 ```
 

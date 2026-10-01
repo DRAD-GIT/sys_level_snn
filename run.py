@@ -41,7 +41,7 @@ MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 PARALLEL = None        # samples processed at once; None = defaults (recording: N-MNIST 50,
                        # gesture 2; hardware evaluation: one recorded file per step)
 # Recorded forward passes (layer inputs and outputs), reused across runs.
-RECORDING_DIR = "/shares/bulk/yashbiyani/c3cim_sys_dats/recordings/"   # default: os.path.join(ROOT, "recordings")
+RECORDING_DIR = os.path.join(ROOT, "recordings")   # in the repository, committed with git
 
 # ============================================================================
 # 2. WEIGHT QUANTIZATION
