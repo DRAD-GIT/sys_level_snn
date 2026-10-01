@@ -84,6 +84,8 @@ python tools/train_cifar10.py --amp             # 200 epochs; saves pretrained/c
 python tools/train_cifar10.py --amp --resume    # continue an interrupted run
 ```
 
+**Thermometer-coded CIFAR-10** (`--model cifar10_thermo`, `models/cifar10_thermo.yaml`): the same VGG-11, with each pixel channel turned into 8 binary input channels (channel i on where the intensity exceeds (i+1)/9), the same frame at every one of 8 time steps. Every layer still receives binary spikes (the first has 24 input channels, 216 crossbar rows), but without rate coding's randomness, so fewer time steps are needed. Train it with `python tools/train_cifar10.py --model cifar10_thermo --amp` (or `MODEL=cifar10_thermo sbatch slurm/train_cifar10.sbatch`); it is evaluated like the others (`python run.py --model cifar10_thermo`) and fills the CIFAR-10 columns of the table with `--datasets nmnist gesture cifar10_thermo`.
+
 On a Slurm cluster: `mkdir -p logs && sbatch slurm/train_cifar10.sbatch` (edit its `#SBATCH` lines and environment first; `DATA=/path sbatch ...` sets the dataset folder). Submitting it again continues from the last finished epoch.
 
 Training uses BatchNorm after every convolution, an arctan surrogate gradient, random crop and flip, SGD with a cosine learning rate and a mean-squared error on the output firing rates; the best test epoch is saved with BatchNorm folded into the convolutions' weights and biases (the bias is a constant input current to each neuron, not a crossbar row), and the script ends by evaluating the saved file exactly as `run.py` loads it. Then `python run.py --model cifar10` evaluates it like the other models; check its accuracy at 6 bits first with `python tools/accuracy_sweep.py --model cifar10 --bits 6 float`.

@@ -3,8 +3,9 @@
 #
 #   sbatch slurm/train_cifar10.sbatch                     # from the repository folder
 #   DATA=/path/to/datasets sbatch slurm/train_cifar10.sbatch
+#   MODEL=cifar10_thermo sbatch slurm/train_cifar10.sbatch   # thermometer-coded inputs
 #   # fine-tune the trained network with cross-entropy (own WORK folder):
-#   INIT=logs/cifar10_train/best.pth LOSS=ce LR=0.01 EPOCHS=50 WORK=logs/cifar10_finetune \
+#   INIT=logs/cifar10_train/best.pth LOSS=ce LR=0.0002 EPOCHS=50 WORK=logs/cifar10_finetune \
 #       sbatch slurm/train_cifar10.sbatch
 #
 # Resubmitting continues from the last finished epoch ($WORK/last.pth),
@@ -27,13 +28,14 @@ cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 module load python/3.12
 source "${VENV:-/shares/bulk/yashbiyani/c3cim_sys_cluster/c3cim}/bin/activate"
 
+MODEL=${MODEL:-cifar10}          # cifar10 (rate coding) or cifar10_thermo (thermometer coding)
 DATA=${DATA:-/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets}   # folder holding cifar-10-batches-py
 GPUS=${GPUS:-2}
 BATCH=${BATCH:-256}
 LR=${LR:-0.1}
 EPOCHS=${EPOCHS:-200}
 LOSS=${LOSS:-mse}
-WORK=${WORK:-logs/cifar10_train}
+WORK=${WORK:-logs/${MODEL}_train}
 
 START=""
 if [ -f "$WORK/last.pth" ]; then
@@ -44,6 +46,6 @@ fi
 
 echo "job $SLURM_JOB_ID on $(hostname), GPUs: ${CUDA_VISIBLE_DEVICES:-none}, $(date)"
 nvidia-smi --query-gpu=name,memory.total --format=csv
-python -u tools/train_cifar10.py --amp --data "$DATA" --gpus "$GPUS" --batch "$BATCH" \
+python -u tools/train_cifar10.py --model "$MODEL" --amp --data "$DATA" --gpus "$GPUS" --batch "$BATCH" \
     --lr "$LR" --epochs "$EPOCHS" --loss "$LOSS" --work "$WORK" $START
 echo "finished $(date)"

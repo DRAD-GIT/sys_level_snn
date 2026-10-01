@@ -1,19 +1,22 @@
-"""Train the CIFAR-10 VGG-11 SNN (models/cifar10.py) and save it as
-pretrained/cifar10_vgg11.pth, with BatchNorm folded into the weights.
+"""Train the CIFAR-10 VGG-11 SNN (models/cifar10.py) and save it as its
+model's checkpoint, with BatchNorm folded into the weights: --model cifar10
+(rate-coded inputs, pretrained/cifar10_vgg11.pth) or cifar10_thermo
+(thermometer-coded inputs, pretrained/cifar10_vgg11_thermo.pth).
 
     python tools/train_cifar10.py                         # dataset from run.py's DATASET_DIR
     python tools/train_cifar10.py --data /path/to/datasets --epochs 200 --amp
     python tools/train_cifar10.py --resume                # continue from the last epoch
     python tools/train_cifar10.py --amp --gpus 2 --batch 256 --lr 0.1   # both GPUs, larger batches
+    python tools/train_cifar10.py --model cifar10_thermo --amp --gpus 2 --batch 256 --lr 0.1
     # fine-tune a trained network (its unfolded best.pth) with cross-entropy, in a new --work folder
     python tools/train_cifar10.py --amp --gpus 2 --batch 256 --init logs/cifar10_train/best.pth \
-        --loss ce --lr 0.01 --epochs 50 --work logs/cifar10_finetune
+        --loss ce --lr 0.0002 --epochs 50 --work logs/cifar10_finetune
 
 Needs the CIFAR-10 python release (https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz)
 extracted, i.e. a folder cifar-10-batches-py in the dataset folder, and a GPU.
 
-Training: rate-coded inputs (tSample binary frames per image, from
-models/cifar10.yaml), LIF neurons with an arctan surrogate gradient,
+Training: spike-coded inputs (tSample binary frames per image, encoded as the
+model's YAML says: rate or thermometer), LIF neurons with an arctan surrogate gradient,
 BatchNorm after every convolution, random crop (padding 4) and horizontal
 flip, SGD with momentum 0.9 and a cosine learning rate, and a mean-squared
 error between each output neuron's firing rate and the one-hot label
@@ -44,8 +47,8 @@ import torch.nn.functional as F
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import models  # noqa: E402
-from models.cifar10 import SPEC, VGG11Network, read_batches  # noqa: E402
-from models.lif import rate_code  # noqa: E402
+from models.cifar10 import read_batches  # noqa: E402
+from models.lif import encode  # noqa: E402
 
 
 def augment(images):
@@ -70,14 +73,14 @@ def firing_rates(output):
     return output.reshape(output.shape[0], output.shape[1], -1).mean(-1)
 
 
-def evaluate(net, images, labels, n_steps, batch, device, seed=0):
+def evaluate(net, images, labels, n_steps, batch, device, encoding, seed=0):
     net.eval()
     generator = torch.Generator(device=device).manual_seed(seed)
     correct = 0
     with torch.no_grad():
         for i in range(0, len(labels), batch):
             x = images[i:i + batch].to(device).float().div_(255)
-            out = net(rate_code(x, n_steps, generator))
+            out = net(encode(x, encoding, n_steps, generator))
             correct += int((firing_rates(out).argmax(1).cpu() == labels[i:i + batch]).sum())
     return 100.0 * correct / len(labels)
 
@@ -85,6 +88,8 @@ def evaluate(net, images, labels, n_steps, batch, device, seed=0):
 def main():
     import run
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--model", default="cifar10", choices=("cifar10", "cifar10_thermo"),
+                        help="cifar10: rate-coded inputs; cifar10_thermo: thermometer-coded")
     parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--batch", type=int, default=64, help="training batch (default 64)")
@@ -94,8 +99,7 @@ def main():
     parser.add_argument("--amp", action="store_true", help="mixed precision (faster, less memory)")
     parser.add_argument("--work", default=os.path.join(ROOT, "logs", "cifar10_train"),
                         help="folder for the training state (last.pth, best.pth)")
-    parser.add_argument("--out", default=SPEC.path(SPEC.checkpoint),
-                        help="folded checkpoint (default: the model's pretrained file)")
+    parser.add_argument("--out", help="folded checkpoint (default: the model's pretrained file)")
     parser.add_argument("--resume", action="store_true", help="continue from --work/last.pth")
     parser.add_argument("--init", help="start from this trained network (best.pth or last.pth of a "
                                        "run) instead of random weights")
@@ -111,17 +115,20 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type != "cuda":
         print("warning: no GPU found; training on the CPU will be very slow")
+    SPEC = models.get_spec(args.model)
+    args.out = args.out or SPEC.path(SPEC.checkpoint)
     params = models.load_params(SPEC.path(SPEC.params_yaml))
+    encoding = params.get("encoding")
     n_steps = int(params["simulation"]["tSample"] / params["simulation"]["Ts"])
     root = models.find_dataset(SPEC, args.data)
     train_x, train_y = read_batches([os.path.join(root, f"data_batch_{i}") for i in range(1, 6)])
     test_x, test_y = read_batches([os.path.join(root, "test_batch")])
     print(f"CIFAR-10 from {root}: {len(train_y)} training, {len(test_y)} test images, "
-          f"{n_steps} time steps, on {device}", flush=True)
+          f"{n_steps} time steps, {(encoding or {}).get('type', 'rate')} coding, on {device}", flush=True)
     train_x = train_x.to(device)
     train_y = train_y.to(device)
 
-    net = VGG11Network(params, do_enable=True, batchnorm=True).to(device)
+    net = SPEC.network_class(params, do_enable=True, batchnorm=True).to(device)
     # Several GPUs: each batch is split across them (net keeps the weights).
     gpus = min(args.gpus, torch.cuda.device_count()) if device.type == "cuda" else 1
     model = torch.nn.DataParallel(net, device_ids=list(range(gpus))) if gpus > 1 else net
@@ -148,7 +155,7 @@ def main():
     elif args.init:
         state = torch.load(args.init, map_location=device, weights_only=True)
         net.load_state_dict(state.get("net", state.get("state_dict")))
-        best = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device)
+        best = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device, encoding)
         print(f"starting from {args.init}: test accuracy {best:.2f}% (saved only if beaten)", flush=True)
 
     for epoch in range(start, args.epochs):
@@ -160,7 +167,7 @@ def main():
             x = augment(train_x[idx].float().div_(255))
             y = train_y[idx]
             with torch.autocast(device.type, enabled=args.amp):
-                rates = firing_rates(model(rate_code(x, n_steps)))
+                rates = firing_rates(model(encode(x, encoding, n_steps)))
                 if args.loss == "ce":
                     loss = F.cross_entropy(rates.float() * n_steps, y)     # spike counts as logits
                 else:
@@ -184,7 +191,7 @@ def main():
         if device.type == "cuda":
             line += f", GPU memory peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB"
         if (epoch + 1) % args.eval_every == 0 or epoch + 1 == args.epochs:
-            accuracy = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device)
+            accuracy = evaluate(model, test_x, test_y, n_steps, 256 * gpus, device, encoding)
             line += f", test {accuracy:.2f}%"
             if accuracy > best:
                 best = accuracy
@@ -203,7 +210,7 @@ def main():
         print(f"no epoch beat the starting network ({best:.2f}%); nothing saved to {args.out}")
         return
     # The saved checkpoint, as run.py builds the network, on the recordings' exact rate coding.
-    folded = VGG11Network(params)
+    folded = SPEC.network_class(params)
     folded.load_state_dict(models.load_tensors(args.out)["state_dict"])
     folded = folded.to(device).eval()
     loader = models.test_loader(SPEC, params, args.data, parallel=200, num_workers=args.workers)
@@ -214,8 +221,8 @@ def main():
             correct += int((firing_rates(out).argmax(1).cpu() == label).sum())
             total += len(label)
     print(f"saved {args.out}: test accuracy {100.0 * correct / total:.2f}% "
-          f"(best epoch {best:.2f}% with GPU-drawn rate coding)")
-    print("next: python tools/accuracy_sweep.py --model cifar10 --bits 6 float   "
+          f"(best epoch {best:.2f}% in training)")
+    print(f"next: python tools/accuracy_sweep.py --model {args.model} --bits 6 float   "
           "(accuracy at the hardware's weight precision)")
 
 

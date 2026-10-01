@@ -16,7 +16,7 @@ import models.nmnist
 from evaluation.probes import LayerProbe
 from hardware import Component, Mapping, compose, evaluate_layer, quantize_weights
 from models.cifar10 import SPEC, CIFAR10Dataset, VGG11Network, read_batches
-from models.lif import LIFLayer, fold_batchnorm, rate_code
+from models.lif import LIFLayer, encode, fold_batchnorm, rate_code, thermometer_code
 
 PARAMS = {"simulation": {"Ts": 1.0, "tSample": 4},
           "neuron": {"type": "LIF", "theta": 1.0, "beta": 0.5, "alpha": 2.0}}
@@ -48,6 +48,18 @@ class LIFTests(unittest.TestCase):
         self.assertEqual(rates[0], 0.0)
         self.assertAlmostEqual(rates[1], 0.25, delta=0.03)
         self.assertEqual(rates[2], 1.0)
+
+
+    def test_thermometer_code_is_deterministic_and_binary(self):
+        images = torch.tensor([0.0, 0.5, 1.0]).reshape(1, 3, 1, 1)
+        spikes = thermometer_code(images, 4, 3)       # thresholds 0.2 0.4 0.6 0.8
+        self.assertEqual(spikes.shape, (1, 12, 1, 1, 3))
+        self.assertEqual(spikes[0, :, 0, 0, 0].tolist(), [0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1])
+        self.assertTrue(torch.equal(spikes[..., 0], spikes[..., 2]))   # same every step
+        self.assertTrue(torch.equal(encode(images, {"type": "thermometer", "levels": 4}, 3),
+                                    spikes))
+        with self.assertRaisesRegex(ValueError, "unknown input encoding"):
+            encode(images, {"type": "latency"}, 3)
 
 
 class VGG11Tests(unittest.TestCase):
@@ -124,6 +136,20 @@ class CIFAR10DataTests(unittest.TestCase):
         self.assertEqual(spikes.shape, (3, 32, 32, 8))
         self.assertEqual(int(desired.argmax()), label)
         self.assertTrue(torch.equal(spikes, dataset[3][1]))      # same coding every time
+
+    def test_thermometer_model_takes_its_encoding_from_the_yaml(self):
+        spec = models.get_spec("cifar10_thermo")
+        params = models.load_params(spec.path(spec.params_yaml))
+        net = spec.network_class(params)
+        self.assertEqual(net.SC1.weight.shape[1], 24)            # 3 colours x 8 levels
+        dataset = CIFAR10Dataset(None, os.path.join(self.folder, "test_batch"), 1.0, 4,
+                                 encoding=params["encoding"])
+        _, spikes, _, _ = dataset[2]
+        self.assertEqual(spikes.shape, (24, 32, 32, 4))
+        image = torch.from_numpy(self.data[2].reshape(3, 32, 32)).float() / 255
+        self.assertTrue(torch.equal(spikes, thermometer_code(image[None], 8, 4)[0]))
+        with torch.no_grad():
+            self.assertEqual(net(spikes[None]).shape, (1, 10, 1, 1, 4))
 
     def test_existing_models_keep_their_recording_sources(self):
         # Recordings of N-MNIST and gesture are fingerprinted with these files.

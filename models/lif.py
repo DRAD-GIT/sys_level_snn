@@ -134,4 +134,35 @@ def rate_code(images, n_steps, generator=None):
     return torch.bernoulli(probs, generator=generator)
 
 
-__all__ = ["LIFLayer", "Conv", "Dense", "MaxPool", "fold_batchnorm", "rate_code"]
+def thermometer_code(images, levels, n_steps):
+    """Thermometer coding: [batch, C, H, W] intensities in [0, 1] ->
+    [batch, C * levels, H, W, n_steps] spikes. Channel c * levels + i is 1
+    where the intensity exceeds (i + 1) / (levels + 1), so an intensity sets
+    the first k of its channel's `levels` inputs (deterministic), the same at
+    every time step."""
+    thresholds = torch.arange(1, levels + 1, device=images.device, dtype=images.dtype) / (levels + 1)
+    bits = (images.unsqueeze(2) > thresholds.reshape(1, 1, -1, 1, 1)).to(images.dtype)
+    bits = bits.reshape(images.shape[0], images.shape[1] * levels, *images.shape[2:])
+    return bits.unsqueeze(-1).expand(*bits.shape, n_steps).contiguous()
+
+
+def input_channels(encoding, channels):
+    """Input channels of the first layer for `channels` image channels."""
+    if encoding and encoding.get("type") == "thermometer":
+        return channels * int(encoding["levels"])
+    return channels
+
+
+def encode(images, encoding, n_steps, generator=None):
+    """Images in [0, 1] -> binary input spikes, by the YAML's `encoding`:
+    {type: rate} (default; Bernoulli, random) or {type: thermometer, levels: k}."""
+    kind = (encoding or {}).get("type", "rate")
+    if kind == "rate":
+        return rate_code(images, n_steps, generator)
+    if kind == "thermometer":
+        return thermometer_code(images, int(encoding["levels"]), n_steps)
+    raise ValueError(f"unknown input encoding {kind!r}; use rate or thermometer")
+
+
+__all__ = ["LIFLayer", "Conv", "Dense", "MaxPool", "fold_batchnorm", "rate_code",
+           "thermometer_code", "input_channels", "encode"]

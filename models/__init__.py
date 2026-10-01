@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader, Subset
 
 from .base import load_params
 
-MODEL_MODULES = {"nmnist": "models.nmnist", "gesture": "models.gesture", "cifar10": "models.cifar10"}
+MODEL_MODULES = {"nmnist": "models.nmnist", "gesture": "models.gesture", "cifar10": "models.cifar10",
+                 "cifar10_thermo": "models.cifar10_thermo"}
 
 
 def load_tensors(path):
@@ -148,9 +149,11 @@ def test_dataset(spec, net_params, data_dir):
     dataset folder (see find_dataset)."""
     root = find_dataset(spec, data_dir)
     paths = net_params["training"]["path"]
+    extra = {"encoding": net_params["encoding"]} if "encoding" in net_params else {}
     return spec.dataset_class(
         data_path=os.path.join(root, paths["dir_test"]),
         samples_file=os.path.join(root, paths["list_test"]),
         sampling_time=net_params["simulation"]["Ts"],
         sample_length=net_params["simulation"]["tSample"],
+        **extra,
     )

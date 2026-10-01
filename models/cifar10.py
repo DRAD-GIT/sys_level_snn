@@ -1,9 +1,15 @@
-"""CIFAR-10: a VGG-11 spiking network with LIF neurons, on rate-coded images.
+"""CIFAR-10: a VGG-11 spiking network with LIF neurons, on spike-coded images.
 
 Every weighted layer receives binary spikes, so all of them (including the
-first) map onto CIM crossbars: each 32x32 RGB image is rate-coded into
-tSample binary frames (pixel intensity = spike probability per time step),
-with a fixed random seed per test image so recordings are reproducible.
+first) map onto CIM crossbars. The YAML's `encoding` turns each 32x32 RGB
+image into tSample binary frames:
+  rate (default)          pixel intensity = spike probability per time step,
+                          with a fixed random seed per test image so
+                          recordings are reproducible (models/cifar10.yaml);
+  thermometer, levels k   each pixel channel -> k binary channels, channel i
+                          on where the intensity exceeds (i+1)/(k+1); the
+                          same frame at every time step, no randomness
+                          (models/cifar10_thermo.py).
 
 VGG-11 for CIFAR-10 (the network Han et al., TCAS-I 2022, use on CIFAR-10):
 conv 64 - M - 128 - M - 256 - 256 - M - 512 - 512 - M - 512 - 512 - M - fc 10,
@@ -22,7 +28,7 @@ import numpy as np
 import torch
 
 from .base import ModelSpec, NNetwork
-from .lif import LIFLayer, rate_code
+from .lif import LIFLayer, encode, input_channels
 
 VGG11 = (64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M")
 
@@ -39,14 +45,16 @@ def read_batches(paths):
 
 
 class CIFAR10Dataset(torch.utils.data.Dataset):
-    """The CIFAR-10 test set, rate-coded. samples_file is the batch file
-    (test_batch); data_path is unused (the batch holds the images)."""
+    """The CIFAR-10 test set, spike-coded by `encoding` (the YAML's; default
+    rate). samples_file is the batch file (test_batch); data_path is unused
+    (the batch holds the images)."""
 
     seed = 2024   # rate-coding seed: image i uses seed + i
 
-    def __init__(self, data_path, samples_file, sampling_time, sample_length):
+    def __init__(self, data_path, samples_file, sampling_time, sample_length, encoding=None):
         self.images, self.labels = read_batches([samples_file])
         self.n_time_bins = int(sample_length / sampling_time)
+        self.encoding = encoding
 
     def __len__(self):
         return len(self.labels)
@@ -54,7 +62,7 @@ class CIFAR10Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         generator = torch.Generator().manual_seed(self.seed + int(index))
         image = self.images[index].float().div_(255)
-        spikes_in = rate_code(image[None], self.n_time_bins, generator)[0]
+        spikes_in = encode(image[None], self.encoding, self.n_time_bins, generator)[0]
         label = int(self.labels[index])
         desired = torch.zeros((10, 1, 1, 1))
         desired[label, ...] = 1
@@ -69,7 +77,7 @@ class VGG11Network(NNetwork):
     def __init__(self, net_params: dict, do_enable=False, backend=None, batchnorm=False):
         super().__init__(net_params, backend or LIFLayer)
         self.batchnorm = batchnorm
-        self.plan, channels, conv = [], 3, 0
+        self.plan, channels, conv = [], input_channels(net_params.get("encoding"), 3), 0
         for item in VGG11:
             if item == "M":
                 self.plan.append("pool")
