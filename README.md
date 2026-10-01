@@ -7,6 +7,7 @@ This repository runs trained spiking neural networks (**N-MNIST LeNet** and **IB
 ```text
 run.py                 MAIN SCRIPT: model and data, weight quantization, hardware, metric switches
 literature_macros.py   published RRAM/MRAM macros calibrated to their papers (run.py's LITERATURE)
+docs/literature_shortlist.md  shortlisted literature, their reported results and the selection factors
 crossbars/             crossbar types, one per file
   conv_xbar.py         current-mode crossbar (cell current G x v_read into each column)
   c3cim_xbar.py        constant-current crossbar with shared column drivers
