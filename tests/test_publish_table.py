@@ -71,3 +71,21 @@ class PublishTableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeepScaleTests(unittest.TestCase):
+    def test_factors_match_the_tool(self):
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                        "tools"))
+        import neuromorphic_table as nt
+        # The paper's example: 45 -> 32 nm power factor 1.238 (100 mW -> 80.775 mW).
+        self.assertAlmostEqual(nt.scale("power", 100.0, 45, target=32), 100 / (0.78 / 0.63))
+        self.assertAlmostEqual(0.78 / 0.63, 1.238, places=3)
+        self.assertAlmostEqual(nt.scale("energy", 21740, 65), 21740 * 0.55)        # Han et al.
+        self.assertAlmostEqual(nt.scale("tops_per_w", 14.12, 65), 14.12 / 0.55)
+        self.assertEqual(nt.scale("energy", 5.0, 40), 5.0)                          # same node
+        self.assertIsNone(nt.scale("energy", 1780, 180))                            # out of range
+        names = [w["name"] for w in sorted(nt.WORKS, key=lambda w: w["date"])]
+        self.assertEqual(names[0], "Yan et al.")
+        self.assertNotIn("TrueNorth", names)

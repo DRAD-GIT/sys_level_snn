@@ -7,8 +7,9 @@ the same order ("a / b / c"; NA where not reported).
     python tools/neuromorphic_table.py               # -> logs/neuromorphic_table.tex
     python tools/neuromorphic_table.py --out paper/Chapters/neuromorphic_table.tex
 
-The literature columns hold each paper's reported numbers (WORKS below, as
-LaTeX strings; edit them there). Our columns are filled from run.py's results
+The literature columns hold each paper's reported numbers (WORKS below; edit
+them there), ordered by publication date, with energy, latency, power and
+TOPS/W scaled to our 40 nm node with DeepScaleTool (see SCALE_TO_NM). Our columns are filled from run.py's results
 (logs/comparison_summary.csv): for every architecture of run.py's OURWORK, its
 accuracy, energy, latency, power and TOPS/W per inference on each dataset
 (the latest configuration, its run with the most samples). Sources and caveats are in
@@ -32,59 +33,81 @@ DATASETS = (("nmnist", "N-MNIST"), ("gesture", "IBM DVS Gesture"), ("cifar10_the
 METRICS = (("accuracy", "Accuracy"), ("energy", "Energy / sample"), ("latency", "Latency / sample"),
            ("power", "Power"), ("tops_per_w", "TOPS/W"))
 
+# Technology scaling (DeepScaleTool: Sarangi and Baas, ISCAS 2021,
+# https://sourceforge.net/projects/deepscaletool/, DeepScaleTool.xlsm of
+# 03/02/2021). Its macros give, per node, energy, delay and power relative to
+# 65 nm; the scaling factor from a node to a target node is value(node) /
+# value(target), and a metric at the target node is the reported value
+# divided by that factor (energy and power), the delay likewise, and TOPS/W
+# multiplied by the energy factor. The tool supports 130 to 7 nm only (its
+# macros map any other node to 7 nm's values), so works at other nodes are
+# left as reported and marked. Accuracy is not scaled.
+SCALE_TO_NM = 40          # every work's energy, latency, power and TOPS/W at this node
+DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
+    130: (2.52, 1.96, 1.28), 90: (1.51, 1.31, 1.15), 65: (1.0, 1.0, 1.0), 45: (0.63, 0.81, 0.78),
+    40: (0.55, 0.76, 0.73), 32: (0.44, 0.70, 0.63), 28: (0.37, 0.67, 0.56), 22: (0.30, 0.62, 0.48),
+    14: (0.19, 0.60, 0.32), 10: (0.15, 0.57, 0.26), 7: (0.11, 0.53, 0.21)}
+
 # Each work's reported numbers, per dataset it evaluated (of N-MNIST, IBM DVS
-# Gesture and CIFAR-10), as written in the paper (LaTeX strings; a metric not
-# reported is left out and shows as NA). Footnote marks refer to FOOTNOTES.
+# Gesture and CIFAR-10): accuracy as a LaTeX string, energy per sample in nJ,
+# latency per sample in us, power in mW, TOPS/W; a metric not reported is left
+# out and shows as NA. "node" (nm) is used for scaling; "date" (year, month)
+# orders the columns. Footnote marks refer to FOOTNOTES.
 WORKS = [
-    {"name": "Memristive SNN", "publication": r"arXiv'25$^{\P}$", "technology": "180nm",
-     "memory": "RRAM", "impl": "Mixed signal",
-     "results": {"N-MNIST": {"accuracy": r"94.73\%", "energy": r"1.78\,$\mu$J"},
-                 "IBM DVS Gesture": {"accuracy": r"93.06\%", "energy": r"1.94\,$\mu$J",
-                                     "latency": r"44.31\,$\mu$s", "power": r"43.83\,mW"}}},
-    {"name": "ANP-I", "publication": "JSSC'24", "technology": "28nm",
-     "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
-     "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": "343\\,nJ"},
-                 r"IBM DVS Gesture$^{*}$": {"accuracy": r"92.0\%", "energy": r"3.9\,$\mu$J"}}},
-    {"name": "ReckOn", "publication": "ISSCC'22", "technology": "28nm FDSOI",
-     "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
-     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": r"46.1\,$\mu$J",
-                                            "power": r"77\,$\mu$W"}}},
-    {"name": "DS-CIM", "publication": "TCAS-I'24", "technology": "40nm",
-     "memory": "SOT-MRAM", "impl": "Mixed signal",
-     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": "729.3\\,nJ",
-                                            "latency": r"40.46\,$\mu$s"}}},
-    {"name": "TrueNorth", "publication": "CVPR'17", "technology": "28nm",
-     "memory": "SRAM", "impl": "Digital",
-     "results": {"IBM DVS Gesture": {"accuracy": r"96.5\%", "energy": r"18.8\,mJ$^{\parallel}$",
-                                     "latency": "105\\,ms", "power": "178.8\\,mW"}}},
-    {"name": "Han et al.", "publication": "TCAS-I'22", "technology": "65nm",
-     "memory": "ReRAM", "impl": "Mixed signal",
-     "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": r"21.74\,$\mu$J",
-                              "tops_per_w": "14.12"}}},
-    {"name": "Neuro-CIM", "publication": "JSSC'23", "technology": "28nm",
-     "memory": "SRAM", "impl": "Mixed signal",
-     "results": {"CIFAR-10": {"accuracy": r"92.1\%", "energy": r"0.72\,$\mu$J"}}},
-    {"name": "Yan et al.", "publication": "VLSI'19", "technology": "150nm",
-     "memory": "RRAM", "impl": "Mixed signal",
+    {"name": "Memristive SNN", "publication": "arXiv'25", "date": (2025, 1), "node": 180,
+     "technology": "180nm", "memory": "RRAM", "impl": "Mixed signal",
+     "results": {"N-MNIST": {"accuracy": r"94.73\%", "energy": 1780},
+                 "IBM DVS Gesture": {"accuracy": r"93.06\%", "energy": 1940, "latency": 44.31,
+                                     "power": 43.83}}},
+    {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
+     "technology": "28nm", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
+     "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": 343},
+                 r"IBM DVS Gesture$^{*}$": {"accuracy": r"92.0\%", "energy": 3900}}},
+    {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
+     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
+     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": 46100, "power": 0.077}}},
+    {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
+     "technology": "40nm", "memory": "SOT-MRAM", "impl": "Mixed signal",
+     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": 729.3,
+                                            "latency": 40.46}}},
+    {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
+     "technology": "65nm", "memory": "ReRAM", "impl": "Mixed signal",
+     "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": 21740, "tops_per_w": 14.12}}},
+    {"name": "Neuro-CIM", "publication": "JSSC'23", "date": (2023, 10), "node": 28,
+     "technology": "28nm", "memory": "SRAM", "impl": "Mixed signal",
+     "results": {"CIFAR-10": {"accuracy": r"92.1\%", "energy": 720}}},
+    {"name": "Yan et al.", "publication": "VLSI'19", "date": (2019, 6), "node": 150,
+     "technology": "150nm", "memory": "RRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"95.9\%$^{\S}$"}}},
 ]
 
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
-OUR_SPECS = {"publication": r"\textbf{This work}", "technology": "40nm", "memory": "RRAM",
+OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40nm", "memory": "RRAM",
              "impl": "Mixed signal"}
 
 FOOTNOTES = [
+    f"Energy, latency, power and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
+    "accuracy as reported.",
     r"$^{*}$ Downscaled to $16\times16$, 10 classes (ours: $128\times128$, 11 classes).",
     r"$^{\dagger}$ Downscaled to $2\times17\times17$ (ours: $2\times34\times34$).",
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Relative to its binarized software network.",
-    r"$^{\P}$ Preprint.",
-    r"$^{\parallel}$ Reported power $\times$ latency.",
+    r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"This work: 6-bit weights; CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
 LABEL = "table:neuromorphic"
+
+
+def scale(metric, value, node, target=SCALE_TO_NM):
+    """A metric reported at `node` (nm) at the target node with DeepScaleTool's
+    factors; None if a node is outside its range."""
+    if node not in DEEPSCALE or target not in DEEPSCALE:
+        return None
+    energy, delay, power = (DEEPSCALE[node][i] / DEEPSCALE[target][i] for i in range(3))
+    factor = {"energy": energy, "latency": delay, "power": power, "tops_per_w": 1 / energy}[metric]
+    return value / factor
 
 
 def _unit(value, units):
@@ -95,13 +118,26 @@ def _unit(value, units):
         value /= step
 
 
+FORMATS = {"energy": lambda v: _unit(v, [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
+           "latency": lambda v: _unit(v, [(r"$\mu$s", 1e3), ("ms", 1e3), ("s", 1)]),
+           "power": lambda v: _unit(v, [(r"$\mu$W", 1e3), ("mW", 1e3), ("W", 1)]),
+           "tops_per_w": lambda v: f"{v:#.3g}".rstrip(".")}
+
+
+def cell(metric, value, node):
+    """One metric value as LaTeX: scaled to SCALE_TO_NM where it is a number."""
+    if metric not in FORMATS or not isinstance(value, (int, float)):
+        return value
+    scaled = scale(metric, value, node)
+    if scaled is None:
+        return FORMATS[metric](value * 1e3 if metric == "power" else value) + r"$^{\P}$"
+    return FORMATS[metric](scaled * 1e3 if metric == "power" else scaled)
+
+
 def our_values(row):
-    """A comparison_summary.csv row -> {metric: LaTeX} (energy nJ, latency us, power mW)."""
+    """A comparison_summary.csv row -> {metric: value} (energy nJ, latency us, power mW)."""
     return {"accuracy": f"{float(row['accuracy']):.2f}\\%",
-            "energy": _unit(float(row["energy"]), [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
-            "latency": _unit(float(row["latency"]), [(r"$\mu$s", 1e3), ("ms", 1e3), ("s", 1)]),
-            "power": _unit(float(row["power"]), [("mW", 1e3), ("W", 1)]),
-            "tops_per_w": f"{float(row['tops_per_w']):#.3g}".rstrip(".")}
+            **{m: float(row[m]) for m in ("energy", "latency", "power", "tops_per_w")}}
 
 
 def our_columns(runs, architectures, warn=print):
@@ -122,7 +158,7 @@ def our_columns(runs, architectures, warn=print):
                      f"{latex_table.FULL_TEST_SET[model]} test samples")
             results[dataset] = our_values(best)
         columns.append({"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
-                        "results": results, "ours": True})
+                        "date": (9999, 0), "results": results, "ours": True})
     return columns
 
 
@@ -156,12 +192,12 @@ def build_table(columns):
         lines.append(r"\midrule")
         cells = []
         for c in columns:
-            values = [r.get(key, "NA") for r in c["results"].values()]
+            values = [cell(key, r[key], c["node"]) if key in r else "NA" for r in c["results"].values()]
             if all(v == "NA" for v in values):
                 cells.append("NA")
             else:
-                cell = _stack(values)
-                cells.append(f"\\textbf{{{cell}}}" if c.get("ours") and len(values) == 1 else cell)
+                text = _stack(values)
+                cells.append(f"\\textbf{{{text}}}" if c.get("ours") and len(values) == 1 else text)
         row(label, cells)
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}",
               r"\par\smallskip\raggedright\scriptsize",
@@ -174,7 +210,8 @@ def make_table(our_architectures, logs_dir, warn=print):
     summary = os.path.join(logs_dir, "comparison_summary.csv")
     if not os.path.exists(summary):
         raise FileNotFoundError(f"no results in {summary}: run python run.py first")
-    return build_table(WORKS + our_columns(latex_table.load_results(summary), our_architectures, warn))
+    works = sorted(WORKS, key=lambda w: w["date"])          # oldest first, ours last
+    return build_table(works + our_columns(latex_table.load_results(summary), our_architectures, warn))
 
 
 def main():
