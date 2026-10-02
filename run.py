@@ -38,8 +38,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # 1. MODELS, PRETRAINED WEIGHTS AND DATASET
 # ============================================================================
 # Models (datasets) evaluated, in order; pretrained weights in pretrained/.
+# "gesture16": DVS Gesture downscaled to 16x16, 10 classes (as DS-CIM, ReckOn).
 # Also available: "cifar10" (rate-coded CIFAR-10).
-MODELS = ["nmnist", "gesture", "cifar10_thermo"]
+MODELS = ["nmnist", "gesture", "gesture16", "cifar10_thermo"]
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets/"   # None = none set
@@ -48,8 +49,8 @@ MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 # the batch when recording and the samples per hardware evaluation step.
 # Models not listed use their defaults (recording: the model's batch_size;
 # hardware evaluation: one recorded file per step). --parallel N sets all.
-#PARALLEL = {"nmnist": 250, "gesture": 20, "cifar10_thermo": 100}
-PARALLEL = {"nmnist": 1000, "gesture": 264, "cifar10_thermo": 500}
+#PARALLEL = {"nmnist": 250, "gesture": 20, "gesture16": 240, "cifar10_thermo": 100}
+PARALLEL = {"nmnist": 1000, "gesture": 264, "gesture16": 240, "cifar10_thermo": 500}
 # Recorded forward passes (layer inputs and outputs), reused across runs.
 RECORDING_DIR = os.path.join(ROOT, "recordings")   # in the repository, committed with git
 

@@ -90,7 +90,8 @@ FOOTNOTES = [
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
-    r"This work: 6-bit weights; CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
+    r"This work: 6-bit weights; IBM DVS Gesture on a 512-512-10 SNN (80 time steps of 30\,ms); "
+    r"CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
 LABEL = "table:neuromorphic"
