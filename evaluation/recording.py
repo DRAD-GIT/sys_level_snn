@@ -66,12 +66,16 @@ def recording_path(recording_dir, model, bits, scaling):
 
 
 def fingerprint(spec, bits, scaling):
-    """Identifies everything a recording depends on."""
+    """Identifies everything a recording depends on. The text files (neuron
+    YAML, SNN code) are read with Windows line endings (CRLF, as git may check
+    them out on Windows) taken as Unix ones (LF), so a checkout on any system
+    gives the same fingerprint."""
     digest = hashlib.sha256(f"format {FORMAT}; {spec.name}; {bits}; {scaling}".encode())
-    for path in (spec.path(spec.checkpoint), spec.path(spec.params_yaml),
-                 *(os.path.join(_ROOT, p) for p in spec.sources)):
+    with open(spec.path(spec.checkpoint), "rb") as file:
+        digest.update(file.read())
+    for path in (spec.path(spec.params_yaml), *(os.path.join(_ROOT, p) for p in spec.sources)):
         with open(path, "rb") as file:
-            digest.update(file.read())
+            digest.update(file.read().replace(b"\r\n", b"\n"))
     return digest.hexdigest()
 
 

@@ -89,6 +89,30 @@ class ProbeTests(unittest.TestCase):
         self.assertNotIn("spike", vars(net.slayer))
 
 
+class FingerprintTests(unittest.TestCase):
+    def test_same_fingerprint_with_windows_line_endings(self):
+        import shutil
+        import models.base
+        from evaluation import recording
+        spec = models.get_spec("cifar10_thermo")
+        expected = recording.fingerprint(spec, 6, "std3")
+        with tempfile.TemporaryDirectory() as root:
+            # A copy of the files the fingerprint reads, text files with CRLF
+            # line endings (a git checkout on Windows), the checkpoint as is.
+            for relative in (spec.params_yaml, *spec.sources):
+                os.makedirs(os.path.join(root, os.path.dirname(relative)), exist_ok=True)
+                with open(spec.path(relative), "rb") as source:
+                    text = source.read()
+                self.assertNotIn(b"\r\n", text)
+                with open(os.path.join(root, relative), "wb") as copy:
+                    copy.write(text.replace(b"\n", b"\r\n"))
+            os.makedirs(os.path.join(root, "pretrained"))
+            shutil.copy(spec.path(spec.checkpoint), os.path.join(root, spec.checkpoint))
+            with patch.object(models.base, "REPO_ROOT", root), patch.object(recording, "_ROOT", root):
+                self.assertEqual(recording.fingerprint(spec, 6, "std3"), expected)
+                self.assertNotEqual(recording.fingerprint(spec, 5, "std3"), expected)
+
+
 class Unreadable(RandomSpikes):
     def __getitem__(self, index):
         raise AssertionError("the dataset was read although a recording exists")

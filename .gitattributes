@@ -1,0 +1,7 @@
+# Keep Unix line endings on every system (recording fingerprints include the
+# code and YAML files), and never convert binary files.
+* text=auto eol=lf
+*.pth binary
+*.npz binary
+*.png binary
+*.pdf binary

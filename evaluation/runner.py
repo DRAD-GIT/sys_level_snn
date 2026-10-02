@@ -12,7 +12,7 @@
 import torch
 
 import models
-from evaluation.recording import open_recording, precision_label, quantized_network, record
+from evaluation.recording import open_recording, precision_label, quantized_network, record, recording_path
 from evaluation.software import predict_class
 from hardware import evaluate_layer
 
@@ -51,6 +51,10 @@ def evaluate(model, architectures, *, data_dir, recording_dir, max_samples=None,
         if found is not None:
             log(f"{spec.display_name}: using the recorded forward pass {found.path}")
     if missing:
+        for key in missing:
+            log(f"{spec.display_name}: no matching recording "
+                f"{recording_path(recording_dir, model, *key)} (missing, incomplete, or made "
+                "with another checkpoint, YAML, code or quantization): recording it from the dataset")
         recordings.update(record(model, missing, data_dir=data_dir, recording_dir=recording_dir,
                                  max_samples=max_samples, parallel=parallel,
                                  full_outputs=full_outputs, num_workers=num_workers,
