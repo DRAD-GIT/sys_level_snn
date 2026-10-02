@@ -40,8 +40,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # Models (datasets) evaluated, in order; pretrained weights in pretrained/.
 # "nmnist17": N-MNIST downscaled to 17x17, first 100 ms (as ANP-I).
 # "gesture16": DVS Gesture downscaled to 16x16, 10 classes (as DS-CIM, ReckOn).
-# Also available: "cifar10" (rate-coded CIFAR-10).
-MODELS = ["nmnist", "nmnist17", "gesture", "gesture16", "cifar10_thermo"]
+# Also available: "nmnist", "gesture" (full-size sensor), "cifar10" (rate-coded CIFAR-10).
+MODELS = ["nmnist17", "gesture16", "cifar10_thermo"]
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets/"   # None = none set
