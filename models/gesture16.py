@@ -12,6 +12,8 @@ also uses later windows of the same length.
 Trained with BatchNorm after the hidden layer; the checkpoint has it folded
 into SF1's weights and bias (a constant current into each neuron).
 """
+import os
+
 import numpy as np
 import torch
 
@@ -54,27 +56,31 @@ def window(fine, start_bin, steps, step_ms):
     return part.reshape(*part.shape[:-1], steps, per_step).amax(-1)
 
 
+def gesture_files(data_path, samples_file):
+    """(file, class) of every gesture of the trials in samples_file
+    (data_path/<trial>/<class>.npy, classes 0-9) that exists: DVS Gesture's
+    errata lists trials that lack some gestures."""
+    trials = [line.split()[0].split(".")[0] for line in open(samples_file) if line.strip()]
+    files = [(os.path.join(data_path, t, f"{c}.npy"), c) for t in trials for c in range(CLASSES)]
+    return [(f, c) for f, c in files if os.path.exists(f)]
+
+
 class Gesture16Dataset(torch.utils.data.Dataset):
-    """The test set: every trial listed in samples_file, its 10 gesture
-    classes (data_path/<trial>/<class>.npy), each gesture's first
+    """The test set: every gesture (classes 0-9) of the trials listed in
+    samples_file that exists (data_path/<trial>/<class>.npy), its first
     sample_length ms in time steps of sampling_time ms."""
 
     def __init__(self, data_path, samples_file, sampling_time, sample_length):
-        self.path = data_path
-        self.trials = [line.split()[0].split(".")[0] for line in open(samples_file)
-                       if line.strip()]
+        self.files = gesture_files(data_path, samples_file)
         self.step_ms = float(sampling_time)
         self.steps = int(round(sample_length / sampling_time))
 
     def __len__(self):
-        return len(self.trials) * CLASSES
-
-    def event_file(self, index):
-        return f"{self.path}{self.trials[index // CLASSES]}/{index % CLASSES}.npy"
+        return len(self.files)
 
     def __getitem__(self, index):
-        label = index % CLASSES
-        fine = fine_spikes(self.event_file(index), self.steps * self.step_ms)
+        path, label = self.files[index]
+        fine = fine_spikes(path, self.steps * self.step_ms)
         desired = torch.zeros((CLASSES, 1, 1, 1))
         desired[label, ...] = 1
         return index + 1, window(fine, 0, self.steps, self.step_ms), desired, label

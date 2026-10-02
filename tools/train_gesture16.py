@@ -31,7 +31,7 @@ import torch.nn.functional as F
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import models  # noqa: E402
-from models.gesture16 import CLASSES, FINE_MS, SPEC, fine_spikes, window  # noqa: E402
+from models.gesture16 import CLASSES, FINE_MS, SPEC, fine_spikes, gesture_files, window  # noqa: E402
 
 KEEP_MS = 7000.0          # length of every gesture kept for drawing windows
 
@@ -39,10 +39,12 @@ KEEP_MS = 7000.0          # length of every gesture kept for drawing windows
 def read_split(root, paths, which, workers):
     """{"spikes": uint8 [N, 2, 16, 16, KEEP_MS/FINE_MS], "labels", "active"
     (bins up to the last event)} for the train or test trials."""
-    path = os.path.join(root, paths[f"dir_{which}"])
-    trials = [line.split()[0].split(".")[0]
-              for line in open(os.path.join(root, paths[f"list_{which}"])) if line.strip()]
-    files = [(f"{path}{t}/{c}.npy", c) for t in trials for c in range(CLASSES)]
+    listed = os.path.join(root, paths[f"list_{which}"])
+    files = gesture_files(os.path.join(root, paths[f"dir_{which}"]), listed)
+    expected = CLASSES * sum(1 for line in open(listed) if line.strip())
+    if len(files) < expected:      # DVS Gesture's errata: some trials lack some gestures
+        print(f"{which}: {expected - len(files)} of {expected} gesture files missing, skipped",
+              flush=True)
 
     class Files(torch.utils.data.Dataset):
         def __len__(self):
