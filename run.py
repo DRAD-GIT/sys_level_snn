@@ -12,7 +12,9 @@
      under recordings/ and reused by later runs (--rerecord to redo);
   5. the metrics, estimated from the recording.
 
-    python run.py
+    python run.py                       # our work, on every dataset in MODELS
+    python run.py --literature          # also the published macros (literature_macros.COMPARED)
+    python run.py --model cifar10_thermo
 
 Command-line flags override the settings for one run. Results: printed, and
 saved under logs/ (a JSON per architecture and logs/comparison_summary.csv).
@@ -21,25 +23,29 @@ import argparse
 import os
 
 import crossbars
+import literature_macros
 import models
-from evaluation.report import export, format_results
+from evaluation.report import export, format_results, totals
 from evaluation.runner import evaluate
 from hardware import Component, Mapping, compose
-# Published macros calibrated to their papers (each with its own weight precision).
-from literature_macros import ASSCC25_SF, DS_CIM, ESSERC24_RRAM, MEMRISTIVE_SNN
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # ============================================================================
-# 1. MODEL, PRETRAINED WEIGHTS AND DATASET
+# 1. MODELS, PRETRAINED WEIGHTS AND DATASET
 # ============================================================================
-MODEL = "nmnist"       # "nmnist", "gesture" or "cifar10" (pretrained weights in pretrained/)
+# Models (datasets) evaluated, in order; pretrained weights in pretrained/.
+# Also available: "cifar10" (rate-coded CIFAR-10).
+MODELS = ["nmnist", "gesture", "cifar10_thermo"]
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets/"   # None = none set
 MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
-PARALLEL = None        # samples processed at once; None = defaults (recording: N-MNIST 50,
-                       # gesture 2; hardware evaluation: one recorded file per step)
+# Samples processed at once, per model (speed and memory only, not results):
+# the batch when recording and the samples per hardware evaluation step.
+# Models not listed use their defaults (recording: the model's batch_size;
+# hardware evaluation: one recorded file per step). --parallel N sets all.
+PARALLEL = {"nmnist": 250, "gesture": 20, "cifar10_thermo": 100}
 # Recorded forward passes (layer inputs and outputs), reused across runs.
 RECORDING_DIR = os.path.join(ROOT, "recordings")   # in the repository, committed with git
 
@@ -115,18 +121,19 @@ C3CIM_OP_XBAR = compose(
            "sensing": "Voltage"},
 )
 
-# Published macros (literature_macros.py: how each number follows from its
-# paper). They store the same 6-bit weights (literature_macros.WEIGHT_BITS),
-# each in its paper's cells (at most 3 bits), so all rows share one recording.
-LITERATURE = [DS_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
-# Defined but not evaluated: literature_macros.TD_CIM (SSC-L'25 time-domain RRAM).
-
-# Designs evaluated and compared side by side (architectures with the same
-# weight quantization share one recorded forward pass).
-ARCHITECTURES = [C3CIM_XBAR, C3CIM_OP_XBAR] + LITERATURE
-# Our work: listed last in the paper table (tools/latex_table.py), where its
-# values that beat every other row are bold.
+# Our work: always evaluated; listed last in the paper table
+# (tools/latex_table.py), where its values that beat every other row are bold.
 OURWORK = [C3CIM_XBAR, C3CIM_OP_XBAR]
+
+# Published macros, evaluated only with --literature: the list COMPARED in
+# literature_macros.py (how each number follows from its paper is written
+# there). They store the same 6-bit weights, each in its paper's cells (at
+# most 3 bits), so they share our recordings.
+LITERATURE = literature_macros.COMPARED
+
+# Every design defined here (architectures with the same weight quantization
+# share one recorded forward pass).
+ARCHITECTURES = OURWORK + LITERATURE
 
 # ============================================================================
 # 4. METRICS: switch each reported metric on or off
@@ -146,29 +153,51 @@ METRICS = {
 LOG_DIR = os.path.join(ROOT, "logs")
 
 
+def summary(all_results):
+    """One line per model and architecture: the network totals."""
+    lines = ["", "=" * 96, "SUMMARY (per inference)", "=" * 96,
+             f"{'model':<16}{'architecture':<26}{'accuracy %':>11}{'energy nJ':>12}"
+             f"{'latency us':>12}{'power mW':>10}{'TOPS/W':>9}"]
+    for model, results in all_results.items():
+        for name, (accuracy, costs) in results.items():
+            t = totals(costs)
+            lines.append(f"{model:<16}{name:<26}{accuracy:>11.2f}{t['energy']:>12.4g}"
+                         f"{t['latency']:>12.4g}{t['power']:>10.4g}{t['tops_per_w']:>9.4g}")
+    return "\n".join(lines)
+
+
 def main():
-    """4. Record the forward pass (or reuse the recording), 5. estimate the metrics."""
+    """4. Reuse the recorded forward pass (record it if missing), 5. estimate the metrics."""
     parser = argparse.ArgumentParser(description="SNN inference + CIM hardware metrics")
-    parser.add_argument("--model", default=MODEL, choices=sorted(models.MODEL_MODULES))
+    parser.add_argument("--model", nargs="+", default=MODELS, choices=sorted(models.MODEL_MODULES),
+                        help="models (datasets) to evaluate (default: MODELS)")
+    parser.add_argument("--literature", action="store_true",
+                        help="also evaluate the published macros (literature_macros.COMPARED)")
     parser.add_argument("--data", default=DATASET_DIR, help="dataset folder (overrides DATASET_DIR)")
     parser.add_argument("--samples", type=models.samples_argument, default=MAX_SAMPLES,
                         help="first N test samples to evaluate; -1 = all (default: MAX_SAMPLES)")
     parser.add_argument("--every", type=models.positive_argument, default=1000,
                         help="print progress every N samples (default 1000)")
-    parser.add_argument("--parallel", type=models.positive_argument, default=PARALLEL,
-                        help="samples processed at once: when recording (default: N-MNIST 50, "
-                             "gesture 2) and per hardware evaluation step (default: one recorded file)")
+    parser.add_argument("--parallel", type=models.positive_argument,
+                        help="samples processed at once, for every model: when recording and per "
+                             "hardware evaluation step (default: PARALLEL)")
     parser.add_argument("--recordings", default=RECORDING_DIR, help="folder of recorded forward passes")
     parser.add_argument("--rerecord", action="store_true", help="record the forward pass again")
     args = parser.parse_args()
 
-    results = evaluate(args.model, ARCHITECTURES, data_dir=args.data,
-                       recording_dir=args.recordings,
-                       max_samples=args.samples,
-                       parallel=args.parallel, rerecord=args.rerecord, log_every=args.every)
-    print(format_results(results, METRICS))
-    for row in export(results, ARCHITECTURES, args.model, METRICS, LOG_DIR):
-        print(f"saved {row['result_json']}")
+    architectures = OURWORK + (LITERATURE if args.literature else [])
+    all_results = {}
+    for model in args.model:
+        parallel = args.parallel or PARALLEL.get(model)
+        results = evaluate(model, architectures, data_dir=args.data,
+                           recording_dir=args.recordings,
+                           max_samples=args.samples,
+                           parallel=parallel, rerecord=args.rerecord, log_every=args.every)
+        print(format_results(results, METRICS))
+        for row in export(results, architectures, model, METRICS, LOG_DIR):
+            print(f"saved {row['result_json']}")
+        all_results[model] = results
+    print(summary(all_results))
 
 
 if __name__ == "__main__":

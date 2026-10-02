@@ -4,7 +4,8 @@
     python tools/latex_table.py --out paper/table.tex --logs logs
 
 The table holds the LITERATURE rows (published numbers; none by default),
-then one row per architecture of run.py's ARCHITECTURES (or --architectures),
+then one row per architecture of run.py's ARCHITECTURES that has results
+(or per --architectures),
 named after it, and last, after a rule, the architectures of run.py's
 OURWORK. Every architecture row gets its results per dataset (N-MNIST, DVS
 Gesture and, if run, CIFAR-10; --datasets to choose) from
@@ -274,7 +275,12 @@ def main():
         parser.error(f"no results in {summary}: run python run.py --model nmnist and "
                      "--model gesture first (or pass --logs)")
     runs = load_results(summary)
-    rows = LITERATURE + architecture_rows(architectures, getattr(run, "OURWORK", []))
+    ourwork = getattr(run, "OURWORK", [])
+    ours = {a.name for a in ourwork}
+    evaluated = {architecture for _, architecture in runs}
+    if not args.architectures:     # leave out macros not evaluated (python run.py --literature)
+        architectures = [a for a in architectures if a.name in ours or a.name in evaluated]
+    rows = LITERATURE + architecture_rows(architectures, ourwork)
     models = args.datasets or [m for m in MODELS
                                if any(key[0] == m for key in runs) or any(r.get(m) for r in rows)]
     table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr),

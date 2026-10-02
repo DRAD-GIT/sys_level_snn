@@ -1,6 +1,6 @@
 """Published resistive-memory CIM macros, modelled in the engine so that they
-run the same recorded workloads (N-MNIST, DVS Gesture) as our designs.
-run.py evaluates them with its ARCHITECTURES (list LITERATURE).
+run the same recorded workloads as our designs. `python run.py --literature`
+evaluates the ones listed in COMPARED (at the end of this file) next to our work.
 
     python literature_macros.py      # checks every macro against its paper
 
@@ -400,6 +400,10 @@ ESSERC24_RRAM = compose(
 )
 
 LITERATURE_MACROS = [DS_CIM, TD_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
+
+# The macros `python run.py --literature` evaluates next to our work (edit to
+# choose; every macro above stays defined and checked against its paper).
+COMPARED = [DS_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
 
 
 # ============================================================================
