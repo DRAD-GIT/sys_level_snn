@@ -1,7 +1,8 @@
 """Comparison with other neuromorphic designs, in the style of DS-CIM's Table III
 (Fu et al., TCAS-I 2024): one column per work, rows for its publication,
-technology and implementation, then its accuracy and energy per sample on
-N-MNIST, IBM DVS Gesture and CIFAR-10.
+technology and implementation, the datasets it evaluated (of N-MNIST, IBM DVS
+Gesture and CIFAR-10), and for each metric its values on those datasets in
+the same order ("a / b / c"; NA where not reported).
 
     python tools/neuromorphic_table.py               # -> logs/neuromorphic_table.tex
     python tools/neuromorphic_table.py --out paper/Chapters/neuromorphic_table.tex
@@ -9,12 +10,12 @@ N-MNIST, IBM DVS Gesture and CIFAR-10.
 The literature columns hold each paper's reported numbers (WORKS below, as
 LaTeX strings; edit them there). Our columns are filled from run.py's results
 (logs/comparison_summary.csv): for every architecture of run.py's OURWORK, its
-accuracy and energy per inference on each dataset (the latest configuration,
-its run with the most samples). Sources and caveats are in
+accuracy, energy, latency, power and TOPS/W per inference on each dataset
+(the latest configuration, its run with the most samples). Sources and caveats are in
 docs/literature_shortlist.md.
 
 Include the output with \\input{neuromorphic_table}; the preamble needs
-booktabs and adjustbox.
+booktabs, makecell and adjustbox.
 """
 import argparse
 import os
@@ -25,46 +26,47 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import latex_table  # noqa: E402
 
-# Datasets (rows), in order: (key in the literature numbers, run.py model, heading).
-DATASETS = (("nmnist", "nmnist", "N-MNIST"),
-            ("gesture", "gesture", "IBM DVS Gesture"),
-            ("cifar10", "cifar10_thermo", "CIFAR-10"))
+# Our datasets: (run.py model, name in the table).
+DATASETS = (("nmnist", "N-MNIST"), ("gesture", "IBM DVS Gesture"), ("cifar10_thermo", "CIFAR-10"))
+# The metric rows, in order: (key, row label).
+METRICS = (("accuracy", "Accuracy"), ("energy", "Energy / sample"), ("latency", "Latency / sample"),
+           ("power", "Power"), ("tops_per_w", "TOPS/W"))
 
-# Reported numbers, as written in each paper (LaTeX strings; "--" = not
-# reported). Footnote marks refer to FOOTNOTES.
+# Each work's reported numbers, per dataset it evaluated (of N-MNIST, IBM DVS
+# Gesture and CIFAR-10), as written in the paper (LaTeX strings; a metric not
+# reported is left out and shows as NA). Footnote marks refer to FOOTNOTES.
 WORKS = [
     {"name": "Memristive SNN", "publication": r"arXiv'25$^{\P}$", "technology": "180nm",
      "memory": "RRAM", "impl": "Mixed signal", "silicon": "Measured",
-     "accuracy": {"nmnist": r"94.73\%", "gesture": r"93.06\%"},
-     "energy": {"nmnist": r"1.78\,$\mu$J", "gesture": r"1.94\,$\mu$J"}},
+     "results": {"N-MNIST": {"accuracy": r"94.73\%", "energy": r"1.78\,$\mu$J"},
+                 "IBM DVS Gesture": {"accuracy": r"93.06\%", "energy": r"1.94\,$\mu$J",
+                                     "latency": r"44.31\,$\mu$s", "power": r"43.83\,mW"}}},
     {"name": "ANP-I", "publication": "JSSC'24", "technology": "28nm",
      "memory": "SRAM", "impl": r"Digital$^{\ddagger}$", "silicon": "Measured",
-     "accuracy": {"nmnist": r"96.0\%$^{\dagger}$", "gesture": r"92.0\%$^{*}$"},
-     "energy": {"nmnist": r"343\,nJ$^{\dagger}$", "gesture": r"3.9\,$\mu$J$^{*}$"}},
+     "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": "343\\,nJ"},
+                 r"IBM DVS Gesture$^{*}$": {"accuracy": r"92.0\%", "energy": r"3.9\,$\mu$J"}}},
     {"name": "ReckOn", "publication": "ISSCC'22", "technology": "28nm FDSOI",
      "memory": "SRAM", "impl": r"Digital$^{\ddagger}$", "silicon": "Measured",
-     "accuracy": {"gesture": r"87.3\%$^{*}$"},
-     "energy": {"gesture": r"46.1\,$\mu$J$^{*}$"}},
+     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": r"46.1\,$\mu$J",
+                                            "power": r"77\,$\mu$W"}}},
     {"name": "DS-CIM", "publication": "TCAS-I'24", "technology": "40nm",
      "memory": "SOT-MRAM", "impl": "Mixed signal", "silicon": "Simulated",
-     "accuracy": {"gesture": r"90.00\%$^{*}$"},
-     "energy": {"gesture": r"729.3\,nJ$^{*}$"}},
+     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": "729.3\\,nJ",
+                                            "latency": r"40.46\,$\mu$s"}}},
     {"name": "TrueNorth", "publication": "CVPR'17", "technology": "28nm",
      "memory": "SRAM", "impl": "Digital", "silicon": "Measured",
-     "accuracy": {"gesture": r"96.5\%"},
-     "energy": {"gesture": r"18.8\,mJ$^{\parallel}$"}},
+     "results": {"IBM DVS Gesture": {"accuracy": r"96.5\%", "energy": r"18.8\,mJ$^{\parallel}$",
+                                     "latency": "105\\,ms", "power": "178.8\\,mW"}}},
     {"name": "Han et al.", "publication": "TCAS-I'22", "technology": "65nm",
      "memory": "ReRAM", "impl": "Mixed signal", "silicon": "Simulated",
-     "accuracy": {"cifar10": r"88\%"},
-     "energy": {"cifar10": r"21.74\,$\mu$J"}},
+     "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": r"21.74\,$\mu$J",
+                              "tops_per_w": "14.12"}}},
     {"name": "Neuro-CIM", "publication": "JSSC'23", "technology": "28nm",
      "memory": "SRAM", "impl": "Mixed signal", "silicon": "Measured",
-     "accuracy": {"cifar10": r"92.1\%"},
-     "energy": {"cifar10": r"0.72\,$\mu$J"}},
+     "results": {"CIFAR-10": {"accuracy": r"92.1\%", "energy": r"0.72\,$\mu$J"}}},
     {"name": "Yan et al.", "publication": "VLSI'19", "technology": "150nm",
      "memory": "RRAM", "impl": "Mixed signal", "silicon": "Measured",
-     "accuracy": {"cifar10": r"95.9\%$^{\S}$"},
-     "energy": {}},
+     "results": {"CIFAR-10": {"accuracy": r"95.9\%$^{\S}$"}}},
 ]
 
 # Our columns: run.py architecture name -> column heading.
@@ -73,32 +75,42 @@ OUR_SPECS = {"publication": r"\textbf{This work}", "technology": "40nm", "memory
              "impl": "Mixed signal", "silicon": "Simulated"}
 
 FOOTNOTES = [
-    r"$^{*}$ IBM DVS Gesture downscaled to $16\times16$, 10 classes (ours: $128\times128$, 11 classes).",
-    r"$^{\dagger}$ N-MNIST downscaled to $2\times17\times17$ (ours: $2\times34\times34$).",
+    r"$^{*}$ Downscaled to $16\times16$, 10 classes (ours: $128\times128$, 11 classes).",
+    r"$^{\dagger}$ Downscaled to $2\times17\times17$ (ours: $2\times34\times34$).",
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Relative to its binarized software network.",
     r"$^{\P}$ Preprint.",
-    r"$^{\parallel}$ Reported power (178.8\,mW) $\times$ latency (105\,ms).",
+    r"$^{\parallel}$ Reported power $\times$ latency.",
     r"This work: 6-bit weights; CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
 LABEL = "table:neuromorphic"
 
 
-def energy_text(nj):
-    """Energy per inference in nJ -> LaTeX with a fitting unit (3 significant digits)."""
-    for limit, unit, div in ((1e3, "nJ", 1.0), (1e6, r"$\mu$J", 1e3), (float("inf"), "mJ", 1e6)):
-        if nj < limit:
-            return f"{nj / div:#.3g}".rstrip(".") + f"\\,{unit}"
+def _unit(value, units):
+    """value in the first unit of `units` [(name, factor to the next)] -> LaTeX, 3 digits."""
+    for name, step in units:
+        if abs(value) < step or name == units[-1][0]:
+            return f"{value:#.3g}".rstrip(".") + f"\\,{name}"
+        value /= step
+
+
+def our_values(row):
+    """A comparison_summary.csv row -> {metric: LaTeX} (energy nJ, latency us, power mW)."""
+    return {"accuracy": f"{float(row['accuracy']):.2f}\\%",
+            "energy": _unit(float(row["energy"]), [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
+            "latency": _unit(float(row["latency"]), [(r"$\mu$s", 1e3), ("ms", 1e3), ("s", 1)]),
+            "power": _unit(float(row["power"]), [("mW", 1e3), ("W", 1)]),
+            "tops_per_w": f"{float(row['tops_per_w']):#.3g}".rstrip(".")}
 
 
 def our_columns(runs, architectures, warn=print):
-    """Our columns from run.py's results: {heading, specs..., accuracy, energy}."""
+    """Our columns from run.py's results (the latest configuration of each
+    architecture, its run with the most samples), per dataset with results."""
     columns = []
     for name in architectures:
-        column = {"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
-                  "accuracy": {}, "energy": {}}
-        for key, model, _ in DATASETS:
+        results = {}
+        for model, dataset in DATASETS:
             rows = runs.get((model, name))
             if not rows:
                 warn(f"warning: no results for {name} on {model}: run python run.py --model {model}")
@@ -108,37 +120,49 @@ def our_columns(runs, architectures, warn=print):
             if int(best["samples"]) < latex_table.FULL_TEST_SET.get(model, 0):
                 warn(f"warning: {name} on {model}: {best['samples']} of "
                      f"{latex_table.FULL_TEST_SET[model]} test samples")
-            column["accuracy"][key] = f"{float(best['accuracy']):.2f}\\%"
-            column["energy"][key] = energy_text(float(best["energy"]))
-        columns.append(column)
+            results[dataset] = our_values(best)
+        columns.append({"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
+                        "results": results, "ours": True})
     return columns
+
+
+def _stack(values):
+    """Values of one cell, one per dataset: "a", or a makecell of "a" / "/ b" / ..."""
+    if len(values) == 1:
+        return values[0]
+    return r"\makecell{" + r" \\ ".join([values[0]] + [f"/ {v}" for v in values[1:]]) + "}"
 
 
 def build_table(columns):
     n = len(columns)
-    ours = [i for i, c in enumerate(columns) if c.get("publication") == OUR_SPECS["publication"]]
     lines = [r"\begin{table*}[t]", r"\centering", r"\footnotesize",
              f"\\caption{{{CAPTION}}}", f"\\label{{{LABEL}}}",
+             r"\renewcommand{\arraystretch}{1.15}",
              r"\begin{adjustbox}{max width=\textwidth}",
              f"\\begin{{tabular}}{{@{{}}l*{{{n}}}{{c}}@{{}}}}", r"\toprule"]
 
-    def row(label, cells, bold=False):
-        cells = [f"\\textbf{{{c}}}" if bold else c for c in cells]
-        return f"\\textbf{{{label}}} & " + " & ".join(cells) + r" \\"
+    def row(label, cells):
+        lines.append(f"\\textbf{{{label}}} & " + " & ".join(cells) + r" \\")
 
-    lines.append(row("Name", [c["name"] for c in columns], bold=True))
-    lines.append(row("Publication", [c["publication"] for c in columns]))
+    row("Name", [f"\\textbf{{{c['name']}}}" for c in columns])
+    row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
                        ("impl", "Implementation"), ("silicon", "Silicon")):
-        lines.append(row(label, [c[key] for c in columns]))
-    for quantity, label in (("accuracy", "Accuracy"), ("energy", "Energy / sample")):
+        row(label, [c[key] for c in columns])
+    lines.append(r"\midrule")
+    row("Datasets", [_stack(list(c["results"])) for c in columns])
+    for key, label in METRICS:
         lines.append(r"\midrule")
-        lines.append(f"\\multicolumn{{{n + 1}}}{{@{{}}l}}{{\\textbf{{{label}}}}} \\\\")
-        for key, _, heading in DATASETS:
-            cells = [c[quantity].get(key, "--") for c in columns]
-            cells = [f"\\textbf{{{v}}}" if i in ours and v != "--" else v for i, v in enumerate(cells)]
-            lines.append(f"\\quad {heading} & " + " & ".join(cells) + r" \\")
+        cells = []
+        for c in columns:
+            values = [r.get(key, "NA") for r in c["results"].values()]
+            if all(v == "NA" for v in values):
+                cells.append("NA")
+            else:
+                cell = _stack(values)
+                cells.append(f"\\textbf{{{cell}}}" if c.get("ours") and len(values) == 1 else cell)
+        row(label, cells)
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}",
               r"\par\smallskip\raggedright\scriptsize",
               " \\\\\n".join(FOOTNOTES), r"\end{table*}", ""]

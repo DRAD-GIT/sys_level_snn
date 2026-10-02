@@ -55,8 +55,8 @@ class PublishTableTests(unittest.TestCase):
         pushed = git(self.remote, "show", "main:Chapters/comparison_table.tex")
         self.assertEqual(pushed, table)
         neuromorphic = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
-        self.assertIn(r"\textbf{88.28\%}", neuromorphic)            # our CIFAR-10 accuracy
-        self.assertIn(r"\textbf{39.0\,$\mu$J}", neuromorphic)      # our CIFAR-10 energy
+        self.assertIn(r"\makecell{96.80\% \\ / 88.28\%}", neuromorphic)   # our accuracies
+        self.assertIn(r"/ 39.0\,$\mu$J}", neuromorphic)                     # our CIFAR-10 energy
         self.assertIn("DS-CIM", neuromorphic)
         commits = git(self.remote, "rev-list", "--count", "main")
         run.publish_table(run.OURWORK, ["nmnist", "cifar10_thermo"], repo=self.paper,
