@@ -15,12 +15,15 @@
     python run.py                       # our work, on every dataset in MODELS
     python run.py --literature          # also the published macros (literature_macros.COMPARED)
     python run.py --model cifar10_thermo
+    python run.py --table               # then write the paper's table, commit and push it
 
 Command-line flags override the settings for one run. Results: printed, and
 saved under logs/ (a JSON per architecture and logs/comparison_summary.csv).
 """
 import argparse
 import os
+import subprocess
+import sys
 
 import crossbars
 import literature_macros
@@ -152,6 +155,15 @@ METRICS = {
 
 LOG_DIR = os.path.join(ROOT, "logs")
 
+# ============================================================================
+# 6. THE PAPER TABLE (--table)
+# ============================================================================
+# A clone of the paper repository (default: next to this repository) and the
+# table's path in it. --table writes the table there (tools/latex_table.py)
+# for every dataset in MODELS with results, commits and pushes it.
+PAPER_REPO = os.path.join(os.path.dirname(ROOT), "C3CIM_journal_TCAS_v1")
+PAPER_TABLE = os.path.join("Chapters", "comparison_table.tex")
+
 
 def summary(all_results):
     """One line per model and architecture: the network totals."""
@@ -164,6 +176,49 @@ def summary(all_results):
             lines.append(f"{model:<16}{name:<26}{accuracy:>11.2f}{t['energy']:>12.4g}"
                          f"{t['latency']:>12.4g}{t['power']:>10.4g}{t['tops_per_w']:>9.4g}")
     return "\n".join(lines)
+
+
+def _git(repo, *args, check=True):
+    return subprocess.run(["git", "-C", repo, *args], check=check, text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def publish_table(architectures, models_order, repo=PAPER_REPO, path=PAPER_TABLE,
+                  logs_dir=LOG_DIR, push=True):
+    """Write the comparison table into the paper repository `repo` (updated
+    first with git pull), then commit and push it if it changed. The columns
+    are the datasets in `models_order` that have results; the rows the
+    `architectures` (our work last). Returns the table's path."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import latex_table
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        raise SystemExit(f"--table: no git clone of the paper repository at {repo}; clone it "
+                         "there (git clone https://github.com/DRAD-GIT/C3CIM_journal_TCAS_v1.git) "
+                         "or set PAPER_REPO in run.py")
+    pulled = _git(repo, "pull", "--ff-only", check=False)
+    if pulled.returncode:
+        raise SystemExit(f"--table: git pull in {repo} failed:\n{pulled.stdout}")
+    runs = latex_table.load_results(os.path.join(logs_dir, "comparison_summary.csv"))
+    names = {a.name for a in architectures}
+    models_ = [m for m in dict.fromkeys(models_order)
+               if any(model == m and arch in names for model, arch in runs)]
+    table = latex_table.make_table(architectures, OURWORK, logs_dir, models_)
+    out = os.path.join(repo, path)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as file:
+        file.write(table)
+    print(f"saved {out} ({', '.join(models_)})")
+    _git(repo, "add", path)
+    if _git(repo, "diff", "--cached", "--quiet", "--", path, check=False).returncode == 0:
+        print("the table is unchanged: nothing to commit")
+        return out
+    _git(repo, "commit", "-m", f"Comparison table ({', '.join(models_)}) from sys_level_snn", "--", path)
+    if push:
+        pushed = _git(repo, "push", check=False)
+        if pushed.returncode:
+            raise SystemExit(f"--table: committed, but git push failed:\n{pushed.stdout}")
+        print(f"pushed the table to the paper repository ({repo})")
+    return out
 
 
 def main():
@@ -183,6 +238,10 @@ def main():
                              "hardware evaluation step (default: PARALLEL)")
     parser.add_argument("--recordings", default=RECORDING_DIR, help="folder of recorded forward passes")
     parser.add_argument("--rerecord", action="store_true", help="record the forward pass again")
+    parser.add_argument("--table", action="store_true",
+                        help="then write the paper's comparison table into PAPER_REPO, commit and "
+                             "push it (the evaluated architectures, every dataset with results)")
+    parser.add_argument("--paper", default=PAPER_REPO, help="paper repository clone (default: PAPER_REPO)")
     args = parser.parse_args()
 
     architectures = OURWORK + (LITERATURE if args.literature else [])
@@ -198,6 +257,8 @@ def main():
             print(f"saved {row['result_json']}")
         all_results[model] = results
     print(summary(all_results))
+    if args.table:
+        publish_table(architectures, MODELS + args.model, repo=args.paper)
 
 
 if __name__ == "__main__":
