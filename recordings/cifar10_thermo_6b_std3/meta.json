@@ -1,0 +1,427 @@
+{
+  "format": 1,
+  "model": "cifar10_thermo",
+  "weight_bits": 6,
+  "weight_scaling": "std3",
+  "fingerprint": "1027f06088ee0144eeba57c55394b7d1e7e802304727a74fe92c6dfedd35eb33",
+  "layers": [
+    "SC1",
+    "SC2",
+    "SC3",
+    "SC4",
+    "SC5",
+    "SC6",
+    "SC7",
+    "SC8",
+    "SF1"
+  ],
+  "samples": 10000,
+  "complete": true,
+  "full_outputs": false,
+  "accuracy": 10.0,
+  "chunks": [
+    {
+      "file": "chunk_000000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_000900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_001900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_002900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_003900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_004900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_005900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_006900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_007900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_008900.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009000.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009100.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009200.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009300.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009400.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009500.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009600.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009700.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009800.npz",
+      "samples": 100
+    },
+    {
+      "file": "chunk_009900.npz",
+      "samples": 100
+    }
+  ],
+  "finished": true,
+  "recorded": "2026-10-02 01:59:19",
+  "seconds": 84.7
+}
