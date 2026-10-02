@@ -1,0 +1,100 @@
+{
+  "format": 1,
+  "model": "nmnist17",
+  "weight_bits": 6,
+  "weight_scaling": "std3",
+  "fingerprint": "e852148f55e5cc0bac8ce7158caf536727f5df97d2df00855dad833bde3bf82d",
+  "layers": [
+    "SF1",
+    "SF2"
+  ],
+  "samples": 10000,
+  "complete": true,
+  "full_outputs": false,
+  "accuracy": 96.65,
+  "chunks": [
+    {
+      "file": "chunk_000000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_000500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_001000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_001500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_002000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_002500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_003000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_003500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_004000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_004500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_005000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_005500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_006000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_006500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_007000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_007500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_008000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_008500.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_009000.npz",
+      "samples": 500
+    },
+    {
+      "file": "chunk_009500.npz",
+      "samples": 500
+    }
+  ],
+  "finished": true,
+  "recorded": "2026-10-02 19:09:42",
+  "seconds": 4.7
+}
