@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "model": "gesture16",
+  "weight_bits": 6,
+  "weight_scaling": "std3",
+  "fingerprint": "c3efe0775b4f709e3cc0d8874ade5f11bde72f42809320f08aa94cda926fc5ac",
+  "layers": [
+    "SF1",
+    "SF2"
+  ],
+  "samples": 240,
+  "complete": true,
+  "full_outputs": false,
+  "accuracy": 88.75,
+  "chunks": [
+    {
+      "file": "chunk_000000.npz",
+      "samples": 50
+    },
+    {
+      "file": "chunk_000050.npz",
+      "samples": 50
+    },
+    {
+      "file": "chunk_000100.npz",
+      "samples": 50
+    },
+    {
+      "file": "chunk_000150.npz",
+      "samples": 50
+    },
+    {
+      "file": "chunk_000200.npz",
+      "samples": 40
+    }
+  ],
+  "finished": true,
+  "recorded": "2026-10-02 17:55:13",
+  "seconds": 2.5
+}
