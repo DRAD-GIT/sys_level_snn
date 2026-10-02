@@ -1,0 +1,20 @@
+# N-MNIST downscaled to 17x17 (models/nmnist17.py), as ANP-I (JSSC'24) uses:
+# 2x2 sensor blocks, the first 100 ms of each sample; LIF neurons.
+simulation:
+    Ts: 10.0         # ms per time step (a multiple of 5 ms): 1 where a 2x2 block had an event
+    tSample: 100     # ms of the sample evaluated (its first 100 ms): 10 time steps
+network:
+    hidden: 512      # neurons in the hidden layer (578 inputs - hidden - 10)
+neuron:
+    type:  LIF
+    theta: 1.0       # firing threshold (soft reset subtracts it)
+    beta:  0.9       # membrane decay per time step
+    alpha: 2.0       # surrogate-gradient sharpness (training only)
+training:
+    path:
+        # N-MNIST (as for models/nmnist.yaml), relative to the dataset folder
+        # found from run.py's DATASET_DIR.
+        dir_train:  Train/
+        dir_test:   Test/
+        list_train: Train.txt
+        list_test:  Test.txt

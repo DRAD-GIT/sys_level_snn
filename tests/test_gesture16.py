@@ -63,3 +63,33 @@ class Gesture16Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NMNIST17Tests(unittest.TestCase):
+    def test_blocks_window_and_folding(self):
+        from models.nmnist17 import NMNIST17Dataset, NMNIST17Network, fine_spikes
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "Test"))
+            # Two events: (x 5, y 3, p 1, 2 ms) -> block (2, 1), bin 0; (33, 33, p 0, 27 ms) -> (16, 16), bin 5.
+            raw = np.zeros((2, 5), np.uint8)
+            for row, (x, y, p, t_us) in enumerate(((5, 3, 1, 2000), (33, 33, 0, 27000))):
+                raw[row] = (x, y, (p << 7) | ((t_us >> 16) & 0x7F), (t_us >> 8) & 0xFF, t_us & 0xFF)
+            raw.tofile(os.path.join(root, "Test", "00007.bin"))
+            with open(os.path.join(root, "Test.txt"), "w") as file:
+                file.write("7 4\n8 1\n")               # sample 8 has no file: skipped
+            fine = fine_spikes(os.path.join(root, "Test", "00007.bin"), 100)
+            self.assertEqual(fine.shape, (2, 17, 17, 20))
+            self.assertEqual((int(fine[1, 1, 2, 0]), int(fine[0, 16, 16, 5])), (1, 1))
+            data = NMNIST17Dataset(os.path.join(root, "Test") + os.sep,
+                                   os.path.join(root, "Test.txt"), 10.0, 100)
+            self.assertEqual(len(data), 1)
+            _, spikes, _, label = data[0]
+            self.assertEqual((tuple(spikes.shape), label), ((2, 17, 17, 10), 4))
+            self.assertEqual(int(spikes[0, 16, 16, 2]), 1)  # 27 ms -> third 10 ms step
+        params = models.load_params(models.get_spec("nmnist17").path("models/nmnist17.yaml"))
+        net = NMNIST17Network(params, batchnorm=True).eval()
+        folded = NMNIST17Network(params)
+        folded.load_state_dict(net.folded_state_dict())
+        x = (torch.rand(2, 2, 17, 17, 10) < 0.2).float()
+        with torch.no_grad():
+            self.assertTrue(torch.equal(folded.eval()(x), net(x)))

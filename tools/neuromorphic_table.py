@@ -28,11 +28,11 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import latex_table  # noqa: E402
 
 # Our datasets: (run.py models, first with results used; name in the table).
-DATASETS = ((("nmnist",), "N-MNIST"),
+DATASETS = ((("nmnist17", "nmnist"), "N-MNIST"),
             (("gesture16", "gesture"), "IBM DVS Gesture"),
             (("cifar10_thermo",), "CIFAR-10"))
 # Marks after a dataset's name for our model on it (the downscaled Gesture).
-OUR_MARKS = {"gesture16": "$^{*}$"}
+OUR_MARKS = {"gesture16": "$^{*}$", "nmnist17": r"$^{\dagger}$"}
 # The metric rows, in order: (key, row label).
 METRICS = (("accuracy", "Accuracy"), ("energy", "Energy / sample"), ("latency", "Latency / sample"),
            ("power", "Power"), ("tops_per_w", "TOPS/W"))
@@ -86,7 +86,7 @@ FOOTNOTES = [
     f"Energy, latency, power and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
     "accuracy as reported.",
     r"$^{*}$ Downscaled to $16\times16$, 10 classes.",
-    r"$^{\dagger}$ Downscaled to $2\times17\times17$ (ours: $2\times34\times34$).",
+    r"$^{\dagger}$ Downscaled to $2\times17\times17$, first 100\,ms.",
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
@@ -157,6 +157,8 @@ def our_columns(runs, architectures, warn=print):
                      f"{latex_table.FULL_TEST_SET[model]} test samples")
             if model == "gesture" and "gesture16" in choices:
                 dataset += " (128$\\times$128, 11 classes)"
+            if model == "nmnist" and "nmnist17" in choices:
+                dataset += " (34$\\times$34)"
             results[dataset + OUR_MARKS.get(model, "")] = our_values(best)
         columns.append({"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
                         "date": (9999, 0), "results": results, "ours": True})
