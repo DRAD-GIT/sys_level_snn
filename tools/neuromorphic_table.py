@@ -72,9 +72,6 @@ WORKS = [
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
      "technology": "65nm", "memory": "ReRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": 21740, "tops_per_w": 14.12}}},
-    {"name": "Neuro-CIM", "publication": "JSSC'23", "date": (2023, 10), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "impl": "Mixed signal",
-     "results": {"CIFAR-10": {"accuracy": r"92.1\%", "energy": 720}}},
 ]
 
 # Our columns: run.py architecture name -> column heading.
