@@ -1,0 +1,18 @@
+# IBM DVS Gesture downscaled to 16x16, 10 classes (models/gesture16.py), the
+# version DS-CIM, ReckOn and ANP-I evaluate; LIF neurons (models/lif.py).
+simulation:
+    Ts: 50.0         # ms per time step: a step's input is 1 where its 8x8 block had an event
+    tSample: 1500    # ms of the gesture evaluated (its first 1.5 s): 30 time steps
+neuron:
+    type:  LIF
+    theta: 1.0       # firing threshold (soft reset subtracts it)
+    beta:  0.9       # membrane decay per time step
+    alpha: 2.0       # surrogate-gradient sharpness (training only)
+training:
+    path:
+        # IBM DVS Gesture (as for models/gesture.yaml), relative to the dataset
+        # folder found from run.py's DATASET_DIR.
+        dir_train:  DvsGestureNpy/
+        dir_test:   DvsGestureNpy/
+        list_train: DvsGesture/trials_to_train.txt
+        list_test:  DvsGesture/trials_to_test.txt

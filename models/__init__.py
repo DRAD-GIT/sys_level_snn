@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from .base import load_params
 
 MODEL_MODULES = {"nmnist": "models.nmnist", "gesture": "models.gesture", "cifar10": "models.cifar10",
-                 "cifar10_thermo": "models.cifar10_thermo"}
+                 "cifar10_thermo": "models.cifar10_thermo", "gesture16": "models.gesture16"}
 
 
 def load_tensors(path):

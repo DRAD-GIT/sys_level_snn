@@ -27,8 +27,12 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import latex_table  # noqa: E402
 
-# Our datasets: (run.py model, name in the table).
-DATASETS = (("nmnist", "N-MNIST"), ("gesture", "IBM DVS Gesture"), ("cifar10_thermo", "CIFAR-10"))
+# Our datasets: (run.py models, first with results used; name in the table).
+DATASETS = ((("nmnist",), "N-MNIST"),
+            (("gesture16", "gesture"), "IBM DVS Gesture"),
+            (("cifar10_thermo",), "CIFAR-10"))
+# Marks after a dataset's name for our model on it (the downscaled Gesture).
+OUR_MARKS = {"gesture16": "$^{*}$"}
 # The metric rows, in order: (key, row label).
 METRICS = (("accuracy", "Accuracy"), ("energy", "Energy / sample"), ("latency", "Latency / sample"),
            ("power", "Power"), ("tops_per_w", "TOPS/W"))
@@ -57,7 +61,7 @@ WORKS = [
     {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
      "technology": "28nm", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": 343},
-                 r"IBM DVS Gesture$^{*}$": {"accuracy": r"92.0\%", "energy": 3900}}},
+                 r"IBM DVS Gesture$^{\S}$": {"accuracy": r"92.0\%", "energy": 3900}}},
     {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
      "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": 46100, "power": 0.077}}},
@@ -81,10 +85,10 @@ OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40
 FOOTNOTES = [
     f"Energy, latency, power and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
     "accuracy as reported.",
-    r"$^{*}$ Downscaled to $16\times16$, 10 classes (ours: $128\times128$, 11 classes).",
+    r"$^{*}$ Downscaled to $16\times16$, 10 classes.",
     r"$^{\dagger}$ Downscaled to $2\times17\times17$ (ours: $2\times34\times34$).",
     r"$^{\ddagger}$ Embedded on-chip learning.",
-    r"$^{\S}$ Relative to its binarized software network.",
+    r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"This work: 6-bit weights; CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
 ]
@@ -138,17 +142,21 @@ def our_columns(runs, architectures, warn=print):
     columns = []
     for name in architectures:
         results = {}
-        for model, dataset in DATASETS:
-            rows = runs.get((model, name))
-            if not rows:
-                warn(f"warning: no results for {name} on {model}: run python run.py --model {model}")
+        for choices, dataset in DATASETS:
+            model = next((m for m in choices if runs.get((m, name))), None)
+            if model is None:
+                warn(f"warning: no results for {name} on {' or '.join(choices)}: run python run.py "
+                     f"--model {choices[0]}")
                 continue
+            rows = runs[(model, name)]
             config = rows[-1]["configuration"]
             best = max((r for r in rows if r["configuration"] == config), key=lambda r: int(r["samples"]))
             if int(best["samples"]) < latex_table.FULL_TEST_SET.get(model, 0):
                 warn(f"warning: {name} on {model}: {best['samples']} of "
                      f"{latex_table.FULL_TEST_SET[model]} test samples")
-            results[dataset] = our_values(best)
+            if model == "gesture" and "gesture16" in choices:
+                dataset += " (128$\\times$128, 11 classes)"
+            results[dataset + OUR_MARKS.get(model, "")] = our_values(best)
         columns.append({"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
                         "date": (9999, 0), "results": results, "ours": True})
     return columns

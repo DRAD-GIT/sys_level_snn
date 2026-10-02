@@ -1,0 +1,205 @@
+"""Train the 16x16, 10-class DVS Gesture SNN (models/gesture16.py) and save it
+as pretrained/gesture16.pth, with BatchNorm folded into the weights.
+
+    python tools/train_gesture16.py                       # dataset from run.py's DATASET_DIR
+    python tools/train_gesture16.py --epochs 100 --data /path/to/datasets
+    python tools/train_gesture16.py --resume              # continue from the last epoch
+
+Needs IBM DVS Gesture as for the gesture model (DvsGestureNpy/<trial>/<class>.npy
+and DvsGesture/trials_to_train.txt, trials_to_test.txt).
+
+Every gesture is read once and kept in memory downscaled to 2x16x16 at 10 ms
+resolution (cached in --work/data.pt for later runs). Training draws, each
+epoch, a random window of the evaluated length (tSample) from every training
+gesture, with a random shift of up to one input pixel, binned into time steps
+of Ts (models/gesture16.yaml); the test set uses each gesture's first window,
+exactly as the evaluation does. LIF neurons with an arctan surrogate gradient,
+BatchNorm after the hidden layer, Adam with a cosine learning rate, and a
+mean-squared error between the output firing rates and the one-hot label
+(--loss ce: cross-entropy on the output spike counts). The epoch with the
+best test accuracy is saved, folded, to the checkpoint; the run ends by
+evaluating it as run.py loads it.
+"""
+import argparse
+import os
+import sys
+import time
+
+import torch
+import torch.nn.functional as F
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+import models  # noqa: E402
+from models.gesture16 import CLASSES, FINE_MS, SPEC, fine_spikes, window  # noqa: E402
+
+KEEP_MS = 7000.0          # length of every gesture kept for drawing windows
+
+
+def read_split(root, paths, which, workers):
+    """{"spikes": uint8 [N, 2, 16, 16, KEEP_MS/FINE_MS], "labels", "active"
+    (bins up to the last event)} for the train or test trials."""
+    path = os.path.join(root, paths[f"dir_{which}"])
+    trials = [line.split()[0].split(".")[0]
+              for line in open(os.path.join(root, paths[f"list_{which}"])) if line.strip()]
+    files = [(f"{path}{t}/{c}.npy", c) for t in trials for c in range(CLASSES)]
+
+    class Files(torch.utils.data.Dataset):
+        def __len__(self):
+            return len(files)
+
+        def __getitem__(self, i):
+            return fine_spikes(files[i][0], KEEP_MS), files[i][1]
+
+    spikes, labels = [], []
+    loader = torch.utils.data.DataLoader(Files(), batch_size=32, num_workers=workers)
+    for tensor, label in loader:
+        spikes.append(tensor)
+        labels.append(label)
+    spikes, labels = torch.cat(spikes), torch.cat(labels)
+    events = spikes.flatten(1, 3).amax(1).bool()                # [N, bins]: any event
+    last = torch.where(events.any(1), events.shape[1] - 1 - events.flip(1).int().argmax(1),
+                       torch.zeros_like(labels))
+    return {"spikes": spikes, "labels": labels, "active": last + 1}
+
+
+def batch_windows(data, idx, steps, step_ms, train):
+    """Binary input windows [B, 2, 16, 16, steps]: the first (test) or a
+    random one within the gesture, shifted by up to one pixel (train)."""
+    out = []
+    span = int(round(steps * step_ms / FINE_MS))
+    for i in idx.tolist():
+        fine = data["spikes"][i]
+        start = 0
+        if train:
+            start = int(torch.randint(0, max(1, int(data["active"][i]) - span + 1), (1,)))
+        out.append(window(fine, start, steps, step_ms))
+    x = torch.stack(out)
+    if train:
+        dx, dy = (int(v) for v in torch.randint(-1, 2, (2,)))
+        x = torch.roll(x, (dy, dx), dims=(2, 3))
+        if dy:
+            x[:, :, 0 if dy > 0 else -1] = 0
+        if dx:
+            x[:, :, :, 0 if dx > 0 else -1] = 0
+    return x
+
+
+def rates(output):
+    return output.reshape(output.shape[0], output.shape[1], -1).mean(-1)
+
+
+def evaluate(net, data, steps, step_ms, device, batch=256):
+    net.eval()
+    correct = 0
+    with torch.no_grad():
+        for i in range(0, len(data["labels"]), batch):
+            idx = torch.arange(i, min(i + batch, len(data["labels"])))
+            x = batch_windows(data, idx, steps, step_ms, train=False).to(device)
+            correct += int((rates(net(x)).argmax(1).cpu() == data["labels"][idx]).sum())
+    return 100.0 * correct / len(data["labels"])
+
+
+def main():
+    import run
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--data", default=run.DATASET_DIR, help="dataset folder (default: run.py's)")
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=1e-3, help="initial learning rate (Adam)")
+    parser.add_argument("--loss", choices=("mse", "ce"), default="mse")
+    parser.add_argument("--work", default=os.path.join(ROOT, "logs", "gesture16_train"),
+                        help="folder for the data cache and training state")
+    parser.add_argument("--out", default=SPEC.path(SPEC.checkpoint),
+                        help="folded checkpoint (default: the model's pretrained file)")
+    parser.add_argument("--resume", action="store_true", help="continue from --work/last.pth")
+    parser.add_argument("--workers", type=int, default=4)
+    args = parser.parse_args()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    params = models.load_params(SPEC.path(SPEC.params_yaml))
+    step_ms = float(params["simulation"]["Ts"])
+    steps = int(round(params["simulation"]["tSample"] / step_ms))
+    root = models.find_dataset(SPEC, args.data)
+    os.makedirs(args.work, exist_ok=True)
+    cache = os.path.join(args.work, "data.pt")
+    if os.path.exists(cache):
+        train, test = torch.load(cache, weights_only=True).values()
+    else:
+        t0 = time.time()
+        paths = params["training"]["path"]
+        train = read_split(root, paths, "train", args.workers)
+        test = read_split(root, paths, "test", args.workers)
+        torch.save({"train": train, "test": test}, cache)
+        print(f"read the dataset in {time.time() - t0:.0f} s (cached in {cache})", flush=True)
+    print(f"DVS Gesture 16x16 from {root}: {len(train['labels'])} training, {len(test['labels'])} "
+          f"test gestures, {steps} time steps of {step_ms:g} ms, on {device}", flush=True)
+
+    net = SPEC.network_class(params, do_enable=True, batchnorm=True).to(device)
+    optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
+    start, best = 0, -1.0
+    if args.resume:
+        state = torch.load(os.path.join(args.work, "last.pth"), map_location=device, weights_only=True)
+        net.load_state_dict(state["net"])
+        optimizer.load_state_dict(state["optimizer"])
+        scheduler.load_state_dict(state["scheduler"])
+        start, best = state["epoch"] + 1, state["best"]
+        print(f"resumed after epoch {start}, best test accuracy so far {best:.2f}%", flush=True)
+
+    for epoch in range(start, args.epochs):
+        net.train()
+        t0, loss_sum, correct = time.time(), 0.0, 0
+        order = torch.randperm(len(train["labels"]))
+        for i in range(0, len(order), args.batch):
+            idx = order[i:i + args.batch]
+            x = batch_windows(train, idx, steps, step_ms, train=True).to(device)
+            y = train["labels"][idx].to(device)
+            r = rates(net(x))
+            if args.loss == "ce":
+                loss = F.cross_entropy(r * steps, y)
+            else:
+                loss = F.mse_loss(r, F.one_hot(y, CLASSES).float())
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+            loss_sum += loss.item() * len(idx)
+            correct += int((r.argmax(1) == y).sum())
+        scheduler.step()
+        accuracy = evaluate(net, test, steps, step_ms, device)
+        line = (f"epoch {epoch + 1}/{args.epochs}: loss {loss_sum / len(order):.4f}, "
+                f"train {100.0 * correct / len(order):.2f}%, lr {scheduler.get_last_lr()[0]:.2e}, "
+                f"{time.time() - t0:.0f} s, test {accuracy:.2f}%")
+        if accuracy > best:
+            best = accuracy
+            torch.save({"state_dict": net.state_dict(), "epoch": epoch, "test": accuracy},
+                       os.path.join(args.work, "best.pth"))
+            os.makedirs(os.path.dirname(args.out), exist_ok=True)
+            torch.save({"state_dict": {k: v.cpu() for k, v in net.folded_state_dict().items()}},
+                       args.out)
+            line += " (best, saved)"
+        print(line, flush=True)
+        torch.save({"net": net.state_dict(), "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(), "epoch": epoch, "best": best},
+                   os.path.join(args.work, "last.pth"))
+
+    if not os.path.exists(args.out):
+        print(f"nothing saved to {args.out}")
+        return
+    # The saved checkpoint, as run.py builds it, on the evaluation's own test set.
+    folded = SPEC.network_class(params)
+    folded.load_state_dict(models.load_tensors(args.out)["state_dict"])
+    folded = folded.to(device).eval()
+    loader = models.test_loader(SPEC, params, args.data, parallel=100, num_workers=args.workers)
+    correct = total = 0
+    with torch.no_grad():
+        for _, spikes, _, label in loader:
+            correct += int((rates(folded(spikes.to(device))).argmax(1).cpu() == label).sum())
+            total += len(label)
+    print(f"saved {args.out}: test accuracy {100.0 * correct / total:.2f}% "
+          f"(best epoch {best:.2f}% in training)")
+    print("next: python tools/accuracy_sweep.py --model gesture16 --bits 6 float")
+
+
+if __name__ == "__main__":
+    main()

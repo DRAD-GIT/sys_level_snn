@@ -56,12 +56,15 @@ LITERATURE = []
 # The specification columns, in order: an architecture's specs (all but its label).
 SPEC_KEYS = tuple(key for key in architecture.SPEC_KEYS if key != "label")
 # Datasets that can have a column group, in table order, with their headings.
-MODELS = ("nmnist", "gesture", "cifar10", "cifar10_thermo")
-HEADINGS = {"nmnist": "N-MNIST", "gesture": "IBM DVS128 Gesture", "cifar10": "CIFAR-10",
+MODELS = ("nmnist", "gesture", "gesture16", "cifar10", "cifar10_thermo")
+HEADINGS = {"nmnist": "N-MNIST", "gesture": "IBM DVS128 Gesture",
+            "gesture16": r"IBM DVS Gesture ($16\times16$)", "cifar10": "CIFAR-10",
             "cifar10_thermo": "CIFAR-10"}
-CAPTION_NAMES = {"nmnist": "N-MNIST", "gesture": "IBM-Gesture", "cifar10": "CIFAR-10",
+CAPTION_NAMES = {"nmnist": "N-MNIST", "gesture": "IBM-Gesture", "gesture16": "IBM-Gesture",
+                 "cifar10": "CIFAR-10",
                  "cifar10_thermo": "CIFAR-10"}
-FULL_TEST_SET = {"nmnist": 10000, "gesture": 264, "cifar10": 10000, "cifar10_thermo": 10000}
+FULL_TEST_SET = {"nmnist": 10000, "gesture": 264, "gesture16": 240, "cifar10": 10000,
+                 "cifar10_thermo": 10000}
 DEFAULT_MODELS = ("nmnist", "gesture")
 # ============================================================================
 
