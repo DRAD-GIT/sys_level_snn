@@ -249,6 +249,21 @@ def build_table(rows, runs, warn=print, models=DEFAULT_MODELS):
     return re.sub(r" +\n", "\n", table)
 
 
+def make_table(architectures, ourwork, logs_dir, models=None, warn=print):
+    """The LaTeX table from <logs_dir>/comparison_summary.csv: the LITERATURE
+    rows, then a row per architecture (those in `ourwork` last), with a
+    column group per dataset in `models` (default: every dataset with
+    results or literature numbers)."""
+    summary = os.path.join(logs_dir, "comparison_summary.csv")
+    if not os.path.exists(summary):
+        raise FileNotFoundError(f"no results in {summary}: run python run.py first")
+    runs = load_results(summary)
+    rows = LITERATURE + architecture_rows(architectures, ourwork)
+    models = models or [m for m in MODELS
+                        if any(key[0] == m for key in runs) or any(r.get(m) for r in rows)]
+    return build_table(rows, runs, warn=warn, models=models or list(DEFAULT_MODELS))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--logs", default=os.path.join(ROOT, "logs"),
@@ -272,19 +287,14 @@ def main():
         architectures = [known[n] for n in args.architectures]
     summary = os.path.join(args.logs, "comparison_summary.csv")
     if not os.path.exists(summary):
-        parser.error(f"no results in {summary}: run python run.py --model nmnist and "
-                     "--model gesture first (or pass --logs)")
-    runs = load_results(summary)
+        parser.error(f"no results in {summary}: run python run.py first (or pass --logs)")
     ourwork = getattr(run, "OURWORK", [])
     ours = {a.name for a in ourwork}
-    evaluated = {architecture for _, architecture in runs}
+    evaluated = {architecture for _, architecture in load_results(summary)}
     if not args.architectures:     # leave out macros not evaluated (python run.py --literature)
         architectures = [a for a in architectures if a.name in ours or a.name in evaluated]
-    rows = LITERATURE + architecture_rows(architectures, ourwork)
-    models = args.datasets or [m for m in MODELS
-                               if any(key[0] == m for key in runs) or any(r.get(m) for r in rows)]
-    table = build_table(rows, runs, warn=lambda text: print(text, file=sys.stderr),
-                        models=models or list(DEFAULT_MODELS))
+    table = make_table(architectures, ourwork, args.logs, args.datasets,
+                       warn=lambda text: print(text, file=sys.stderr))
     out = args.out or os.path.join(args.logs, "comparison_table.tex")
     with open(out, "w", encoding="utf-8") as file:
         file.write(table)
