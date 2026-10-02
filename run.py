@@ -45,7 +45,8 @@ MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 # the batch when recording and the samples per hardware evaluation step.
 # Models not listed use their defaults (recording: the model's batch_size;
 # hardware evaluation: one recorded file per step). --parallel N sets all.
-PARALLEL = {"nmnist": 250, "gesture": 20, "cifar10_thermo": 100}
+#PARALLEL = {"nmnist": 250, "gesture": 20, "cifar10_thermo": 100}
+PARALLEL = {"nmnist": 1000, "gesture": 264, "cifar10_thermo": 500}
 # Recorded forward passes (layer inputs and outputs), reused across runs.
 RECORDING_DIR = os.path.join(ROOT, "recordings")   # in the repository, committed with git
 
