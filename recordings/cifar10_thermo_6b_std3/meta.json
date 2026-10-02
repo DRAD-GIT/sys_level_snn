@@ -3,7 +3,7 @@
   "model": "cifar10_thermo",
   "weight_bits": 6,
   "weight_scaling": "std3",
-  "fingerprint": "1027f06088ee0144eeba57c55394b7d1e7e802304727a74fe92c6dfedd35eb33",
+  "fingerprint": "8934ae0ff7eb08a32c7837b714a72f0a433660cd9915f2ef58e0409fc8bc1ee4",
   "layers": [
     "SC1",
     "SC2",
@@ -18,7 +18,7 @@
   "samples": 10000,
   "complete": true,
   "full_outputs": false,
-  "accuracy": 10.0,
+  "accuracy": 88.28,
   "chunks": [
     {
       "file": "chunk_000000.npz",
@@ -422,6 +422,6 @@
     }
   ],
   "finished": true,
-  "recorded": "2026-10-02 01:59:19",
-  "seconds": 84.7
+  "recorded": "2026-10-02 02:15:37",
+  "seconds": 94.9
 }
