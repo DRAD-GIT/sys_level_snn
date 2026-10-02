@@ -1,8 +1,8 @@
 # IBM DVS Gesture downscaled to 16x16, 10 classes (models/gesture16.py), the
 # version DS-CIM, ReckOn and ANP-I evaluate; LIF neurons (models/lif.py).
 simulation:
-    Ts: 50.0         # ms per time step: a step's input is 1 where its 8x8 block had an event
-    tSample: 1500    # ms of the gesture evaluated (its first 1.5 s): 30 time steps
+    Ts: 30.0         # ms per time step: a step's input is 1 where its 8x8 block had an event
+    tSample: 2400    # ms of the gesture evaluated (its first 2.4 s): 80 time steps
 network:
     hidden: 512      # neurons in the hidden layer (512 inputs - hidden - 10)
 neuron:
