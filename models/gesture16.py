@@ -50,6 +50,8 @@ def window(fine, start_bin, steps, step_ms):
     """Binary spikes [..., steps] of `steps` time steps of step_ms, starting
     at fine bin `start_bin` of a fine_spikes tensor (any event in a step = 1)."""
     per_step = int(round(step_ms / FINE_MS))
+    if per_step < 1 or abs(per_step * FINE_MS - step_ms) > 1e-6:
+        raise ValueError(f"time step {step_ms:g} ms: use a multiple of {FINE_MS:g} ms")
     part = fine[..., start_bin:start_bin + steps * per_step].float()
     if part.shape[-1] < steps * per_step:
         part = torch.nn.functional.pad(part, (0, steps * per_step - part.shape[-1]))
