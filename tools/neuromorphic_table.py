@@ -54,11 +54,6 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 # out and shows as NA. "node" (nm) is used for scaling; "date" (year, month)
 # orders the columns. Footnote marks refer to FOOTNOTES.
 WORKS = [
-    {"name": "Memristive SNN", "publication": "arXiv'25", "date": (2025, 1), "node": 180,
-     "technology": "180nm", "memory": "RRAM", "impl": "Mixed signal",
-     "results": {"N-MNIST": {"accuracy": r"94.73\%", "energy": 1780},
-                 "IBM DVS Gesture": {"accuracy": r"93.06\%", "energy": 1940, "latency": 44.31,
-                                     "power": 43.83}}},
     {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
      "technology": "28nm", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": 343},
@@ -199,9 +194,11 @@ def build_table(columns):
                 text = _stack(values)
                 cells.append(f"\\textbf{{{text}}}" if c.get("ours") and len(values) == 1 else text)
         row(label, cells)
+    body = "\n".join(lines)
+    notes = [n for n in FOOTNOTES if not n.startswith("$^{") or n.split("$", 2)[1] in body]
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}",
               r"\par\smallskip\raggedright\scriptsize",
-              " \\\\\n".join(FOOTNOTES), r"\end{table*}", ""]
+              " \\\\\n".join(notes), r"\end{table*}", ""]
     return "\n".join(lines)
 
 
