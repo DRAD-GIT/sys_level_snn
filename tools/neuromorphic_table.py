@@ -37,42 +37,42 @@ METRICS = (("accuracy", "Accuracy"), ("energy", "Energy / sample"), ("latency", 
 # reported is left out and shows as NA). Footnote marks refer to FOOTNOTES.
 WORKS = [
     {"name": "Memristive SNN", "publication": r"arXiv'25$^{\P}$", "technology": "180nm",
-     "memory": "RRAM", "impl": "Mixed signal", "silicon": "Measured",
+     "memory": "RRAM", "impl": "Mixed signal",
      "results": {"N-MNIST": {"accuracy": r"94.73\%", "energy": r"1.78\,$\mu$J"},
                  "IBM DVS Gesture": {"accuracy": r"93.06\%", "energy": r"1.94\,$\mu$J",
                                      "latency": r"44.31\,$\mu$s", "power": r"43.83\,mW"}}},
     {"name": "ANP-I", "publication": "JSSC'24", "technology": "28nm",
-     "memory": "SRAM", "impl": r"Digital$^{\ddagger}$", "silicon": "Measured",
+     "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": "343\\,nJ"},
                  r"IBM DVS Gesture$^{*}$": {"accuracy": r"92.0\%", "energy": r"3.9\,$\mu$J"}}},
     {"name": "ReckOn", "publication": "ISSCC'22", "technology": "28nm FDSOI",
-     "memory": "SRAM", "impl": r"Digital$^{\ddagger}$", "silicon": "Measured",
+     "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": r"46.1\,$\mu$J",
                                             "power": r"77\,$\mu$W"}}},
     {"name": "DS-CIM", "publication": "TCAS-I'24", "technology": "40nm",
-     "memory": "SOT-MRAM", "impl": "Mixed signal", "silicon": "Simulated",
+     "memory": "SOT-MRAM", "impl": "Mixed signal",
      "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": "729.3\\,nJ",
                                             "latency": r"40.46\,$\mu$s"}}},
     {"name": "TrueNorth", "publication": "CVPR'17", "technology": "28nm",
-     "memory": "SRAM", "impl": "Digital", "silicon": "Measured",
+     "memory": "SRAM", "impl": "Digital",
      "results": {"IBM DVS Gesture": {"accuracy": r"96.5\%", "energy": r"18.8\,mJ$^{\parallel}$",
                                      "latency": "105\\,ms", "power": "178.8\\,mW"}}},
     {"name": "Han et al.", "publication": "TCAS-I'22", "technology": "65nm",
-     "memory": "ReRAM", "impl": "Mixed signal", "silicon": "Simulated",
+     "memory": "ReRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": r"21.74\,$\mu$J",
                               "tops_per_w": "14.12"}}},
     {"name": "Neuro-CIM", "publication": "JSSC'23", "technology": "28nm",
-     "memory": "SRAM", "impl": "Mixed signal", "silicon": "Measured",
+     "memory": "SRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"92.1\%", "energy": r"0.72\,$\mu$J"}}},
     {"name": "Yan et al.", "publication": "VLSI'19", "technology": "150nm",
-     "memory": "RRAM", "impl": "Mixed signal", "silicon": "Measured",
+     "memory": "RRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"95.9\%$^{\S}$"}}},
 ]
 
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
 OUR_SPECS = {"publication": r"\textbf{This work}", "technology": "40nm", "memory": "RRAM",
-             "impl": "Mixed signal", "silicon": "Simulated"}
+             "impl": "Mixed signal"}
 
 FOOTNOTES = [
     r"$^{*}$ Downscaled to $16\times16$, 10 classes (ours: $128\times128$, 11 classes).",
@@ -148,7 +148,7 @@ def build_table(columns):
     row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
-                       ("impl", "Implementation"), ("silicon", "Silicon")):
+                       ("impl", "Implementation")):
         row(label, [c[key] for c in columns])
     lines.append(r"\midrule")
     row("Datasets", [_stack(list(c["results"])) for c in columns])
