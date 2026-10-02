@@ -71,9 +71,6 @@ WORKS = [
     {"name": "Neuro-CIM", "publication": "JSSC'23", "date": (2023, 10), "node": 28,
      "technology": "28nm", "memory": "SRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"92.1\%", "energy": 720}}},
-    {"name": "Yan et al.", "publication": "VLSI'19", "date": (2019, 6), "node": 150,
-     "technology": "150nm", "memory": "RRAM", "impl": "Mixed signal",
-     "results": {"CIFAR-10": {"accuracy": r"95.9\%$^{\S}$"}}},
 ]
 
 # Our columns: run.py architecture name -> column heading.

@@ -87,5 +87,5 @@ class DeepScaleTests(unittest.TestCase):
         self.assertEqual(nt.scale("energy", 5.0, 40), 5.0)                          # same node
         self.assertIsNone(nt.scale("energy", 1780, 180))                            # out of range
         names = [w["name"] for w in sorted(nt.WORKS, key=lambda w: w["date"])]
-        self.assertEqual(names[0], "Yan et al.")
+        self.assertEqual(names[0], "ReckOn")
         self.assertNotIn("TrueNorth", names)
