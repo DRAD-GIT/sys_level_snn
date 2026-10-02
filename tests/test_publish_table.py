@@ -31,14 +31,15 @@ class PublishTableTests(unittest.TestCase):
         git(self.paper, "push", "-q", "-u", "origin", "main")
         self.logs = os.path.join(root, "logs")
         os.makedirs(self.logs)
-        fields = ["model", "architecture", "configuration", "samples", "energy", "latency",
-                  "power", "tops_per_w"]
+        fields = ["model", "architecture", "configuration", "samples", "accuracy", "energy",
+                  "latency", "power", "tops_per_w"]
         with open(os.path.join(self.logs, "comparison_summary.csv"), "w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(fields)
             for arch in run.OURWORK:
-                writer.writerow(["nmnist", arch.name, "c", 10000, 8709, 52.5, 165.9, 52.35])
-                writer.writerow(["cifar10_thermo", arch.name, "c", 10000, 38990, 2.52, 15470, 67.77])
+                writer.writerow(["nmnist", arch.name, "c", 10000, 96.8, 8709, 52.5, 165.9, 52.35])
+                writer.writerow(["cifar10_thermo", arch.name, "c", 10000, 88.28, 38990, 2.52, 15470,
+                                 67.77])
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -53,6 +54,10 @@ class PublishTableTests(unittest.TestCase):
         self.assertNotIn("IBM DVS128 Gesture", table)        # no gesture results: no columns
         pushed = git(self.remote, "show", "main:Chapters/comparison_table.tex")
         self.assertEqual(pushed, table)
+        neuromorphic = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
+        self.assertIn(r"\textbf{88.28\%}", neuromorphic)            # our CIFAR-10 accuracy
+        self.assertIn(r"\textbf{39.0\,$\mu$J}", neuromorphic)      # our CIFAR-10 energy
+        self.assertIn("DS-CIM", neuromorphic)
         commits = git(self.remote, "rev-list", "--count", "main")
         run.publish_table(run.OURWORK, ["nmnist", "cifar10_thermo"], repo=self.paper,
                           logs_dir=self.logs)                # unchanged: no new commit

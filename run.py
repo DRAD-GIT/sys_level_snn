@@ -160,10 +160,13 @@ LOG_DIR = os.path.join(ROOT, "logs")
 # 6. THE PAPER TABLE (--table)
 # ============================================================================
 # A clone of the paper repository (default: next to this repository) and the
-# table's path in it. --table writes the table there (tools/latex_table.py)
-# for every dataset in MODELS with results, commits and pushes it.
+# tables' paths in it. --table writes them there, commits and pushes them:
+# the hardware comparison (tools/latex_table.py, every dataset in MODELS with
+# results) and the comparison with other neuromorphic designs in DS-CIM's
+# style (tools/neuromorphic_table.py, our columns from the results).
 PAPER_REPO = os.path.join(os.path.dirname(ROOT), "C3CIM_journal_TCAS_v1")
 PAPER_TABLE = os.path.join("Chapters", "comparison_table.tex")
+PAPER_NEUROMORPHIC_TABLE = os.path.join("Chapters", "neuromorphic_table.tex")
 
 
 def summary(all_results):
@@ -185,13 +188,16 @@ def _git(repo, *args, check=True):
 
 
 def publish_table(architectures, models_order, repo=PAPER_REPO, path=PAPER_TABLE,
-                  logs_dir=LOG_DIR, push=True):
+                  logs_dir=LOG_DIR, push=True, neuromorphic_path=PAPER_NEUROMORPHIC_TABLE):
     """Write the comparison table into the paper repository `repo` (updated
-    first with git pull), then commit and push it if it changed. The columns
-    are the datasets in `models_order` that have results; the rows the
-    `architectures` (our work last). Returns the table's path."""
+    first with git pull), and the neuromorphic comparison table next to it
+    (neuromorphic_path; None = not written), then commit and push them if
+    they changed. The comparison table's columns are the datasets in
+    `models_order` that have results; its rows the `architectures` (our work
+    last). Returns the comparison table's path."""
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import latex_table
+    import neuromorphic_table
     if not os.path.isdir(os.path.join(repo, ".git")):
         raise SystemExit(f"--table: no git clone of the paper repository at {repo}; clone it "
                          "there (git clone https://github.com/DRAD-GIT/C3CIM_journal_TCAS_v1.git) "
@@ -209,11 +215,19 @@ def publish_table(architectures, models_order, repo=PAPER_REPO, path=PAPER_TABLE
     with open(out, "w", encoding="utf-8", newline="\n") as file:
         file.write(table)
     print(f"saved {out} ({', '.join(models_)})")
-    _git(repo, "add", path)
-    if _git(repo, "diff", "--cached", "--quiet", "--", path, check=False).returncode == 0:
-        print("the table is unchanged: nothing to commit")
+    paths = [path]
+    if neuromorphic_path:
+        text = neuromorphic_table.make_table([a.name for a in OURWORK], logs_dir)
+        with open(os.path.join(repo, neuromorphic_path), "w", encoding="utf-8", newline="\n") as file:
+            file.write(text)
+        print(f"saved {os.path.join(repo, neuromorphic_path)}")
+        paths.append(neuromorphic_path)
+    _git(repo, "add", *paths)
+    if _git(repo, "diff", "--cached", "--quiet", "--", *paths, check=False).returncode == 0:
+        print("the tables are unchanged: nothing to commit")
         return out
-    _git(repo, "commit", "-m", f"Comparison table ({', '.join(models_)}) from sys_level_snn", "--", path)
+    _git(repo, "commit", "-m", f"Comparison tables ({', '.join(models_)}) from sys_level_snn",
+         "--", *paths)
     if push:
         pushed = _git(repo, "push", check=False)
         if pushed.returncode:
