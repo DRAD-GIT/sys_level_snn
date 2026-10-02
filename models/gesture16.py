@@ -25,7 +25,7 @@ SENSOR = 128
 SIZE = 16                      # downscaled width and height
 BLOCK = SENSOR // SIZE         # 8x8 sensor pixels per input
 CLASSES = 10                   # the 11th class ("other gestures") is left out
-HIDDEN = 512
+HIDDEN = 512                   # default hidden width (the YAML's network: hidden)
 FINE_MS = 10.0                 # resolution kept for drawing training windows
 
 
@@ -87,17 +87,19 @@ class Gesture16Dataset(torch.utils.data.Dataset):
 
 
 class Gesture16Network(NNetwork):
-    """512 inputs (2 x 16 x 16) - SF1 512 LIF - SF2 10 LIF. batchnorm=True
+    """512 inputs (2 x 16 x 16) - SF1 hidden LIF (network: hidden in the YAML,
+    default 512) - SF2 10 LIF. batchnorm=True
     adds a BatchNorm after SF1 (training); the evaluated checkpoint has it
     folded (batchnorm=False)."""
 
     def __init__(self, net_params: dict, do_enable=False, backend=None, batchnorm=False):
         super().__init__(net_params, backend or LIFLayer)
         self.batchnorm = batchnorm
-        self.SF1 = self.slayer.dense((SIZE, SIZE, 2), HIDDEN, bias=not batchnorm)
+        hidden = int(net_params.get("network", {}).get("hidden", HIDDEN))
+        self.SF1 = self.slayer.dense((SIZE, SIZE, 2), hidden, bias=not batchnorm)
         if batchnorm:
-            self.BN1 = torch.nn.BatchNorm3d(HIDDEN)
-        self.SF2 = self.slayer.dense(HIDDEN, CLASSES)
+            self.BN1 = torch.nn.BatchNorm3d(hidden)
+        self.SF2 = self.slayer.dense(hidden, CLASSES)
         self.SD = self.slayer.dropout(0.2 if do_enable else 0.0)
 
     def forward(self, s_in):

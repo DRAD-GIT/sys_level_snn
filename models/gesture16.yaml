@@ -3,6 +3,8 @@
 simulation:
     Ts: 50.0         # ms per time step: a step's input is 1 where its 8x8 block had an event
     tSample: 1500    # ms of the gesture evaluated (its first 1.5 s): 30 time steps
+network:
+    hidden: 512      # neurons in the hidden layer (512 inputs - hidden - 10)
 neuron:
     type:  LIF
     theta: 1.0       # firing threshold (soft reset subtracts it)

@@ -4,6 +4,9 @@ as pretrained/gesture16.pth, with BatchNorm folded into the weights.
     python tools/train_gesture16.py                       # dataset from run.py's DATASET_DIR
     python tools/train_gesture16.py --epochs 100 --data /path/to/datasets
     python tools/train_gesture16.py --resume              # continue from the last epoch
+    # try other settings without editing the YAML (own --work and --out):
+    python tools/train_gesture16.py --window-ms 3000 --hidden 1024 --loss ce \
+        --work logs/g16_w3000_h1024_ce --out pretrained/try/g16_w3000_h1024_ce.pth
 
 Needs IBM DVS Gesture as for the gesture model (DvsGestureNpy/<trial>/<class>.npy
 and DvsGesture/trials_to_train.txt, trials_to_test.txt).
@@ -116,15 +119,28 @@ def main():
                         help="folded checkpoint (default: the model's pretrained file)")
     parser.add_argument("--resume", action="store_true", help="continue from --work/last.pth")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--window-ms", type=float, help="evaluated window (default: the YAML's tSample)")
+    parser.add_argument("--step-ms", type=float, help="time step (default: the YAML's Ts)")
+    parser.add_argument("--hidden", type=int, help="hidden neurons (default: the YAML's network: hidden)")
+    parser.add_argument("--data-cache", help="dataset cache (default: --work/data.pt; share one "
+                                             "between runs to read the dataset once)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     params = models.load_params(SPEC.path(SPEC.params_yaml))
+    if args.window_ms:
+        params["simulation"]["tSample"] = args.window_ms
+    if args.step_ms:
+        params["simulation"]["Ts"] = args.step_ms
+    if args.hidden:
+        params.setdefault("network", {})["hidden"] = args.hidden
+    overridden = any((args.window_ms, args.step_ms, args.hidden))
     step_ms = float(params["simulation"]["Ts"])
     steps = int(round(params["simulation"]["tSample"] / step_ms))
     root = models.find_dataset(SPEC, args.data)
     os.makedirs(args.work, exist_ok=True)
-    cache = os.path.join(args.work, "data.pt")
+    cache = args.data_cache or os.path.join(args.work, "data.pt")
+    os.makedirs(os.path.dirname(os.path.abspath(cache)), exist_ok=True)
     if os.path.exists(cache):
         train, test = torch.load(cache, weights_only=True).values()
     else:
@@ -135,7 +151,11 @@ def main():
         torch.save({"train": train, "test": test}, cache)
         print(f"read the dataset in {time.time() - t0:.0f} s (cached in {cache})", flush=True)
     print(f"DVS Gesture 16x16 from {root}: {len(train['labels'])} training, {len(test['labels'])} "
-          f"test gestures, {steps} time steps of {step_ms:g} ms, on {device}", flush=True)
+          f"test gestures, {steps} time steps of {step_ms:g} ms, "
+          f"{params.get('network', {}).get('hidden', 512)} hidden neurons, on {device}", flush=True)
+    if overridden and os.path.abspath(args.out) == os.path.abspath(SPEC.path(SPEC.checkpoint)):
+        parser.error("--window-ms/--step-ms/--hidden differ from models/gesture16.yaml: give an --out "
+                     "of its own (and put the chosen settings in the YAML before using it in run.py)")
 
     net = SPEC.network_class(params, do_enable=True, batchnorm=True).to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)

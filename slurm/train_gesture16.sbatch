@@ -3,6 +3,8 @@
 #
 #   sbatch slurm/train_gesture16.sbatch                   # from the repository folder
 #   EPOCHS=150 LOSS=ce sbatch slurm/train_gesture16.sbatch
+#   # a variant without editing the YAML: its own NAME (work folder and checkpoint)
+#   NAME=w3000_h1024_ce WINDOW=3000 HIDDEN=1024 LOSS=ce sbatch slurm/train_gesture16.sbatch
 #
 # Resubmitting continues from the last finished epoch (logs/gesture16_train/last.pth).
 # The first run reads the dataset once and caches it (logs/gesture16_train/data.pt).
@@ -25,6 +27,14 @@ BATCH=${BATCH:-64}
 LR=${LR:-0.001}
 LOSS=${LOSS:-mse}
 WORK=${WORK:-logs/gesture16_train}
+EXTRA=""
+if [ -n "$NAME" ]; then          # a variant: own work folder and checkpoint, shared data cache
+    WORK=logs/gesture16_$NAME
+    EXTRA="--out pretrained/try/gesture16_$NAME.pth --data-cache logs/gesture16_train/data.pt"
+fi
+[ -n "$WINDOW" ] && EXTRA="$EXTRA --window-ms $WINDOW"
+[ -n "$STEP" ] && EXTRA="$EXTRA --step-ms $STEP"
+[ -n "$HIDDEN" ] && EXTRA="$EXTRA --hidden $HIDDEN"
 
 RESUME=""
 if [ -f "$WORK/last.pth" ]; then
@@ -33,5 +43,5 @@ fi
 
 echo "job $SLURM_JOB_ID on $(hostname), GPUs: ${CUDA_VISIBLE_DEVICES:-none}, $(date)"
 python -u tools/train_gesture16.py --data "$DATA" --epochs "$EPOCHS" --batch "$BATCH" --lr "$LR" \
-    --loss "$LOSS" --work "$WORK" --workers 8 $RESUME
+    --loss "$LOSS" --work "$WORK" --workers 8 $RESUME $EXTRA
 echo "finished $(date)"
