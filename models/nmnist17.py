@@ -57,15 +57,16 @@ def sample_files(data_path, samples_file):
     """(file, label) of every sample listed in samples_file ("<index> <label>"
     per line, "#" comments skipped; data_path/<index:05>.bin) that exists."""
     files = []
+    present = set(os.listdir(data_path))      # one listing instead of a check per file
     for line in open(samples_file):
         fields = line.split("#", 1)[0].split()          # "#" starts a comment (np.loadtxt's rule)
         try:
             index, label = int(float(fields[0])), int(float(fields[1]))
         except (IndexError, ValueError):
             continue
-        path = os.path.join(data_path, f"{index:05}.bin")
-        if os.path.exists(path):
-            files.append((path, label))
+        name = f"{index:05}.bin"
+        if name in present:
+            files.append((os.path.join(data_path, name), label))
     return files
 
 

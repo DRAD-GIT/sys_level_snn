@@ -54,7 +54,10 @@ def read_split(m, root, paths, which, workers):
     """{"spikes": uint8 [N, 2, size, size, keep_ms/FINE_MS], "labels", "active"
     (bins up to the last event)} for the train or test samples."""
     listed = os.path.join(root, paths[f"list_{which}"])
+    t0 = time.time()
+    print(f"{which}: listing the samples in {listed}", flush=True)
     files = m.files(os.path.join(root, paths[f"dir_{which}"]), listed)
+    print(f"{which}: {len(files)} samples found ({time.time() - t0:.0f} s); reading them", flush=True)
     if m.files.__name__ == "gesture_files":
         expected = m.CLASSES * sum(1 for line in open(listed) if line.strip())
         if len(files) < expected:      # DVS Gesture's errata: some trials lack some gestures
