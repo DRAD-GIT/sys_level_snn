@@ -1,4 +1,4 @@
-"""run.py --table: the table is written into the paper repository, committed
+"""run.py --table: the neuromorphic comparison table is written into the paper repository, committed
 and pushed, and an unchanged table makes no commit."""
 import csv
 import os
@@ -45,28 +45,23 @@ class PublishTableTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_written_committed_and_pushed_once(self):
-        out = run.publish_table(run.OURWORK, ["nmnist", "gesture", "cifar10_thermo"],
-                                repo=self.paper, logs_dir=self.logs)
+        out = run.publish_table(repo=self.paper, logs_dir=self.logs)
         self.assertEqual(out, os.path.join(self.paper, run.PAPER_TABLE))
         with open(out) as file:
             table = file.read()
-        self.assertIn("CIFAR-10", table)
-        self.assertNotIn("IBM DVS128 Gesture", table)        # no gesture results: no columns
-        pushed = git(self.remote, "show", "main:Chapters/comparison_table.tex")
+        pushed = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
         self.assertEqual(pushed, table)
-        neuromorphic = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
-        self.assertIn(r"\makecell{96.80\% \\ / 88.28\%}", neuromorphic)   # our accuracies
-        self.assertIn(r"/ 39.0\,$\mu$J}", neuromorphic)                     # our CIFAR-10 energy
-        self.assertIn("DS-CIM", neuromorphic)
+        self.assertIn(r"\makecell{96.80\% \\ / 88.28\%}", table)     # our accuracies
+        self.assertIn(r"/ 39.0\,$\mu$J}", table)                       # our CIFAR-10 energy
+        self.assertIn("DS-CIM", table)                                  # published works
+        self.assertNotIn("comparison_table.tex", git(self.remote, "ls-tree", "-r", "main"))
         commits = git(self.remote, "rev-list", "--count", "main")
-        run.publish_table(run.OURWORK, ["nmnist", "cifar10_thermo"], repo=self.paper,
-                          logs_dir=self.logs)                # unchanged: no new commit
+        run.publish_table(repo=self.paper, logs_dir=self.logs)          # unchanged: no new commit
         self.assertEqual(git(self.remote, "rev-list", "--count", "main"), commits)
 
     def test_missing_paper_repository(self):
         with self.assertRaisesRegex(SystemExit, "no git clone"):
-            run.publish_table(run.OURWORK, ["nmnist"], repo=os.path.join(self.tmp.name, "none"),
-                              logs_dir=self.logs)
+            run.publish_table(repo=os.path.join(self.tmp.name, "none"), logs_dir=self.logs)
 
 
 if __name__ == "__main__":

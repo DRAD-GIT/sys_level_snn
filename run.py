@@ -38,9 +38,10 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # 1. MODELS, PRETRAINED WEIGHTS AND DATASET
 # ============================================================================
 # Models (datasets) evaluated, in order; pretrained weights in pretrained/.
+# "nmnist17": N-MNIST downscaled to 17x17, first 100 ms (as ANP-I).
 # "gesture16": DVS Gesture downscaled to 16x16, 10 classes (as DS-CIM, ReckOn).
 # Also available: "cifar10" (rate-coded CIFAR-10).
-MODELS = ["nmnist", "gesture", "gesture16", "cifar10_thermo"]
+MODELS = ["nmnist", "nmnist17", "gesture", "gesture16", "cifar10_thermo"]
 # Folder holding the dataset folders (names starting with N-MNIST / Gesture),
 # or the dataset folder itself.
 DATASET_DIR = "/shares/bulk/yashbiyani/c3cim_sys_cluster/datasets/"   # None = none set
@@ -50,7 +51,7 @@ MAX_SAMPLES = -1       # first test samples to evaluate; -1 = the full test set
 # Models not listed use their defaults (recording: the model's batch_size;
 # hardware evaluation: one recorded file per step). --parallel N sets all.
 #PARALLEL = {"nmnist": 250, "gesture": 20, "gesture16": 240, "cifar10_thermo": 100}
-PARALLEL = {"nmnist": 1000, "gesture": 264, "gesture16": 240, "cifar10_thermo": 500}
+PARALLEL = {"nmnist": 1000, "nmnist17": 1000, "gesture": 264, "gesture16": 240, "cifar10_thermo": 500}
 # Recorded forward passes (layer inputs and outputs), reused across runs.
 RECORDING_DIR = os.path.join(ROOT, "recordings")   # in the repository, committed with git
 
@@ -161,13 +162,12 @@ LOG_DIR = os.path.join(ROOT, "logs")
 # 6. THE PAPER TABLE (--table)
 # ============================================================================
 # A clone of the paper repository (default: next to this repository) and the
-# tables' paths in it. --table writes them there, commits and pushes them:
-# the hardware comparison (tools/latex_table.py, every dataset in MODELS with
-# results) and the comparison with other neuromorphic designs in DS-CIM's
-# style (tools/neuromorphic_table.py, our columns from the results).
+# table's path in it. --table writes the comparison with other neuromorphic
+# designs in DS-CIM's style there (tools/neuromorphic_table.py: our columns
+# from this run's results, the other works' published numbers from its WORKS,
+# all scaled to 40 nm with DeepScaleTool), commits and pushes it.
 PAPER_REPO = os.path.join(os.path.dirname(ROOT), "C3CIM_journal_TCAS_v1")
-PAPER_TABLE = os.path.join("Chapters", "comparison_table.tex")
-PAPER_NEUROMORPHIC_TABLE = os.path.join("Chapters", "neuromorphic_table.tex")
+PAPER_TABLE = os.path.join("Chapters", "neuromorphic_table.tex")
 
 
 def summary(all_results):
@@ -188,47 +188,31 @@ def _git(repo, *args, check=True):
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
-def publish_table(architectures, models_order, repo=PAPER_REPO, path=PAPER_TABLE,
-                  logs_dir=LOG_DIR, push=True, neuromorphic_path=PAPER_NEUROMORPHIC_TABLE):
-    """Write the comparison table into the paper repository `repo` (updated
-    first with git pull), and the neuromorphic comparison table next to it
-    (neuromorphic_path; None = not written), then commit and push them if
-    they changed. The comparison table's columns are the datasets in
-    `models_order` that have results; its rows the `architectures` (our work
-    last). Returns the comparison table's path."""
+def publish_table(repo=PAPER_REPO, path=PAPER_TABLE, logs_dir=LOG_DIR, push=True):
+    """Write the neuromorphic comparison table (our work from the results in
+    logs_dir, the other works from their papers, scaled to 40 nm) into the
+    paper repository `repo` (updated first with git pull), then commit and
+    push it if it changed. Returns the table's path."""
     sys.path.insert(0, os.path.join(ROOT, "tools"))
-    import latex_table
     import neuromorphic_table
     if not os.path.isdir(os.path.join(repo, ".git")):
         raise SystemExit(f"--table: no git clone of the paper repository at {repo}; clone it "
                          "there (git clone https://github.com/DRAD-GIT/C3CIM_journal_TCAS_v1.git) "
-                         "or set PAPER_REPO in run.py")
+                         "or pass --paper <path>")
     pulled = _git(repo, "pull", "--ff-only", check=False)
     if pulled.returncode:
         raise SystemExit(f"--table: git pull in {repo} failed:\n{pulled.stdout}")
-    runs = latex_table.load_results(os.path.join(logs_dir, "comparison_summary.csv"))
-    names = {a.name for a in architectures}
-    models_ = [m for m in dict.fromkeys(models_order)
-               if any(model == m and arch in names for model, arch in runs)]
-    table = latex_table.make_table(architectures, OURWORK, logs_dir, models_)
+    table = neuromorphic_table.make_table([a.name for a in OURWORK], logs_dir)
     out = os.path.join(repo, path)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as file:
         file.write(table)
-    print(f"saved {out} ({', '.join(models_)})")
-    paths = [path]
-    if neuromorphic_path:
-        text = neuromorphic_table.make_table([a.name for a in OURWORK], logs_dir)
-        with open(os.path.join(repo, neuromorphic_path), "w", encoding="utf-8", newline="\n") as file:
-            file.write(text)
-        print(f"saved {os.path.join(repo, neuromorphic_path)}")
-        paths.append(neuromorphic_path)
-    _git(repo, "add", *paths)
-    if _git(repo, "diff", "--cached", "--quiet", "--", *paths, check=False).returncode == 0:
-        print("the tables are unchanged: nothing to commit")
+    print(f"saved {out}")
+    _git(repo, "add", path)
+    if _git(repo, "diff", "--cached", "--quiet", "--", path, check=False).returncode == 0:
+        print("the table is unchanged: nothing to commit")
         return out
-    _git(repo, "commit", "-m", f"Comparison tables ({', '.join(models_)}) from sys_level_snn",
-         "--", *paths)
+    _git(repo, "commit", "-m", "Neuromorphic comparison table from sys_level_snn", "--", path)
     if push:
         pushed = _git(repo, "push", check=False)
         if pushed.returncode:
@@ -255,8 +239,9 @@ def main():
     parser.add_argument("--recordings", default=RECORDING_DIR, help="folder of recorded forward passes")
     parser.add_argument("--rerecord", action="store_true", help="record the forward pass again")
     parser.add_argument("--table", action="store_true",
-                        help="then write the paper's comparison table into PAPER_REPO, commit and "
-                             "push it (the evaluated architectures, every dataset with results)")
+                        help="then write the neuromorphic comparison table (our results, the "
+                             "other works' published numbers, at 40 nm) into PAPER_REPO, commit "
+                             "and push it")
     parser.add_argument("--paper", default=PAPER_REPO, help="paper repository clone (default: PAPER_REPO)")
     args = parser.parse_args()
 
@@ -274,7 +259,7 @@ def main():
         all_results[model] = results
     print(summary(all_results))
     if args.table:
-        publish_table(architectures, MODELS + args.model, repo=args.paper)
+        publish_table(repo=args.paper)
 
 
 if __name__ == "__main__":
