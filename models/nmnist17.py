@@ -55,14 +55,17 @@ def window(fine, start_bin, steps, step_ms):
 
 def sample_files(data_path, samples_file):
     """(file, label) of every sample listed in samples_file ("<index> <label>"
-    per line; data_path/<index:05>.bin) that exists."""
+    per line, "#" comments skipped; data_path/<index:05>.bin) that exists."""
     files = []
     for line in open(samples_file):
-        fields = line.split()
-        if len(fields) >= 2:
-            path = os.path.join(data_path, f"{int(float(fields[0])):05}.bin")
-            if os.path.exists(path):
-                files.append((path, int(float(fields[1]))))
+        fields = line.split("#", 1)[0].split()          # "#" starts a comment (np.loadtxt's rule)
+        try:
+            index, label = int(float(fields[0])), int(float(fields[1]))
+        except (IndexError, ValueError):
+            continue
+        path = os.path.join(data_path, f"{index:05}.bin")
+        if os.path.exists(path):
+            files.append((path, label))
     return files
 
 

@@ -76,7 +76,7 @@ class NMNIST17Tests(unittest.TestCase):
                 raw[row] = (x, y, (p << 7) | ((t_us >> 16) & 0x7F), (t_us >> 8) & 0xFF, t_us & 0xFF)
             raw.tofile(os.path.join(root, "Test", "00007.bin"))
             with open(os.path.join(root, "Test.txt"), "w") as file:
-                file.write("7 4\n8 1\n")               # sample 8 has no file: skipped
+                file.write("#sample label\n7 4\n8 1\n")   # header skipped; sample 8 has no file
             fine = fine_spikes(os.path.join(root, "Test", "00007.bin"), 100)
             self.assertEqual(fine.shape, (2, 17, 17, 20))
             self.assertEqual((int(fine[1, 1, 2, 0]), int(fine[0, 16, 16, 5])), (1, 1))
