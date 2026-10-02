@@ -39,7 +39,7 @@ tests/                 reference-model, hand-calculation and pipeline tests
 
 ## 2. Quick start
 
-Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`); nothing needs compiling, and it runs on CPU or GPU. `run.py` follows the flow of an evaluation, top to bottom:
+Install Python 3.8+, PyTorch 1.12+, NumPy and PyYAML (`pip install -r requirements.txt`, or with conda: `conda env create -f environment.yml && conda activate c3cim`); nothing needs compiling, and it runs on CPU or GPU. `run.py` follows the flow of an evaluation, top to bottom:
 
 1. **Models and data**: `MODELS` (the datasets evaluated in one run, default N-MNIST, DVS-Gesture and thermometer-coded CIFAR-10), `DATASET_DIR` (see below), `MAX_SAMPLES` (the first test samples, `-1` = all), `PARALLEL` (samples run at once, per model), `RECORDING_DIR`.
 2. **Weight quantization**: `WEIGHT_BITS`, `WEIGHT_SCALING`.

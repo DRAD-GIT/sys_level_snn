@@ -1,0 +1,11 @@
+# Conda environment for the evaluation (CPU is enough; recordings are in the repo):
+#   conda env create -f environment.yml
+#   conda activate c3cim
+name: c3cim
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pytorch>=1.12
+  - numpy
+  - pyyaml
