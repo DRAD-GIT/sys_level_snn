@@ -1,8 +1,9 @@
 """Comparison with other neuromorphic designs, in the style of DS-CIM's Table III
 (Fu et al., TCAS-I 2024): one column per work, rows for its publication,
-technology and implementation, then, for the input and each metric, one row
-per dataset (N-MNIST, IBM DVS Gesture, CIFAR-10), so a dataset's numbers line
-up across the columns ("--": not evaluated; NA: not reported).
+technology and implementation, the datasets it evaluated, then, for the input
+and each metric, one row per dataset (N-MNIST, IBM DVS Gesture, CIFAR-10), so
+a dataset's numbers line up across the columns (empty: not evaluated; "--":
+not reported).
 
     python tools/neuromorphic_table.py               # -> logs/neuromorphic_table.tex
     python tools/neuromorphic_table.py --out paper/Chapters/neuromorphic_table.tex
@@ -61,7 +62,7 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 
 # Each work's numbers, per dataset it evaluated: input (LaTeX), accuracy as
 # a LaTeX string, energy per sample in nJ, latency per sample in us, power in
-# mW, TOPS/W; a metric not reported is left out and shows as NA, and TOPS/W
+# mW, TOPS/W; a metric not reported is left out and shows as --, and TOPS/W
 # left out is computed in make_table (mark b). "marks" puts a footnote mark
 # on a value (a: computed from the paper's other numbers, derivation next to
 # it). "node" (nm) is used for scaling; "date" (year, month) orders the
@@ -226,6 +227,13 @@ def add_computed_tops_per_w(works, ours):
     return out
 
 
+def _stack(values):
+    """Lines of one cell: "a", or a makecell of a, b, ... one per line."""
+    if len(values) == 1:
+        return values[0]
+    return r"\makecell{" + r" \\ ".join(values) + "}"
+
+
 def build_table(columns):
     n = len(columns)
     lines = [r"\begin{table*}[t]", r"\centering", r"\footnotesize",
@@ -245,9 +253,11 @@ def build_table(columns):
                        ("impl", "Implementation")):
         row(label, "", [c[key] for c in columns])
     lines.append(r"\midrule")
+    row("Datasets", "", [_stack([d for key, _, d in DATASETS if key in c["results"]]) for c in columns])
+    lines.append(r"\midrule")
     for i, (key, _, dataset) in enumerate(DATASETS):
         row("Input" if i == 0 else "", dataset,
-            [c["results"][key]["input"] if key in c["results"] else "--" for c in columns])
+            [c["results"][key]["input"] if key in c["results"] else "" for c in columns])
     for metric, label, better in METRICS:
         lines.append(r"\midrule")
         for i, (key, _, dataset) in enumerate(DATASETS):
@@ -256,11 +266,11 @@ def build_table(columns):
             cells = []
             for c in columns:
                 r = c["results"].get(key)
-                if r is None:
-                    cells.append("--")
+                if r is None:                     # dataset not evaluated
+                    cells.append("")
                     continue
-                if metric not in r:
-                    cells.append("NA")
+                if metric not in r:               # not reported
+                    cells.append("--")
                     continue
                 text = cell(metric, r[metric], c["node"], r.get("marks", {}).get(metric, ""))
                 value = scaled(metric, r[metric], c["node"])
