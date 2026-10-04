@@ -62,9 +62,6 @@ WORKS = [
      "technology": "28nm", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": 343},
                  r"IBM DVS Gesture$^{\S}$": {"accuracy": r"92.0\%", "energy": 3900}}},
-    {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
-     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": 46100, "power": 0.077}}},
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
      "technology": "40nm", "memory": "SOT-MRAM", "impl": "Mixed signal",
      "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": 729.3,
@@ -73,6 +70,23 @@ WORKS = [
      "technology": "65nm", "memory": "ReRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": 21740, "tops_per_w": 14.12}}},
 ]
+
+# Published RRAM macros that report no SNN results: evaluated with our
+# framework (literature_macros.py, calibrated to each paper) on our recorded
+# workloads, run.py architecture name -> column. Their columns are filled from
+# run.py's results like ours (python run.py --literature), scaled from their
+# node like the reported works.
+ENGINE_WORKS = {
+    "rram_esserc24": {"name": "Yao et al.", "publication": r"ESSERC'24$^{\#}$", "date": (2024, 9),
+                      "node": 28, "technology": "28nm", "memory": "RRAM (2T2R)",
+                      "impl": "Mixed signal"},
+    "td_cim_sscl25": {"name": "Wei et al.", "publication": r"SSC-L'25$^{\#}$", "date": (2025, 1),
+                      "node": 28, "technology": "28nm", "memory": "RRAM (1T1R)",
+                      "impl": "Time domain"},
+    "sf_rram_asscc25": {"name": "Li et al.", "publication": r"A-SSCC'25$^{\#}$", "date": (2025, 11),
+                        "node": 28, "technology": "28nm", "memory": "RRAM (2T2R)",
+                        "impl": "Mixed signal"},
+}
 
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
@@ -87,6 +101,9 @@ FOOTNOTES = [
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
+    r"$^{\#}$ Macro reports no SNN results: evaluated with our framework from its published "
+    r"measurements on the same workloads as this work (6-bit weights, binary spike inputs, no "
+    r"neuron charged).",
     r"This work: 6-bit weights; N-MNIST on a 578-512-10 SNN (10 time steps of 10\,ms); "
     r"IBM DVS Gesture on a 512-512-10 SNN (80 time steps of 30\,ms); "
     r"CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
@@ -135,17 +152,19 @@ def our_values(row):
             **{m: float(row[m]) for m in ("energy", "latency", "power", "tops_per_w")}}
 
 
-def our_columns(runs, architectures, warn=print):
-    """Our columns from run.py's results (the latest configuration of each
-    architecture, its run with the most samples), per dataset with results."""
-    columns = []
-    for name in architectures:
+def run_columns(runs, columns, warn=print):
+    """Columns filled from run.py's results: columns maps a run.py architecture
+    name -> its column (name, publication, ...); per dataset with results,
+    the architecture's latest configuration, its run with the most samples.
+    Architectures without any results are left out (with a warning)."""
+    out = []
+    for name, spec in columns.items():
         results = {}
         for choices, dataset in DATASETS:
             model = next((m for m in choices if runs.get((m, name))), None)
             if model is None:
                 warn(f"warning: no results for {name} on {' or '.join(choices)}: run python run.py "
-                     f"--model {choices[0]}")
+                     f"--model {choices[0]}" + ("" if spec.get("ours") else " --literature"))
                 continue
             rows = runs[(model, name)]
             config = rows[-1]["configuration"]
@@ -158,9 +177,16 @@ def our_columns(runs, architectures, warn=print):
             if model == "nmnist" and "nmnist17" in choices:
                 dataset += " (34$\\times$34)"
             results[dataset + OUR_MARKS.get(model, "")] = our_values(best)
-        columns.append({"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
-                        "date": (9999, 0), "results": results, "ours": True})
-    return columns
+        if results:
+            out.append({**spec, "results": results})
+    return out
+
+
+def our_columns(runs, architectures, warn=print):
+    """Our columns (run.py's OURWORK) from run.py's results."""
+    return run_columns(runs, {name: {"name": OUR_NAMES.get(name, name.replace("_", r"\_")),
+                                     **OUR_SPECS, "date": (9999, 0), "ours": True}
+                              for name in architectures}, warn)
 
 
 def _stack(values):
@@ -209,12 +235,14 @@ def build_table(columns):
 
 
 def make_table(our_architectures, logs_dir, warn=print):
-    """The table text: WORKS, then a column per name in our_architectures."""
+    """The table text: WORKS and ENGINE_WORKS by date, then a column per name
+    in our_architectures."""
     summary = os.path.join(logs_dir, "comparison_summary.csv")
     if not os.path.exists(summary):
         raise FileNotFoundError(f"no results in {summary}: run python run.py first")
-    works = sorted(WORKS, key=lambda w: w["date"])          # oldest first, ours last
-    return build_table(works + our_columns(latex_table.load_results(summary), our_architectures, warn))
+    runs = latex_table.load_results(summary)
+    works = sorted(WORKS + run_columns(runs, ENGINE_WORKS, warn), key=lambda w: w["date"])
+    return build_table(works + our_columns(runs, our_architectures, warn))   # oldest first, ours last
 
 
 def main():

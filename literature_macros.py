@@ -403,7 +403,9 @@ LITERATURE_MACROS = [DS_CIM, TD_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
 
 # The macros `python run.py --literature` evaluates next to our work (edit to
 # choose; every macro above stays defined and checked against its paper).
-COMPARED = [DS_CIM, MEMRISTIVE_SNN, ASSCC25_SF, ESSERC24_RRAM]
+# The RRAM macros of the neuromorphic comparison table (DS-CIM is there with
+# its own reported numbers; the memristive SNN's 180 nm is left out).
+COMPARED = [ESSERC24_RRAM, TD_CIM, ASSCC25_SF]
 
 
 # ============================================================================
