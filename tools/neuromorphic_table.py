@@ -69,14 +69,14 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 # columns. Footnote marks refer to FOOTNOTES.
 WORKS = [
     {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "precision": "8/10-bit",
+     "technology": "28nm", "memory": "SRAM", "precision": "8/10-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times17\times17$", "accuracy": r"96.0\%",
                             "energy": 343},
                  "gesture": {"input": r"$14\times14$", "accuracy": r"92.0\%", "energy": 3900}}},
     # DS-CIM Table II: 40.46 us per Gesture sample -> power 735.35 nJ / 40.46 us.
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
-     "technology": "40nm", "memory": "SOT-MRAM", "precision": "Signed 4-bit (1-bit cells)",
+     "technology": "40nm", "memory": "SOT-MRAM", "precision": "Signed 4-bit", "cell": "1-bit",
      "impl": "Mixed signal",
      "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"90.00\%", "energy": 735.35,
                              "latency": 40.46, "power": 735.35 / 40.46,
@@ -84,46 +84,44 @@ WORKS = [
     # 181 uJ per inference; 100 time steps of 50 us, pipelined -> 5 ms per
     # inference, power 181 uJ / 5 ms.
     {"name": "Dorzhigulov et al.", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
-     "technology": "130nm", "memory": "RRAM", "precision": "2-bit",
+     "technology": "130nm", "memory": "RRAM", "precision": "2-bit", "cell": "--",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"61.74\%", "energy": 181000,
                              "latency": 100 * 50.0, "power": 181000 / (100 * 50.0),
-                             "marks": {"energy": r"\#", "latency": "a", "power": "a"}}}},
+                             "marks": {"power": "a"}}}},
     {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "precision": "8-bit",
+     "technology": "28nm FDSOI", "memory": "SRAM", "precision": "8-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"93.8\%",
                             "energy": 665}}},
     # 46.1 uJ per Gesture sample at 77 uW (inference, 0.5 V, 13 MHz) ->
     # latency 46.1 uJ / 77 uW.
     {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "precision": "8-bit",
+     "technology": "28nm FDSOI", "memory": "SRAM", "precision": "8-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 46100,
                              "power": 0.077, "latency": 46100 / 0.077, "marks": {"latency": "a"}}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image (c), power 21.74 uJ over it.
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
-     "technology": "65nm", "memory": "RRAM", "precision": "Signed, 5-bit cells",
+     "technology": "65nm", "memory": "RRAM", "precision": "--", "cell": "5-bit (32 levels)",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"88\%", "energy": 21740,
                              "latency": 11 * 0.073, "power": 21740 / (11 * 0.073),
-                             "tops_per_w": 14.12, "marks": {"latency": "c", "power": "a"}}}},
+                             "tops_per_w": 14.12, "marks": {"power": "a"}}}},
 ]
 
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
 OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40nm", "memory": "RRAM",
-             "precision": "6-bit (1-bit cells)", "impl": "Mixed signal"}
+             "precision": "6-bit", "cell": "1-bit", "impl": "Mixed signal"}
 
 FOOTNOTES = [
     f"Energy, latency, power and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
     "accuracy as reported.",
-    r"$^{\#}$ Estimated energy of the crossbar array and neural periphery.",
     r"$^{a}$ Computed from the reported values: power = energy / latency, or latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
     r"operations) divided by the reported energy per sample.",
-    r"$^{c}$ Computed as 11 layers $\times$ the 73\,ns per layer Han et al. report for VGG-11.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"This work: N-MNIST on a 578-512-10 SNN (10 time steps of 10\,ms); "
     r"IBM DVS Gesture on a 512-512-10 SNN (80 time steps of 30\,ms); "
@@ -249,7 +247,7 @@ def build_table(columns):
     row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
-                       ("precision", "Weight precision"), ("impl", "Implementation")):
+                       ("cell", "Cell precision"), ("precision", "Weight precision")):
         row(label, [c[key] for c in columns])
     lines.append(r"\midrule")
     row("Datasets", [_lines([d if key in c["results"] else "" for key, _, d in DATASETS])
