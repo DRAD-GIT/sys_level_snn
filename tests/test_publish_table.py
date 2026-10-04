@@ -84,5 +84,7 @@ class DeepScaleTests(unittest.TestCase):
         names = [w["name"] for w in sorted(nt.WORKS, key=lambda w: w["date"])]
         self.assertEqual(names[0], "Han et al.")
         self.assertEqual(names[-1], "BiNeuroRAM")
+        self.assertIn("Dorzhigulov et al.", names)
+        self.assertAlmostEqual(nt.scale("energy", 181000, 130), 181000 * 0.55 / 2.52)
         self.assertNotIn("ReckOn", names)
         self.assertNotIn("TrueNorth", names)

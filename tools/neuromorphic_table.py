@@ -66,6 +66,9 @@ WORKS = [
      "technology": "40nm", "memory": "SOT-MRAM", "impl": "Mixed signal",
      "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": 729.3,
                                             "latency": 40.46}}},
+    {"name": "Dorzhigulov et al.", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
+     "technology": "130nm", "memory": "RRAM", "impl": "Mixed signal",
+     "results": {r"CIFAR-10$^{\#}$": {"accuracy": r"61.74\%", "energy": 181000}}},
     {"name": "BiNeuroRAM", "publication": "DAC'25", "date": (2025, 6), "node": 28,
      "technology": "28nm", "memory": "RRAM", "impl": "Mixed signal",
      "results": {r"CIFAR-10$^{\|}$": {"accuracy": r"89.2\%", "energy": 730, "tops_per_w": 83.1}}},
@@ -86,6 +89,7 @@ FOOTNOTES = [
     r"$^{\dagger}$ Downscaled to $2\times17\times17$, first 100\,ms.",
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
+    r"$^{\#}$ Estimated energy of the crossbar array and neural periphery; 2-bit weights.",
     r"$^{\|}$ ResNet-20 with bipolar (ternary) spikes and 4-bit weights.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"This work: 6-bit weights; N-MNIST on a 578-512-10 SNN (10 time steps of 10\,ms); "
