@@ -64,7 +64,7 @@ WORKS = [
                  r"IBM DVS Gesture$^{\S}$": {"accuracy": r"92.0\%", "energy": 3900}}},
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
      "technology": "40nm", "memory": "SOT-MRAM", "impl": "Mixed signal",
-     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": 729.3,
+     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": 735.35,
                                             "latency": 40.46}}},
     {"name": "Dorzhigulov et al.", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
      "technology": "130nm", "memory": "RRAM", "impl": "Mixed signal",
