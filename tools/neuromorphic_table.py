@@ -47,6 +47,9 @@ METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
 # Bits per operation (input, weight) for the normalised TOPS/W (TOPS/W x input
 # bits x weight bits), only where a work reports its own TOPS/W.
 OUR_BITS = (1, 6)
+# Rows where our columns share one cell when their values are the same (one
+# recorded network, same inputs).
+MERGED_ROWS = ("Input bits", "Input encoding", "Input", "Accuracy")
 
 # Technology scaling (DeepScaleTool: Sarangi and Baas, ISCAS 2021,
 # https://sourceforge.net/projects/deepscaletool/, DeepScaleTool.xlsm of
@@ -257,14 +260,26 @@ def build_table(columns):
              r"\begin{adjustbox}{max width=\textwidth}",
              f"\\begin{{tabular}}{{@{{}}l*{{{n}}}{{c}}@{{}}}}", r"\toprule"]
 
+    ours = [i for i, c in enumerate(columns) if c.get("ours")]
+
+    def merge_ours(cells):
+        """Our columns' cells as one cell across them where they are the same."""
+        if len(ours) > 1 and ours == list(range(ours[0], ours[-1] + 1)) and \
+                len({cells[i] for i in ours}) == 1:
+            cells = cells[:ours[0]] + [f"\\multicolumn{{{len(ours)}}}{{c}}{{{cells[ours[0]]}}}"] + \
+                cells[ours[-1] + 1:]
+        return cells
+
     def row(label, cells):
+        if label in MERGED_ROWS:
+            cells = merge_ours(cells)
         lines.append(f"\\textbf{{{label}}} & " + " & ".join(cells) + r" \\")
 
     row("Name", [f"\\textbf{{{c['name']}}}" for c in columns])
     row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
-                       ("encoding", "Input encoding"), ("in_bits", "Input bits"),
+                       ("in_bits", "Input bits"), ("encoding", "Input encoding"),
                        ("cell", "Cell precision"), ("precision", "Weight precision")):
         row(label, [c[key] for c in columns])
     lines.append(r"\midrule")
@@ -294,11 +309,6 @@ def build_table(columns):
                     text = f"\\textbf{{{text}}}"
                 values.append(text)
             cells.append(_lines(values))
-        if metric == "accuracy":                  # ours share one accuracy: one cell
-            ours = [i for i, c in enumerate(columns) if c.get("ours")]
-            if len(ours) > 1 and ours == list(range(ours[0], ours[-1] + 1)) and \
-                    len({cells[i] for i in ours}) == 1:
-                cells[ours[0]:ours[-1] + 1] = [f"\\multicolumn{{{len(ours)}}}{{c}}{{{cells[ours[0]]}}}"]
         row(label, cells)
     body = "\n".join(lines)
     notes = [n for n in FOOTNOTES if not n.startswith("$^{") or n.split("$", 2)[1] in body]
