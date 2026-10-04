@@ -49,7 +49,8 @@ METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
 OUR_BITS = (1, 6)
 # Rows where our columns share one cell when their values are the same (one
 # recorded network, same inputs).
-MERGED_ROWS = ("Input bits", "Input encoding", "Input", "Accuracy")
+MERGED_ROWS = ("Publication", "Technology", "Synaptic memory", "Input bits", "Input encoding",
+               "Cell precision", "Weight precision", "Datasets", "Input", "Accuracy")
 
 # Technology scaling (DeepScaleTool: Sarangi and Baas, ISCAS 2021,
 # https://sourceforge.net/projects/deepscaletool/, DeepScaleTool.xlsm of
