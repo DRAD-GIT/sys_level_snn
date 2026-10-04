@@ -37,8 +37,8 @@ DATASETS = (("nmnist", ("nmnist17", "nmnist"), "N-MNIST"),
             ("gesture", ("gesture16", "gesture"), "IBM DVS Gesture"),
             ("cifar10", ("cifar10_thermo",), "CIFAR-10"))
 # Our input per model (the "Input" rows).
-OUR_INPUTS = {"nmnist17": r"$2\times17\times17^{\dagger}$", "nmnist": r"$2\times34\times34$",
-              "gesture16": r"$16\times16^{*}$", "gesture": r"$128\times128$",
+OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34$",
+              "gesture16": r"$16\times16$", "gesture": r"$128\times128$",
               "cifar10_thermo": r"$32\times32$"}
 # The metric rows, in order: (key, row label, better: +1 higher, -1 lower).
 METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
@@ -69,14 +69,14 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 # columns. Footnote marks refer to FOOTNOTES.
 WORKS = [
     {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
-     "results": {"nmnist": {"input": r"$2\times17\times17^{\dagger}$", "accuracy": r"96.0\%",
+     "technology": "28nm", "memory": "SRAM", "impl": r"Digital",
+     "results": {"nmnist": {"input": r"$2\times17\times17$", "accuracy": r"96.0\%",
                             "energy": 343},
-                 "gesture": {"input": r"$14\times14^{\S}$", "accuracy": r"92.0\%", "energy": 3900}}},
+                 "gesture": {"input": r"$14\times14$", "accuracy": r"92.0\%", "energy": 3900}}},
     # DS-CIM Table II: 40.46 us per Gesture sample -> power 735.35 nJ / 40.46 us.
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
      "technology": "40nm", "memory": "SOT-MRAM", "impl": "Mixed signal",
-     "results": {"gesture": {"input": r"$16\times16^{*}$", "accuracy": r"90.00\%", "energy": 735.35,
+     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"90.00\%", "energy": 735.35,
                              "latency": 40.46, "power": 735.35 / 40.46,
                              "marks": {"power": "a"}}}},
     # 181 uJ per inference; 100 time steps of 50 us, pipelined -> 5 ms per
@@ -87,14 +87,14 @@ WORKS = [
                              "latency": 100 * 50.0, "power": 181000 / (100 * 50.0),
                              "marks": {"energy": r"\#", "latency": "a", "power": "a"}}}},
     {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
+     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times34\times34^{\|}$", "accuracy": r"93.8\%",
                             "energy": 665}}},
     # 46.1 uJ per Gesture sample at 77 uW (inference, 0.5 V, 13 MHz) ->
     # latency 46.1 uJ / 77 uW.
     {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
-     "results": {"gesture": {"input": r"$16\times16^{*}$", "accuracy": r"87.3\%", "energy": 46100,
+     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital",
+     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 46100,
                              "power": 0.077, "latency": 46100 / 0.077, "marks": {"latency": "a"}}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image (c), power 21.74 uJ over it.
@@ -113,10 +113,6 @@ OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40
 FOOTNOTES = [
     f"Energy, latency, power and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
     "accuracy as reported.",
-    r"$^{*}$ Downscaled to $16\times16$, 10 classes.",
-    r"$^{\dagger}$ Downscaled to $2\times17\times17$, first 100\,ms.",
-    r"$^{\ddagger}$ Embedded on-chip learning.",
-    r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
     r"$^{\|}$ $2\times34\times34$, first saccade, one spike per pixel.",
     r"$^{\#}$ Estimated energy of the crossbar array and neural periphery; 2-bit weights.",
     r"$^{a}$ Computed from the reported values: power = energy / latency, or latency = energy / power.",
@@ -277,6 +273,11 @@ def build_table(columns):
                     text = f"\\textbf{{{text}}}"
                 values.append(text)
             cells.append(_lines(values))
+        if metric == "accuracy":                  # ours share one accuracy: one cell
+            ours = [i for i, c in enumerate(columns) if c.get("ours")]
+            if len(ours) > 1 and ours == list(range(ours[0], ours[-1] + 1)) and \
+                    len({cells[i] for i in ours}) == 1:
+                cells[ours[0]:ours[-1] + 1] = [f"\\multicolumn{{{len(ours)}}}{{c}}{{{cells[ours[0]]}}}"]
         row(label, cells)
     body = "\n".join(lines)
     notes = [n for n in FOOTNOTES if not n.startswith("$^{") or n.split("$", 2)[1] in body]
