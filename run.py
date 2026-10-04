@@ -245,8 +245,7 @@ def main():
     parser.add_argument("--paper", default=PAPER_REPO, help="paper repository clone (default: PAPER_REPO)")
     args = parser.parse_args()
 
-    # --table also needs the published macros (their columns in the table).
-    architectures = OURWORK + (LITERATURE if args.literature or args.table else [])
+    architectures = OURWORK + (LITERATURE if args.literature else [])
     all_results = {}
     for model in args.model:
         parallel = args.parallel or PARALLEL.get(model)

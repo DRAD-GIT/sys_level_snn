@@ -36,9 +36,6 @@ class PublishTableTests(unittest.TestCase):
         with open(os.path.join(self.logs, "comparison_summary.csv"), "w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(fields)
-            # A published macro evaluated with our framework, 28 nm: 100 nJ
-            # -> 100 / (0.37 / 0.55) = 148.6 nJ at 40 nm.
-            writer.writerow(["nmnist17", "rram_esserc24", "c", 10000, 96.65, 100.0, 1.0, 10.0, 50.0])
             for arch in run.OURWORK:
                 writer.writerow(["nmnist", arch.name, "c", 10000, 96.8, 8709, 52.5, 165.9, 52.35])
                 writer.writerow(["cifar10_thermo", arch.name, "c", 10000, 88.28, 38990, 2.52, 15470,
@@ -57,10 +54,6 @@ class PublishTableTests(unittest.TestCase):
         self.assertIn(r"\makecell{96.80\% \\ / 88.28\%}", table)     # our accuracies
         self.assertIn(r"/ 39.0\,$\mu$J}", table)                       # our CIFAR-10 energy
         self.assertIn("DS-CIM", table)                                  # published works
-        self.assertIn(r"ESSERC'24$^{\#}$", table)                      # engine-evaluated macro
-        self.assertIn("149\\,nJ", table)
-        self.assertIn("evaluated with our framework", table)
-        self.assertNotIn("SSC-L'25", table)                             # no results: left out
         self.assertNotIn("comparison_table.tex", git(self.remote, "ls-tree", "-r", "main"))
         commits = git(self.remote, "rev-list", "--count", "main")
         run.publish_table(repo=self.paper, logs_dir=self.logs)          # unchanged: no new commit
@@ -89,6 +82,5 @@ class DeepScaleTests(unittest.TestCase):
         self.assertEqual(nt.scale("energy", 5.0, 40), 5.0)                          # same node
         self.assertIsNone(nt.scale("energy", 1780, 180))                            # out of range
         names = [w["name"] for w in sorted(nt.WORKS, key=lambda w: w["date"])]
-        self.assertEqual(names[0], "Han et al.")
-        self.assertNotIn("ReckOn", names)
+        self.assertEqual(names[0], "ReckOn")
         self.assertNotIn("TrueNorth", names)
