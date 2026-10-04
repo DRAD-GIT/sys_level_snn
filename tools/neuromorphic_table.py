@@ -144,9 +144,6 @@ FOOTNOTES = [
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"$^{c}$ TOPS/W $\times$ input bits $\times$ weight bits, for reported TOPS/W "
     r"(Han et al.: 6-bit inputs, its 5-bit cell as the weight; this work: 1-bit spikes, 6-bit weights).",
-    r"This work: N-MNIST on a 578-512-10 SNN (10 time steps of 10\,ms); "
-    r"IBM DVS Gesture on a 512-512-10 SNN (80 time steps of 30\,ms); "
-    r"CIFAR-10 on VGG-11 with thermometer-coded binary inputs (8 time steps).",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
 LABEL = "table:neuromorphic"
