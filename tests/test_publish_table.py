@@ -56,7 +56,7 @@ class PublishTableTests(unittest.TestCase):
         self.assertIn(r"\multicolumn{2}{c}{\makecell{\textbf{96.80\%}", table)  # one accuracy cell
         self.assertNotIn(r"\dagger", table)                            # no input footnotes
         self.assertIn(r"39.0\,$\mu$J", table)                          # our CIFAR-10 energy
-        self.assertIn(r"18.2\,mW$^{a}$", table)                        # DS-CIM power, computed
+        self.assertNotIn(r"\textbf{Power}", table)                     # no power row
         self.assertIn(r"$^{b}$", table)                                 # TOPS/W from our operations
         self.assertIn("DS-CIM", table)                                  # published works
         self.assertNotIn("comparison_table.tex", git(self.remote, "ls-tree", "-r", "main"))

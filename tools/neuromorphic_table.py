@@ -42,7 +42,7 @@ OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34
               "cifar10_thermo": r"$32\times32$"}
 # The metric rows, in order: (key, row label, better: +1 higher, -1 lower).
 METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
-           ("latency", "Latency / sample", -1), ("power", "Power", -1),
+           ("latency", "Latency / sample", -1),
            ("tops_per_w", "TOPS/W", +1), ("norm_tops_per_w", r"Norm. TOPS/W$^{c}$", +1))
 # Bits per operation (input, weight) for the normalised TOPS/W (TOPS/W x input
 # bits x weight bits), only where a work reports its own TOPS/W.
@@ -136,9 +136,9 @@ OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40
              "encoding": "Rate", "in_bits": "1-bit", "precision": "6-bit", "cell": "1-bit", "impl": "Mixed signal"}
 
 FOOTNOTES = [
-    f"Energy, latency, power and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
+    f"Energy, latency and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
     "accuracy as reported.",
-    r"$^{a}$ Computed from the reported values: power = energy / latency, or latency = energy / power.",
+    r"$^{a}$ Computed from the reported energy and power: latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
     r"operations) divided by the reported energy per sample.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
