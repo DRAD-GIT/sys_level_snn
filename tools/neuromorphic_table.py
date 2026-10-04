@@ -113,6 +113,11 @@ WORKS = [
      "impl": r"Digital",
      "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 46100,
                              "power": 0.077, "latency": 46100 / 0.077, "marks": {"latency": "a"}}}},
+]
+
+# Works kept out of the table for now (same format as WORKS): move one into
+# WORKS to show it.
+SET_ASIDE = [
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image (c), power 21.74 uJ over it.
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
@@ -290,6 +295,8 @@ def build_table(columns):
     row("Input", [_lines([c["results"][key]["input"] if key in c["results"] else ""
                           for key, _, _ in DATASETS]) for c in columns])
     for metric, label, better in METRICS:
+        if not any(metric in r for c in columns if not c.get("ours") for r in c["results"].values()):
+            continue                              # only ours: no comparison, no row
         lines.append(r"\midrule")
         cells = []
         for c in columns:
