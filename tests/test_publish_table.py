@@ -51,8 +51,11 @@ class PublishTableTests(unittest.TestCase):
             table = file.read()
         pushed = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
         self.assertEqual(pushed, table)
-        self.assertIn(r"\makecell{96.80\% \\ / 88.28\%}", table)     # our accuracies
-        self.assertIn(r"/ 39.0\,$\mu$J}", table)                       # our CIFAR-10 energy
+        self.assertIn(r"& N-MNIST & ", table)                        # a row per dataset
+        self.assertIn(r"\textbf{96.80\%}", table)                      # our accuracy wins
+        self.assertIn(r"39.0\,$\mu$J", table)                          # our CIFAR-10 energy
+        self.assertIn(r"18.2\,mW$^{a}$", table)                        # DS-CIM power, computed
+        self.assertIn(r"$^{b}$", table)                                 # TOPS/W from our operations
         self.assertIn("DS-CIM", table)                                  # published works
         self.assertNotIn("comparison_table.tex", git(self.remote, "ls-tree", "-r", "main"))
         commits = git(self.remote, "rev-list", "--count", "main")
