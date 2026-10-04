@@ -1,9 +1,9 @@
 """Comparison with other neuromorphic designs, in the style of DS-CIM's Table III
 (Fu et al., TCAS-I 2024): one column per work, rows for its publication,
-technology and implementation, the datasets it evaluated, then, for the input
-and each metric, one row per dataset (N-MNIST, IBM DVS Gesture, CIFAR-10), so
-a dataset's numbers line up across the columns (empty: not evaluated; "--":
-not reported).
+technology and implementation, the datasets it evaluated, its input and each
+metric. Every dataset cell has a line per dataset in a fixed order (N-MNIST,
+IBM DVS Gesture, CIFAR-10), so a dataset's numbers sit at the same height in
+every column (blank line: not evaluated; "--": not reported).
 
     python tools/neuromorphic_table.py               # -> logs/neuromorphic_table.tex
     python tools/neuromorphic_table.py --out paper/Chapters/neuromorphic_table.tex
@@ -227,11 +227,10 @@ def add_computed_tops_per_w(works, ours):
     return out
 
 
-def _stack(values):
-    """Lines of one cell: "a", or a makecell of a, b, ... one per line."""
-    if len(values) == 1:
-        return values[0]
-    return r"\makecell{" + r" \\ ".join(values) + "}"
+def _lines(values):
+    """One cell with a line per dataset, in DATASETS order: a makecell whose
+    blank lines keep every dataset at the same height in every column."""
+    return r"\makecell{" + r" \\ ".join(v if v else r"\phantom{0}" for v in values) + "}"
 
 
 def build_table(columns):
@@ -240,44 +239,45 @@ def build_table(columns):
              f"\\caption{{{CAPTION}}}", f"\\label{{{LABEL}}}",
              r"\renewcommand{\arraystretch}{1.15}",
              r"\begin{adjustbox}{max width=\textwidth}",
-             f"\\begin{{tabular}}{{@{{}}ll*{{{n}}}{{c}}@{{}}}}", r"\toprule"]
+             f"\\begin{{tabular}}{{@{{}}l*{{{n}}}{{c}}@{{}}}}", r"\toprule"]
 
-    def row(label, sub, cells):
-        head = f"\\textbf{{{label}}}" if label else ""
-        lines.append(f"{head} & {sub} & " + " & ".join(cells) + r" \\")
+    def row(label, cells):
+        lines.append(f"\\textbf{{{label}}} & " + " & ".join(cells) + r" \\")
 
-    row("Name", "", [f"\\textbf{{{c['name']}}}" for c in columns])
-    row("Publication", "", [c["publication"] for c in columns])
+    row("Name", [f"\\textbf{{{c['name']}}}" for c in columns])
+    row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
                        ("impl", "Implementation")):
-        row(label, "", [c[key] for c in columns])
+        row(label, [c[key] for c in columns])
     lines.append(r"\midrule")
-    row("Datasets", "", [_stack([d for key, _, d in DATASETS if key in c["results"]]) for c in columns])
+    row("Datasets", [_lines([d if key in c["results"] else "" for key, _, d in DATASETS])
+                     for c in columns])
     lines.append(r"\midrule")
-    for i, (key, _, dataset) in enumerate(DATASETS):
-        row("Input" if i == 0 else "", dataset,
-            [c["results"][key]["input"] if key in c["results"] else "" for c in columns])
+    row("Input", [_lines([c["results"][key]["input"] if key in c["results"] else ""
+                          for key, _, _ in DATASETS]) for c in columns])
     for metric, label, better in METRICS:
         lines.append(r"\midrule")
-        for i, (key, _, dataset) in enumerate(DATASETS):
-            others = [scaled(metric, c["results"][key][metric], c["node"]) for c in columns
-                      if not c.get("ours") and key in c["results"] and metric in c["results"][key]]
-            cells = []
-            for c in columns:
+        cells = []
+        for c in columns:
+            values = []
+            for key, _, _ in DATASETS:
                 r = c["results"].get(key)
                 if r is None:                     # dataset not evaluated
-                    cells.append("")
+                    values.append("")
                     continue
                 if metric not in r:               # not reported
-                    cells.append("--")
+                    values.append("--")
                     continue
                 text = cell(metric, r[metric], c["node"], r.get("marks", {}).get(metric, ""))
+                others = [scaled(metric, o["results"][key][metric], o["node"]) for o in columns
+                          if not o.get("ours") and key in o["results"] and metric in o["results"][key]]
                 value = scaled(metric, r[metric], c["node"])
                 if c.get("ours") and others and all(better * (value - o) > 0 for o in others):
                     text = f"\\textbf{{{text}}}"
-                cells.append(text)
-            row(label if i == 0 else "", dataset, cells)
+                values.append(text)
+            cells.append(_lines(values))
+        row(label, cells)
     body = "\n".join(lines)
     notes = [n for n in FOOTNOTES if not n.startswith("$^{") or n.split("$", 2)[1] in body]
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{adjustbox}",

@@ -51,7 +51,7 @@ class PublishTableTests(unittest.TestCase):
             table = file.read()
         pushed = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
         self.assertEqual(pushed, table)
-        self.assertIn(r"& N-MNIST & ", table)                        # a row per dataset
+        self.assertIn(r"\makecell{N-MNIST \\ \phantom{0} \\ CIFAR-10}", table)   # aligned lines
         self.assertIn(r"\textbf{96.80\%}", table)                      # our accuracy wins
         self.assertIn(r"39.0\,$\mu$J", table)                          # our CIFAR-10 energy
         self.assertIn(r"18.2\,mW$^{a}$", table)                        # DS-CIM power, computed
