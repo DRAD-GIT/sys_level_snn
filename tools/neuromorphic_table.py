@@ -123,7 +123,7 @@ FOOTNOTES = [
     r"$^{a}$ Computed from the reported values: power = energy / latency, or latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
     r"operations) divided by the reported energy per sample.",
-    r"$^{c}$ Computed as 11 layers $\times$ the reported 73\,ns per layer (VGG-11).",
+    r"$^{c}$ Computed as 11 layers $\times$ the 73\,ns per layer Han et al. report for VGG-11.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"This work: N-MNIST on a 578-512-10 SNN (10 time steps of 10\,ms); "
     r"IBM DVS Gesture on a 512-512-10 SNN (80 time steps of 30\,ms); "
