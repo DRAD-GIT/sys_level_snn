@@ -1,22 +1,22 @@
 key,file,chars,spiking,nmnist,gesture,cifar10,energy_units,rram,mram,pcm,fefet,sram,verdict
 S6JMM7VG,Eshraghian et al. - 2023 - Training Spiking Neural Networks Using Lessons Fro.pdf,211321,787,2,1,2,0,7,0,0,0,0,
-ZDFGP6B8,Tavanaei et al. - 2019 - Deep Learning in Spiking Neural Networks.pdf,114887,544,5,0,9,0,1,0,0,0,0,
-HH7QULRG,Pfeiffer and Pfeil - 2018 - Deep Learning With Spiking Neurons Opportunities .pdf,121278,515,2,0,3,7,2,0,0,1,0,"Review: its Table 1 cites TrueNorth CIFAR-10 89.3%, 164 uJ (Esser 2016, SRAM digital)"
+ZDFGP6B8,Tavanaei et al. - 2019 - Deep Learning in Spiking Neural Networks.pdf,114887,544,5,0,9,0,1,0,0,0,0,Review: Table I read; algorithm accuracies only (Esser'16 CIFAR-10 87.5%)
+HH7QULRG,Pfeiffer and Pfeil - 2018 - Deep Learning With Spiking Neurons Opportunities .pdf,121278,515,2,0,3,7,2,0,0,1,0,"Review: Table 1 read; cites TrueNorth (Esser PNAS'16) CIFAR-10 89.3%, 164 uJ (8 chips), SRAM; rest MNIST"
 E4HNMWDN,Fang et al. - 2023 - SpikingJelly An open-source machine learning infr.pdf,110108,512,2,8,2,0,0,0,0,0,0,
-3CBVTVVC,Beigne et al. - 2019 - Spiking Neural Networks Hardware Implementations a.pdf,140882,480,4,0,1,6,16,1,3,0,0,Review (Beigne 2019): no new per-sample numbers on our datasets
+3CBVTVVC,Beigne et al. - 2019 - Spiking Neural Networks Hardware Implementations a.pdf,140882,480,4,0,1,6,16,1,3,0,0,Review: Tables 1-2 read; MNIST-only SNN accelerators
 VFQT5IKF,Paugam-Moisy and Bohte - 2012 - Computing with Spiking Neuron Networks.pdf,127980,468,0,0,0,0,0,0,0,0,0,
 BQEEG2B6,Syed et al. - 2021 - Exploring optimized spiking neural network archite.pdf,78193,395,0,0,42,0,1,0,0,0,0,
 ETG8Y93I,Han et al. - 2020 - RMP-SNN Residual Membrane Potential Neuron for En.pdf,49765,323,0,0,15,0,0,0,0,0,0,
 9CBXAEWM,Asghar et al. - 2021 - A Low-Power Spiking Neural Network Chip Based on a.pdf,53730,289,0,0,0,0,2,0,0,0,0,
 94KEEIDZ,Roy et al. - 2019 - Towards spike-based machine intelligence with neur.pdf,84930,286,0,0,0,0,27,8,12,0,4,
-8UPJ39D8,Camu#U00f1as-Mesa et al. - 2019 - Neuromorphic Spiking Neural Networks and Their Mem.pdf,105961,281,1,0,1,2,57,0,1,2,0,
+8UPJ39D8,Camu#U00f1as-Mesa et al. - 2019 - Neuromorphic Spiking Neural Networks and Their Mem.pdf,105961,281,1,0,1,2,57,0,1,2,0,"Review: Table 2 read; large-scale systems, no dataset numbers"
 SR7JK6GV,Guo et al. - 2021 - Neural Coding in Spiking Neural Networks A Compar.pdf,84761,277,9,0,0,0,1,0,1,0,0,
 5G93XNV9,Dorzhigulov and Saxena - 2023 - Spiking CMOS-NVM mixed-signal neuromorphic ConvNet with circuit- and training-optimized temporal sub.pdf,89100,257,8,0,24,2,39,0,1,2,4,"QUALIFIES but 130nm: RRAM estimated; CIFAR-10 61.74%, 181 uJ"
 V9YK77LT,Frenkel et al. - 2018 - A 0.086-mm$^2$ 12.7-pJSOP 64k-Synapse 256-Neuron .pdf,88947,243,0,0,0,15,0,0,0,0,30,
 HTHXLLQT,Wang et al. - 2025 - Fully Integrated Memristive Spiking Neural Network with Analog Neurons for High-Speed Event-Based Da.pdf,76588,239,8,23,0,2,41,0,1,0,1,QUALIFIES but 180nm: RRAM measured; Gesture 93.06% 1.94 uJ; N-MNIST 94.73% 1.78 uJ
 HRVSUKIF,Shrestha and Orchard - 2018 - SLAYER Spike Layer Error Reassignment in Time.pdf,35650,222,9,5,0,0,0,0,0,0,0,
 Z4K79ZIU,Indiveri and Liu - 2015 - Memory and Information Processing in Neuromorphic Systems.pdf,116538,206,0,0,0,0,13,5,3,2,2,
-X68U5ZMU,Ivanov et al. - 2022 - Neuromorphic artificial intelligence systems.pdf,93438,200,0,0,1,3,11,0,5,1,15,"Review: cites SynSense Dynap-CNN CIFAR-10 90%, 1 mJ; Gesture 89%, 10 mW (company figures)"
+X68U5ZMU,Ivanov et al. - 2022 - Neuromorphic artificial intelligence systems.pdf,93438,200,0,0,1,3,11,0,5,1,15,"Review: Table 3 read (no dataset numbers); text cites Dynap-CNN CIFAR-10 90%, 1 mJ (company figures)"
 KTH4QAXV,Hazan et al. - 2018 - BindsNET A Machine Learning-Oriented Spiking Neur.pdf,73983,197,6,0,4,0,0,0,0,0,0,
 ZPWRYKM4,Cordone et al. - 2022 - Object Detection with Spiking Neural Networks on A.pdf,43927,190,0,0,0,0,0,0,0,0,0,
 U5YMEFJA,Davies et al. - 2018 - Loihi A Neuromorphic Manycore Processor with On-C.pdf,58979,190,0,0,0,0,0,0,0,0,3,
@@ -48,7 +48,7 @@ N9SZCZEM,Chakraborty et al. - 2019 - A Photonic In-Memory Computing primitive fo
 Y8SLX4WV,Diehl and Cook - 2015 - Unsupervised learning of digit recognition using s.pdf,51063,131,0,0,0,0,2,0,0,0,0,
 FJ2N2CWS,Fouda et al. - 2019 - Spiking Neural Networks for Inference and Learning.pdf,85646,130,0,0,0,0,54,2,1,1,2,
 6S3LQVU8,Kornijcuk et al. - 2016 - Leaky integrate-and-fire neuron circuit based on f.pdf,70736,128,0,0,0,0,1,0,0,1,0,
-BPX34T6M,Frenkel et al. - 2019 - MorphIC A 65-nm 738k-Synapsemm2 Quad-Core Binary.pdf,75938,126,0,0,2,25,1,0,0,0,45,No: MorphIC SRAM 65nm; MNIST (CIFAR-10 only in a reference)
+BPX34T6M,Frenkel et al. - 2019 - MorphIC A 65-nm 738k-Synapsemm2 Quad-Core Binary.pdf,75938,126,0,0,2,25,1,0,0,0,45,"No: MorphIC SRAM 65nm; tables III and V read, no dataset numbers of ours"
 QI2I47M9,Oh et al. - 2021 - Spiking Neural Networks With Time-to-First-Spike C.pdf,42309,117,0,0,0,0,2,0,1,0,0,
 ERAVYRJQ,D#U2019Agostino et al. - 2024 - DenRAM neuromorphic dendritic architecture with R.pdf,76440,109,0,0,0,0,97,0,1,5,0,
 JDDFXFXC,Lele et al. - 2024 - A Heterogeneous RRAM In-Memory and SRAM Near-Memor.pdf,63965,109,0,0,0,2,61,0,0,0,30,
@@ -62,8 +62,8 @@ IWXRP55Z,Nguyen et al. - 2021 - STT-BSNN An In-Memory Deep Binary Spiking Neural
 LRZFG98E,STT-BSNN_An_In-Memory_Deep_Binary_Spiking_Neural_Network_Based_on_STT-MRAM.pdf,60914,96,0,0,11,0,6,107,1,0,0,Same as STT-BSNN above (duplicate)
 FUHZ6WTE,Liu et al. - 2025 - Ferroelectric-based neuromorphic memory devices for bio-inspired computing.pdf,155842,95,0,0,0,4,15,9,9,568,0,
 XAC2ZJUW,Brette and Gerstner - 2005 - Adaptive Exponential Integrate-and-Fire Model as a.pdf,35017,94,0,0,0,0,0,0,0,0,0,
-QP9WGH2V,Yu - 2018 - Neuro-Inspired Computing With Emerging Nonvolatile.pdf,126066,88,0,0,3,2,48,2,43,17,15,
-7E8I462Z,Yu - 2018 - Neuro-inspired computing with emerging nonvolatile.pdf,126014,88,0,0,3,2,48,2,43,17,15,
+QP9WGH2V,Yu - 2018 - Neuro-Inspired Computing With Emerging Nonvolatile.pdf,126066,88,0,0,3,2,48,2,43,17,15,"Review: Table 1 read; prototype categories, no dataset numbers"
+7E8I462Z,Yu - 2018 - Neuro-inspired computing with emerging nonvolatile.pdf,126014,88,0,0,3,2,48,2,43,17,15,"Review: Table 1 read; prototype categories, no dataset numbers"
 8FTWJXWT,2088.pdf,13199,87,0,0,0,4,3,0,0,0,0,
 AMKYNAW4,Mehonic and Kenyon - 2022 - Brain-inspired computing needs a master plan.pdf,43064,85,0,0,0,0,4,0,0,0,0,
 VZZJ58DS,Yu et al. - 2025 - An Event-Driven Spiking Compute-In-Memory Macro based on SOT-MRAM.pdf,23447,78,0,0,0,0,11,72,0,0,2,
@@ -79,16 +79,16 @@ DWXWCCPS,Abunahla et al. - 2023 - Analog monolayer SWCNTs-based memristive 2D st
 53RQTGDH,Matsui et al. - 2024 - FeFET Local Multiply and Global Accumulate Voltage-Sensing Computation-In-Memory Circuit Design for.pdf,57197,68,0,0,0,0,18,3,2,199,2,
 9H3E643T,Matsui et al. - 2024 - FeFET Local Multiply and Global Accumulate Voltage-Sensing Computation-In-Memory Circuit Design for.pdf,57161,68,0,0,0,0,18,3,2,199,2,
 XP7L7J66,Zhao et al. - 2020 - Reliability of analog resistive switching memory f.pdf,102086,65,0,0,0,0,58,1,37,1,4,
-I5WFHAZ8,Aguirre et al. - 2024 - Hardware implementation of memristor-based artificial neural networks.pdf,225633,62,0,0,9,1,151,7,18,5,22,
+I5WFHAZ8,Aguirre et al. - 2024 - Hardware implementation of memristor-based artificial neural networks.pdf,225633,62,0,0,9,1,151,7,18,5,22,"Review: Tables 1, 3, 5 read; memristor ANNs, no energy/sample"
 SDHAGNPF,Kamimura et al. - 2019 - Parallel Product-Sum Operation Neuromorphic Systems with 4-bit Ferroelectric FET Synapses.pdf,22737,61,0,0,0,0,26,5,0,56,0,
 XPV3P6JW,A_28-nm_Convolutional_Neuromorphic_Processor_Enabling_Online_Learning_with_Spike-Based_Retinas.pdf,29958,60,3,0,0,10,0,0,0,0,11,Same as SPOON above (duplicate)
-CWRYGVUF,Frenkel et al. - 2020 - A 28-nm Convolutional Neuromorphic Processor Enabling Online Learning with Spike-Based Retinas.pdf,29773,60,3,0,0,10,0,0,0,0,11,"QUALIFIES (SRAM): SPOON 28nm measured; N-MNIST 93.8%, 665 nJ"
+CWRYGVUF,Frenkel et al. - 2020 - A 28-nm Convolutional Neuromorphic Processor Enabling Online Learning with Spike-Based Retinas.pdf,29773,60,3,0,0,10,0,0,0,0,11,"QUALIFIES (SRAM): SPOON 28nm; N-MNIST 93.8%, 665 nJ; Fig. 8 (MNIST plot) read"
 UPTQS75I,Furber et al. - 2014 - The SpiNNaker project.pdf,65209,60,0,0,0,0,0,0,0,0,0,
 Z9BQLM7U,2019 - Building brain-inspired computing.pdf,34874,57,0,0,0,0,1,0,0,0,0,
 HLBLTZEY,Boahen - 2022 - Dendrocentric learning for synthetic intelligence.pdf,50376,57,0,0,0,2,0,0,0,16,0,
 INK4YQKN,Park - 2020 - Neuromorphic Computing Using Emerging Synaptic Dev.pdf,48141,57,0,0,0,0,30,53,19,0,4,
 RUCHQ7GA,Gomony et al. - Invited Achieving PetaOpsW edge-AI processing.pdf,23988,54,0,0,0,2,16,4,3,4,11,
-8JCM5M8H,Sebastian et al. - 2020 - Memory devices and applications for in-memory comp.pdf,110742,54,0,0,4,0,81,25,39,9,43,
+8JCM5M8H,Sebastian et al. - 2020 - Memory devices and applications for in-memory comp.pdf,110742,54,0,0,4,0,81,25,39,9,43,"Review: Table 1 read; IMC CNN chips, TOPS/W only"
 8Z58CTZ3,Grollier et al. - 2020 - Neuromorphic spintronics.pdf,74857,53,0,0,0,3,10,8,2,0,0,
 Q2ATETAV,Yanguas-Gil et al. - 2019 - The Insect Brain as a Model System for Low Power E.pdf,32046,51,0,0,0,0,2,0,0,0,0,
 UJJET4LJ,Izhikevich - 2003 - Simple model of spiking neurons.pdf,20945,50,0,0,0,0,0,0,0,0,0,
@@ -113,18 +113,18 @@ P5VCP5QR,Ielmini and Wong - 2018 - In-memory computing with resistive switching 
 UYAR3DT9,ReckOn_A_28nm_Sub-mm2_Task-Agnostic_Spiking_Recurrent_Neural_Network_Processor_Enabling_On-Chip_Learning_over_Second-Long_Timescales.pdf,13765,25,0,1,0,4,0,0,0,0,4,Same as ReckOn above (duplicate)
 FG2RDGTW,Kim et al. - 2021 - 4K-memristor analog-grade passive crossbar circuit.pdf,59882,24,0,0,0,0,23,0,5,3,0,
 XXHWVVLV,Mayr et al. - 2019 - SpiNNaker 2 A 10 Million Core Processor System fo.pdf,12601,24,0,0,0,0,0,0,0,0,1,
-ZNB5GEQL,Yao et al. - 2020 - Fully hardware-implemented memristor convolutional.pdf,77930,23,0,0,2,0,12,0,2,0,0,
-KCAH2LUC,Kim et al. - 2022 - CMOS-compatible compute-in-memory accelerators based on integrated ferroelectric synaptic arrays for.pdf,55488,21,0,0,7,0,1,0,2,99,0,
+ZNB5GEQL,Yao et al. - 2020 - Fully hardware-implemented memristor convolutional.pdf,77930,23,0,0,2,0,12,0,2,0,0,"No: memristor CNN (MNIST), Extended Data tables are CNN"
+KCAH2LUC,Kim et al. - 2022 - CMOS-compatible compute-in-memory accelerators based on integrated ferroelectric synaptic arrays for.pdf,55488,21,0,0,7,0,1,0,2,99,0,"No: ferroelectric CIM, CNN simulations (VGG-8), no SNN datasets"
 HEE7589L,Silva et al. - 2023 - Roadmap on ferroelectric hafnia- and zirconia-based materials and devices.pdf,428357,21,0,0,0,2,4,1,2,289,4,
 447D4UPN,Xiang et al. - 2023 - Enhancing Memory Window Efficiency of Ferroelectric Transistor for Neuromorphic Computing via Two-Di.pdf,53116,20,0,0,0,0,0,0,0,122,0,
-3SESZT59,Yan et al. - 2019 - RRAM-based Spiking Nonvolatile Computing-In-Memory Processing Engine with Precision-Configurable In.pdf,13100,20,0,0,3,0,29,0,0,0,4,"No: Yan VLSI'19 RRAM 150nm; MNIST, CIFAR-10 relative accuracy only"
-CSTGCP3P,Yan et al. - 2019 - RRAM-based Spiking Nonvolatile Computing-In-Memory Processing Engine with Precision-Configurable In.pdf,13098,20,0,0,3,0,29,0,0,0,4,Same as Yan above (duplicate)
+3SESZT59,Yan et al. - 2019 - RRAM-based Spiking Nonvolatile Computing-In-Memory Processing Engine with Precision-Configurable In.pdf,13100,20,0,0,3,0,29,0,0,0,4,"No: Yan VLSI'19 RRAM 150nm; Table I read (no datasets); MNIST, CIFAR-10 relative accuracy only"
+CSTGCP3P,Yan et al. - 2019 - RRAM-based Spiking Nonvolatile Computing-In-Memory Processing Engine with Precision-Configurable In.pdf,13098,20,0,0,3,0,29,0,0,0,4,"No: Yan VLSI'19 RRAM 150nm; Table I read (no datasets); MNIST, CIFAR-10 relative accuracy only"
 884IM7EJ,Khan et al. - 2020 - The future of ferroelectric field-effect transistor technology.pdf,61948,18,0,0,0,0,8,17,7,263,2,
 PH9AZSMT,Ajayan et al. - 2023 - Ferroelectric Field Effect Transistors (FeFETs) A.pdf,117853,17,0,0,0,0,3,2,0,542,4,
-E65N79SW,Hung et al. - 2021 - Challenges and Trends of Nonvolatile In-Memory-Com.pdf,64363,17,0,0,4,0,35,4,8,0,9,
+E65N79SW,Hung et al. - 2021 - Challenges and Trends of Nonvolatile In-Memory-Com.pdf,64363,17,0,0,4,0,35,4,8,0,9,"Review: nvCIM CNN macros, no SNN datasets"
 2ZGF6L5I,Jain et al. - 2019 - Neural network accelerator design with resistive c.pdf,77108,17,0,0,0,0,17,0,4,4,4,
 WYUGLVXZ,Wang et al. - 2018 - Fully memristive neural networks for pattern class.pdf,45873,17,0,0,0,0,20,0,2,0,0,
-66UWHR6E,"Amir et al. - 2017 - A Low Power, Fully Event-Based Gesture Recognition.pdf",45379,16,0,3,0,0,0,0,0,0,0,"TrueNorth gesture (Amir 2017): 96.5%, <200 mW, no energy/sample"
+66UWHR6E,"Amir et al. - 2017 - A Low Power, Fully Event-Based Gesture Recognition.pdf",45379,16,0,3,0,0,0,0,0,0,0,"TrueNorth gesture (Amir 2017): 96.5%, <200 mW, no energy/sample; tables are its own network configs"
 IB2EWYCN,Amirsoleimani et al. - 2020 - In-Memory Vector-Matrix Multiplication in Monolith.pdf,115362,16,0,0,0,0,61,0,5,1,7,
 ZT4P985L,Kim et al. - 2021 - Ferroelectric field effect transistors Progress and perspective.pdf,92309,16,0,0,0,0,1,0,1,310,1,
 EVJ7W8VB,Li et al. - 2024 - High-performance ferroelectric field-effect transistors with ultra-thin indium tin oxide channels fo.pdf,46296,16,0,0,0,0,2,0,0,159,0,
@@ -159,7 +159,7 @@ SA8M2NXI,2024 - FMFC FeFET-based Multi-frequency Circuit Design f.pdf,43610,5,0,
 6B7ETSJI,Long et al. - 2019 - A Ferroelectric FET-Based Processing-in-Memory Arc.pdf,46906,5,0,0,0,0,23,0,0,73,4,
 LEM5L59G,"Marinella et al. - 2017 - Multiscale Co-Design Analysis of Energy, Latency, .pdf",81432,5,0,0,0,75,102,0,2,1,31,
 YSPNI7L9,Razavi - 2017 - Design of analog CMOS integrated circuits.pdf,1582524,5,0,0,0,2,0,0,1,0,0,
-94G89PRL,Wang et al. - 2024 - Enabling Low-Power Charge-Domain Nonvolatile Compu.pdf,37352,5,0,0,4,0,3,3,0,43,1,
+94G89PRL,Wang et al. - 2024 - Enabling Low-Power Charge-Domain Nonvolatile Compu.pdf,37352,5,0,0,4,0,3,3,0,43,1,"No: ferroelectric memcapacitor CIM, device benchmark only"
 I63LP2B5,Chen et al. - 2025 - Low-power edge detection based on ferroelectric fi.pdf,46710,4,0,0,0,2,10,0,0,79,1,
 N498BFCN,De et al. - 2022 - 28 nm HKMG-Based Current Limited FeFET Crossbar-Array for Inference Application.pdf,24368,4,0,0,0,0,1,1,1,61,0,
 KU8AITKB,Khaddam-Aljameh et al. - 2022 - HERMES-Core#U2014A 1.59-TOPSmm2 PCM on 14-nm CMOS In-Memory Compute Core Using 300-psLSB Linearized CCO.pdf,65800,4,0,0,9,0,15,0,47,0,19,
@@ -176,7 +176,7 @@ UK7RQ9UK,FitzHugh - 1961 - Impulses and Physiological States in Theoretical M.pd
 L4JBKDAS,Gebregiorgis et al. - 2022 - A Survey on Memory-centric Computer Architectures.pdf,169966,3,0,0,0,0,64,40,3,0,25,
 8IRTWUQR,Hu et al. - 2018 - Memristor#U2010Based Analog Computation and Neural Netw.pdf,48892,3,0,0,0,0,1,0,3,0,0,
 T6U8MVVG,Hu et al. - 2018 - Memristor-Based Analog Computation and Neural Netw.pdf,52008,3,0,0,0,0,1,0,3,0,0,
-2ZSB7W74,Hung et al. - 2021 - A four-megabit compute-in-memory macro with eight-.pdf,68257,3,0,0,8,0,52,0,1,0,5,
+2ZSB7W74,Hung et al. - 2021 - A four-megabit compute-in-memory macro with eight-.pdf,68257,3,0,0,8,0,52,0,1,0,5,"Review: nvCIM CNN macros, no SNN datasets"
 SBBR4HNP,Hwang et al. - 2024 - The Effect of FerroelectricDielectric Capacitance Ratio on Short-Term Retention Characteristics of.pdf,23725,3,0,0,0,0,0,0,0,99,0,
 6SANBF64,Molas et al. - 2016 - Functionality and reliability of resistive RAM (RR.pdf,9876,3,0,0,0,0,42,0,0,0,0,
 J22J9XTK,Singh et al. - 2025 - Recent advancements and progress in development of ferroelectric field effect transistor A review.pdf,60371,3,0,0,0,0,0,0,0,220,1,

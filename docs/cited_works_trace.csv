@@ -1,0 +1,45 @@
+source_paper,source_table,cited_work,venue,memory,node,dataset,accuracy,energy_per_sample,other_metrics,in_zotero,fits_criteria
+DS-CIM (TCAS-I'24),Table III,SPOON (Frenkel et al.),ISCAS'20,SRAM (digital),28nm,MNIST (table); N-MNIST in its own paper,97.5% (MNIST); 93.8% N-MNIST,313 nJ (MNIST); 665 nJ N-MNIST,,yes,SRAM; N-MNIST energy in its own paper
+DS-CIM (TCAS-I'24),Table III,Pu et al.,TCAS-I'21,digital,40nm,MNIST,97.90%,198.5 nJ,,no,no (MNIST only)
+DS-CIM (TCAS-I'24),Table III,ReckOn,ISSCC'22,SRAM,28nm,DVS Gesture 16x16,87.3%,46 uJ,,yes,SRAM; yes
+DS-CIM (TCAS-I'24),Table III,Han et al.,TCAS-I'22,RRAM,65nm,CIFAR-10,88%,21.74 uJ,,yes,yes (in table)
+DS-CIM (TCAS-I'24),Table III,ANP-I,ISSCC'23/JSSC'24,SRAM,28nm,N-MNIST / DVS Gesture,96% / 92%,343 nJ / 3.9 uJ,,yes,yes (in table)
+Han et al. (TCAS-I'22),Table II,Jiang et al. (PWM memristor dot-product engine),DAC'18,RRAM,130nm,MNIST,,,0.82 TOPS/W,no,no (MNIST only)
+Han et al. (TCAS-I'22),Table II,Xiang et al. (spike-driven NOR flash),TED'20,NOR flash,65nm,MNIST,,30.9 uJ,,no,"no (MNIST, flash)"
+Han et al. (TCAS-I'22),Table II,ReSiPE (Li et al.),DAC'20,RRAM,65nm,MNIST,,,40.8 TOPS/W,no,no (MNIST only)
+ANP-I (JSSC'24),Table I,ReckOn,ISSCC'22,SRAM,28nm,DVS Gesture,87.3%,46.1 uJ,,yes,SRAM; yes
+ANP-I (JSSC'24),Table I,Park et al.,JSSC'20,SRAM (digital),65nm,MNIST,97.8%,236 nJ,,no,no (MNIST only)
+ANP-I (JSSC'24),Table I,Chen et al. (Intel),JSSC'19,SRAM (digital),10nm,MNIST,89%,1.0 uJ,,no,no (MNIST only)
+ANP-I (JSSC'24),Table I,Kim et al.,VLSI'15,SRAM (digital),65nm,MNIST,84-90%,27-162 nJ,,no,no (MNIST only)
+ReckOn (ISSCC'22),Fig. 6,Kim VLSI'15; Buhler VLSI'17; Gonugondla ISSCC'18; Chen VLSI'18; Park ISSCC'19; Amravati ISSCC'18,various,SRAM / mixed-signal,10-65nm,"MNIST, MIT CBCL, robot",,,,no,no (none of our datasets)
+Wang et al. 2025 (memristive SNN),Table 1,Lele et al. (RRAM CIM + SRAM SoC),ISSCC'23,RRAM+SRAM,40nm,UAV dataset,,,36.77 TSOPS/W,yes,no (not our datasets)
+Wang et al. 2025 (memristive SNN),Table 1,"ISSCC'22 [51], ISSCC'21 [46], ISSCC'21 [47], JSSC'23 [48]",various,SRAM/digital,28-180nm,"ECG, KWS, LFW",,,,no,no (not our datasets)
+Wang et al. 2025 (memristive SNN),Table 1,Valentian et al.,IEDM'19,RRAM,130nm,MNIST,84%,24.48 nJ,,yes,no (MNIST only)
+NeuDW-CIM (arXiv'26),Table I,"Sharma et al. (digital CIM, temporal pipelining)",ESSERC'25,SRAM (digital CIM),65nm,DVS Gesture,93.54%,not given,4.9 mW,no,SRAM; energy/sample unknown (check paper)
+NeuDW-CIM (arXiv'26),Table I,"Liu et al. (spike-driven SNN unit, sparsity-adaptive IMC)",ISSCC'24,SRAM (mixed CIM),22nm,N-MNIST / DVS Gesture,97% / 94%,not given,"0.52 mW, 3.78 pJ/SOP",no,SRAM; energy/sample unknown (check paper)
+NeuDW-CIM (arXiv'26),Table I,NeuC-CIM (Fu et al.),VLSI'25,analog charge-domain CIM,130nm,N-MNIST / DVS Gesture,97.1% / 90.12%,not given,"0.096 mW, 1.3 pJ/SOP",no,130nm; energy/sample unknown
+BiNeuroRAM (DAC'25),Table II,NeuRRAM (Wan et al.),Nature'22,RRAM,130nm,CIFAR-10,85.7%,not given,67.8-416.5 TOPS/W,yes,"no (130nm, mostly ANN, no energy/sample)"
+BiNeuroRAM (DAC'25),Table II,Neuro-CIM,JSSC'23,SRAM,28nm,CIFAR-10 (ResNet-12),86.4% (their table); 92.1% (own paper),0.72 uJ (own paper),,yes,SRAM; yes (removed earlier)
+BiNeuroRAM (DAC'25),Table II,TrueNorth; Tempo-CIM,TCAD'15; JETCAS'23,SRAM; RRAM,28nm; 40nm,MNIST,,,,partly,no
+Neuro-CIM (JSSC'23),Table I,Lee et al. (capacitor SRAM CIM),VLSI'21,SRAM CIM,28nm,CIFAR-10 (CNN),91.1%,1.73 uJ,,no,"no (CNN, not SNN)"
+Neuro-CIM (JSSC'23),Table I,Jia et al. (programmable IMC accelerator),ISSCC'21,SRAM CIM,16nm,CIFAR-10 (CNN),91.51%,19.4 uJ,,no,"no (CNN, not SNN)"
+Neuro-CIM (JSSC'23),Table I,Yue ISSCC'21; Su ISSCC'21; Dong ISSCC'20,ISSCC,SRAM CIM,7-65nm,CIFAR-10 (CNN),91.71% / 91.2%,not given,,no,no (CNN macros)
+STT-BSNN (Access'21),Table 5,IJCNN'19 [16] (MTJ binary SNN),IJCNN'19,MRAM (MTJ),45nm,CIFAR-10,70.3%,not given,36 fJ/synapse,no,no (no energy/sample)
+STT-BSNN (Access'21),Table 5,TNNSL'20 [17]; VLSI'20 [19],various,MRAM,28nm / N/A,MNIST,91.5% / ~97.4%,,,no,no (MNIST only)
+Tempo-CIM (JETCAS'23),Table III,ISSCC'19 [3]; ISSCC'23 [4]; ISSCC'21/22/23 RRAM CIM [8][53][54]; JSSC'23 [9],various,SRAM / RRAM CIM,14-28nm,none listed,,,TOPS/W only,partly,no (no datasets)
+E-ReCON (arXiv'26),Table III,"Six ReRAM/SRAM CIM macros (TCAS-I'22, VDAT'25, ISQED'25, ISCAS'24, TCAS-II'21/23/24, OJSCAS'21)",various,RRAM/SRAM,28-180nm,none,,,TOPS/W only,no,no (CNN macros)
+Dorzhigulov & Saxena (Frontiers'23),Table 5,Valentian'19; ReckOn; Wang'21; Liu'22; Liu'20; Chang'22; Hung'22,various,RRAM/SRAM,22-180nm,"MNIST, gesture, KWS, ECG",,46.1 uJ (ReckOn only),,partly,no new
+Huijbregts et al. (DAC'24),Table 3,Wang A-SSCC'20; Chen JSSC'19; Kim Frontiers'18,various,SRAM,10-65nm,MNIST,97.2-97.9%,195 nJ / 1000 nJ,,no,no (MNIST only)
+Pfeiffer & Pfeil (Frontiers'18),Table 1,TrueNorth deep CNN (Esser et al. 2016),PNAS'16,SRAM (digital),28nm,CIFAR-10,89.3%,164 uJ (8 chips),1249 img/s,no,SRAM; yes (energy/sample on CIFAR-10)
+Pfeiffer & Pfeil (Frontiers'18),Table 1,SpiNNaker; BrainScaleS,various,digital / mixed,130/180nm,MNIST,95%,3.3 mJ / 7.3 mJ,,no,no (MNIST only)
+Tavanaei et al. (2019),Table I,Esser et al. 2016 (TrueNorth),PNAS'16,SRAM (digital),28nm,CIFAR-10,87.50%,not given,,no,same work as above
+Ivanov et al. (2022),"text, Sec. on SynSense",Dynap-CNN (SynSense),company figures,SRAM (digital),22nm,CIFAR-10 / DVS Gesture,90% / 89%,1 mJ (CIFAR-10),"Gesture: 10 mW, <50 ms",no,"company figures, not a paper"
+Ivanov et al. (2022),Table 3,"TrueNorth, Loihi, Tianjic, SpiNNaker, BrainScaleS, Akida, Mythic, memristor chips",various,various,5-500nm,none,,,,partly,no (no dataset numbers)
+Beigne/Bouvier et al. (2019),Tables 1-2,"Yin'17, Mostafa'17, Zheng'18, Chen'18, Whatmough'17; BrainScaleS, Neurogrid, TrueNorth, SpiNNaker, Loihi",various,digital / analog,10-180nm,MNIST,,773 nJ - 1.7 uJ,,no,no (MNIST only)
+Camunas-Mesa et al. (2019),Table 2,"Neurogrid, BrainScaleS, TrueNorth, SpiNNaker, Loihi, Darwin, ROLLS, DYNAPs, ODIN",various,various,14-180nm,none,,,energy per connection,no,no (no dataset numbers)
+Aguirre et al. (Nat. Commun.'24),"Tables 1, 3, 5","Memristor ANN prototypes; RRAM/PCM accelerators (ISAAC, PUMA, PRIME, ...)",various,RRAM/PCM,14-180nm,"MNIST, CIFAR-10 (ANNs)",,not given,TOPS/W,no,"no (ANNs, no energy/sample)"
+Sebastian et al. (Nat. Nano.'20),Table 1,"IMC chips (SRAM, NOR flash, RRAM 130nm/55nm)",various,SRAM/flash/RRAM,55-180nm,"MNIST, CIFAR-10 (CNNs)",85.7% / 83.3% / 88.52%,not given,TOPS/W,partly,no (CNNs)
+Yu (Proc. IEEE'18),Table 1,"Representative prototypes (IBM PCM STDP array, TrueNorth, BrainScaleS, ...)",various,various,,none,,,,no,no (no dataset numbers)
+Yan et al. (VLSI'19),Table I,RRAM/SRAM CIM macros; 6T-SRAM PE; TrueNorth,various,RRAM/SRAM,28-180nm,none,,,TOPS/W,no,no
+MorphIC (2019),"Tables III, V","Bottom-up STDP chips; Seo'11, TrueNorth, Loihi",various,digital/analog,14-65nm,"8-pattern, MNIST",,,energy/SOP,no,no
+SPOON (ISCAS'20),Fig. 8 (plot),SNN/ANN/BNN accelerators on MNIST,various,SRAM,10-65nm,MNIST,,plot only,,no,no (MNIST only)
