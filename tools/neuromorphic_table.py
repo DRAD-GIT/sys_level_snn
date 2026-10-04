@@ -62,15 +62,15 @@ WORKS = [
      "technology": "28nm", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
      "results": {r"N-MNIST$^{\dagger}$": {"accuracy": r"96.0\%", "energy": 343},
                  r"IBM DVS Gesture$^{\S}$": {"accuracy": r"92.0\%", "energy": 3900}}},
-    {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "impl": r"Digital$^{\ddagger}$",
-     "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"87.3\%", "energy": 46100, "power": 0.077}}},
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
      "technology": "40nm", "memory": "SOT-MRAM", "impl": "Mixed signal",
      "results": {r"IBM DVS Gesture$^{*}$": {"accuracy": r"90.00\%", "energy": 729.3,
                                             "latency": 40.46}}},
+    {"name": "BiNeuroRAM", "publication": "DAC'25", "date": (2025, 6), "node": 28,
+     "technology": "28nm", "memory": "RRAM", "impl": "Mixed signal",
+     "results": {r"CIFAR-10$^{\|}$": {"accuracy": r"89.2\%", "energy": 730, "tops_per_w": 83.1}}},
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
-     "technology": "65nm", "memory": "ReRAM", "impl": "Mixed signal",
+     "technology": "65nm", "memory": "RRAM", "impl": "Mixed signal",
      "results": {"CIFAR-10": {"accuracy": r"88\%", "energy": 21740, "tops_per_w": 14.12}}},
 ]
 
@@ -86,6 +86,7 @@ FOOTNOTES = [
     r"$^{\dagger}$ Downscaled to $2\times17\times17$, first 100\,ms.",
     r"$^{\ddagger}$ Embedded on-chip learning.",
     r"$^{\S}$ Downscaled to $14\times14$ with five temporal filters, 10 classes.",
+    r"$^{\|}$ ResNet-20 with bipolar (ternary) spikes and 4-bit weights.",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"This work: 6-bit weights; N-MNIST on a 578-512-10 SNN (10 time steps of 10\,ms); "
     r"IBM DVS Gesture on a 512-512-10 SNN (80 time steps of 30\,ms); "
