@@ -125,15 +125,6 @@ WORKS = [
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"93.8\%",
                             "energy": 665}}},
-    # Fig. 6: 35 nJ per step (inference, 0.5 V, 13 MHz), 1318 steps per Gesture
-    # sample on average -> 46.1 uJ per sample (d); at 77 uW -> latency (a).
-    {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
-     "precision": "8-bit", "cell": "1-bit",
-     "impl": r"Digital",
-     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 35 * 1318,
-                             "energy_per_step": 35, "power": 0.077, "latency": 35 * 1318 / 0.077,
-                             "marks": {"energy": "d", "latency": "a"}}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
     # energy per step = energy per sample (e).
@@ -150,7 +141,17 @@ WORKS = [
 
 # Works kept out of the table for now (same format as WORKS): move one into
 # WORKS to show it.
-SET_ASIDE = []
+SET_ASIDE = [
+    # Fig. 6: 35 nJ per step (inference, 0.5 V, 13 MHz), 1318 steps per Gesture
+    # sample on average -> 46.1 uJ per sample (d); at 77 uW -> latency (a).
+    {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
+     "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "precision": "8-bit", "cell": "1-bit",
+     "impl": r"Digital",
+     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 35 * 1318,
+                             "energy_per_step": 35, "power": 0.077, "latency": 35 * 1318 / 0.077,
+                             "marks": {"energy": "d", "latency": "a"}}}},
+]
 
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
@@ -194,10 +195,10 @@ def _unit(value, units):
         value /= step
 
 
-FORMATS = {"energy": lambda v: _unit(v, [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
-           "energy_per_step": lambda v: _unit(v, [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
-           "latency": lambda v: _unit(v, [(r"$\mu$s", 1e3), ("ms", 1e3), ("s", 1)]),
-           "power": lambda v: _unit(v, [(r"$\mu$W", 1e3), ("mW", 1e3), ("W", 1)]),
+FORMATS = {"energy": lambda v: _unit(v, [("nJ", 1e3), (r"\textmu J", 1e3), ("mJ", 1e3)]),
+           "energy_per_step": lambda v: _unit(v, [("nJ", 1e3), (r"\textmu J", 1e3), ("mJ", 1e3)]),
+           "latency": lambda v: _unit(v, [(r"\textmu s", 1e3), ("ms", 1e3), ("s", 1)]),
+           "power": lambda v: _unit(v, [(r"\textmu W", 1e3), ("mW", 1e3), ("W", 1)]),
            "tops_per_w": lambda v: f"{v:#.3g}".rstrip("."),
            "norm_tops_per_w": lambda v: f"{v:#.3g}".rstrip(".")}
 
@@ -340,7 +341,7 @@ def build_table(columns):
                 value = scaled(metric, r[metric], c["node"])
                 if c.get("ours") and metric != "accuracy" and others and \
                         all(better * (value - o) > 0 for o in others):
-                    text = f"\\textbf{{\\boldmath {text}}}"      # \boldmath: the units in math are bold too
+                    text = f"\\textbf{{{text}}}"
                 values.append(text)
             cells.append(_lines(values))
         row(label, cells)

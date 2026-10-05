@@ -53,13 +53,13 @@ class PublishTableTests(unittest.TestCase):
         self.assertEqual(pushed, table)
         self.assertIn(r"\makecell{N-MNIST \\ \phantom{0} \\ CIFAR-10}", table)   # aligned lines
         self.assertNotIn(r"\textbf{88.28\%}", table)                   # accuracy never bold
-        self.assertIn(r"\textbf{\boldmath ", table)                    # wins bold, units too
+        self.assertNotIn(r"$\mu$", table)                              # text micro sign (bolds)
         self.assertNotIn("Norm. TOPS/W", table)                        # no normalised TOPS/W row
         self.assertIn(r"\multicolumn{2}{c}{\makecell{96.80\%", table)  # one accuracy cell
         self.assertIn(r"\textbf{Energy / step}", table)                # energy per time step
         self.assertIn(r"$^{e}$", table)
         self.assertNotIn(r"\dagger", table)                            # no input footnotes
-        self.assertIn(r"39.0\,$\mu$J", table)                          # our CIFAR-10 energy
+        self.assertIn(r"39.0\,\textmu J", table)                          # our CIFAR-10 energy
         self.assertNotIn(r"\textbf{Power}", table)                     # no power row
         self.assertIn(r"$^{b}$", table)                                 # TOPS/W from our operations
         self.assertIn("DS-CIM", table)                                  # published works
@@ -91,7 +91,7 @@ class DeepScaleTests(unittest.TestCase):
         self.assertEqual(nt.scale("energy", 5.0, 40), 5.0)                          # same node
         self.assertIsNone(nt.scale("energy", 1780, 180))                            # out of range
         names = [w["name"] for w in sorted(nt.WORKS, key=lambda w: w["date"])]
-        self.assertEqual(names, ["SPOON", "ReckOn", "Han et al.", "Dorzhigulov et al.", "Liu et al.", "DS-CIM", "ANP-I"])  # by date
-        self.assertEqual(nt.SET_ASIDE, [])
+        self.assertEqual(names, ["SPOON", "Han et al.", "Dorzhigulov et al.", "Liu et al.", "DS-CIM", "ANP-I"])  # by date
+        self.assertEqual([w["name"] for w in nt.SET_ASIDE], ["ReckOn"])
         self.assertAlmostEqual(nt.scale("energy", 181000, 130), 181000 * 0.55 / 2.52)
         self.assertNotIn("TrueNorth", names)
