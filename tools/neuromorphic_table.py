@@ -121,16 +121,16 @@ WORKS = [
                              "power": 0.834, "latency": 25900 / 0.834,
                              "energy_per_step": 25900 / 16,
                              "marks": {"latency": "a", "energy_per_step": "e"}}}},
-    # TCAS-I'25 (Sun et al., Nanjing Univ.), TSMC 28nm post-layout (Design Compiler, IC
-    # Compiler), not fabricated: 1.1 uJ per inference = 41.5 mW x 28.2 us, 216.9 TOPS/W
-    # (Table X). Binary weights (8-bit input layer); 16 input time steps, 4 after its
-    # temporal-pooling layer, so no single energy per step.
-    {"name": "Sun et al.", "publication": "TCAS-I'25", "date": (2025, 8), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
-     "precision": "Binary", "cell": "1-bit",
+    # LOKI (Luiken et al., ASP-DAC'26, arXiv 2511.11205), 22nm digital FC SNN, synthesis
+    # (Genus) + gate-level simulation, not fabricated: N-MNIST 98.0%, 119.8 nJ per inference =
+    # estimated energy of the first two layers (hidden layer simulated, first layer from its
+    # SOPs x pJ/SOP; output layer not included) (f). Network 1156-256-256-10, INT4 weights.
+    {"name": "LOKI", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
+     "technology": "22nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
+     "precision": "4-bit", "cell": "1-bit",
      "impl": "Digital",
-     "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
-                             "latency": 28.2, "power": 41.5, "tops_per_w": 216.9}}},
+     "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"98.0\%", "energy": 119.8,
+                            "marks": {"energy": "f"}}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
     # energy per step = energy per sample (e).
@@ -148,6 +148,16 @@ WORKS = [
 # Works kept out of the table for now (same format as WORKS): move one into
 # WORKS to show it.
 SET_ASIDE = [
+    # TCAS-I'25 (Sun et al., Nanjing Univ.), TSMC 28nm post-layout (Design Compiler, IC
+    # Compiler), not fabricated: 1.1 uJ per inference = 41.5 mW x 28.2 us, 216.9 TOPS/W
+    # (Table X). Binary weights (8-bit input layer); 16 input time steps, 4 after its
+    # temporal-pooling layer, so no single energy per step.
+    {"name": "Sun et al.", "publication": "TCAS-I'25", "date": (2025, 8), "node": 28,
+     "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
+     "precision": "Binary", "cell": "1-bit",
+     "impl": "Digital",
+     "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
+                             "latency": 28.2, "power": 41.5, "tops_per_w": 216.9}}},
     {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
      "technology": "28nm FDSOI", "memory": "SRAM", "bitcell": "--", "encoding": "TTFS", "in_bits": "1-bit",
      "precision": "8-bit", "cell": "1-bit",
@@ -183,6 +193,7 @@ FOOTNOTES = [
     r"(ReckOn: 35\,nJ $\times$ 1318 steps).",
     r"$^{e}$ Computed as energy per inference / time steps (Liu et al.: 4 for N-MNIST, 16 for "
     r"Gesture; Han et al.: 1, one single-spike pass; this work: 10, 80 and 8).",
+    r"$^{f}$ Synthesis estimate of the first two layers, as reported (LOKI).",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
