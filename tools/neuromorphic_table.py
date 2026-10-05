@@ -85,12 +85,14 @@ WORKS = [
      "results": {"nmnist": {"input": r"$2\times17\times17$", "accuracy": r"96.0\%",
                             "energy": 343},
                  "gesture": {"input": r"$14\times14$", "accuracy": r"92.0\%", "energy": 3900}}},
+    # Input 2x16x16: Table III "downscaled to 16 x 16", a 2-layer FC network on a
+    # 512x512 array (512 inputs = 2 polarities x 16 x 16).
     # DS-CIM Table II: 40.46 us per Gesture sample -> power 735.35 nJ / 40.46 us.
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
      "technology": "40nm", "memory": "SOT-MRAM", "bitcell": "1T1MTJ", "encoding": "Dual-spike", "in_bits": "--",
      "precision": "Signed 4-bit", "cell": "1-bit",
      "impl": "Mixed signal",
-     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"90.00\%", "energy": 735.35,
+     "results": {"gesture": {"input": r"$2\times16\times16$", "accuracy": r"90.00\%", "energy": 735.35,
                              "latency": 40.46, "power": 735.35 / 40.46,
                              "marks": {"power": "a"}}}},
     # 181 uJ per inference; 100 time steps of 50 us, pipelined -> 5 ms per
