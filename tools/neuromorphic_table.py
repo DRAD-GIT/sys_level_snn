@@ -76,9 +76,10 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 # left out is computed in make_table (mark b). "marks" puts a footnote mark
 # on a value (a: computed from the paper's other numbers, derivation next to
 # it). "node" (nm) is used for scaling; "date" (year, month) orders the
-# columns. Footnote marks refer to FOOTNOTES.
+# columns; "cite" is its key in the paper's references.bib (the Name row cites it).
+# Footnote marks refer to FOOTNOTES.
 WORKS = [
-    {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
+    {"name": "ANP-I", "cite": "zhang_anp-i_2024", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
      "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "8/10-bit", "cell": "1-bit",
      "impl": r"Digital",
@@ -88,7 +89,7 @@ WORKS = [
     # Input 2x16x16: Table III "downscaled to 16 x 16", a 2-layer FC network on a
     # 512x512 array (512 inputs = 2 polarities x 16 x 16).
     # DS-CIM Table II: 40.46 us per Gesture sample -> power 735.35 nJ / 40.46 us.
-    {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
+    {"name": "DS-CIM", "cite": "fu_ds-cim_2024", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
      "technology": "40nm", "memory": "SOT-MRAM", "bitcell": "1T1MTJ", "encoding": "Dual-spike", "in_bits": "--",
      "precision": "Signed 4-bit", "cell": "1-bit",
      "impl": "Mixed signal",
@@ -97,7 +98,7 @@ WORKS = [
                              "marks": {"power": "a"}}}},
     # 181 uJ per inference; 100 time steps of 50 us, pipelined -> 5 ms per
     # inference, power 181 uJ / 5 ms.
-    {"name": "Dorzhigulov et al.", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
+    {"name": "Dorzhigulov et al.", "cite": "dorzhigulov_spiking_2023", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
      "technology": "130nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Rate", "in_bits": "--",
      "precision": "2-bit", "cell": "--",
      "impl": "Mixed signal",
@@ -109,7 +110,7 @@ WORKS = [
     # -> latency = energy / power. 4 time steps (N-MNIST), 16 (Gesture, Fig. 30.2.5
     # and the JSSC version) -> energy per step. Accuracy evaluated in software with
     # the measured IMC linearity.
-    {"name": "Liu et al.", "publication": "ISSCC'24", "date": (2024, 2), "node": 22,
+    {"name": "Liu et al.", "cite": "liu_302_2024", "publication": "ISSCC'24", "date": (2024, 2), "node": 22,
      "technology": "22nm", "memory": "SRAM", "bitcell": "6T + IMC cell", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4/8-bit", "cell": "1-bit",
      "impl": "Digital IMC",
@@ -125,7 +126,7 @@ WORKS = [
     # (Genus) + gate-level simulation, not fabricated: N-MNIST 98.0%, 119.8 nJ per inference =
     # estimated energy of the first two layers (hidden layer simulated, first layer from its
     # SOPs x pJ/SOP; output layer not included). Network 1156-256-256-10, INT4 weights.
-    {"name": "LOKI", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
+    {"name": "LOKI", "cite": "luiken_loki_2026", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
      "technology": "22nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4-bit", "cell": "1-bit",
      "impl": "Digital",
@@ -133,7 +134,7 @@ WORKS = [
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
     # energy per step = energy per sample (c).
-    {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
+    {"name": "Han et al.", "cite": "han_efficient_2022", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
      "technology": "65nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Temporal (delay)", "in_bits": "6-bit",
      "precision": "--", "cell": "5-bit (32 levels)",
      "impl": "Mixed signal",
@@ -327,7 +328,8 @@ def build_table(columns):
             cells = merge_ours(cells)
         lines.append(f"\\textbf{{{label}}} & " + " & ".join(cells) + r" \\")
 
-    row("Name", [f"\\textbf{{{c['name']}}}" for c in columns])
+    row("Name", [f"\\textbf{{{c['name']}}}" + (f"~\\cite{{{c['cite']}}}" if c.get("cite") else "")
+                 for c in columns])
     row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
