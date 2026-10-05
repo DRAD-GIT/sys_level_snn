@@ -119,6 +119,16 @@ WORKS = [
                              "power": 0.834, "latency": 25900 / 0.834,
                              "energy_per_step": 25900 / 16,
                              "marks": {"latency": "a", "energy_per_step": "e"}}}},
+    # TCAS-I'25 (Sun et al., Nanjing Univ.), TSMC 28nm post-layout (Design Compiler, IC
+    # Compiler), not fabricated: 1.1 uJ per inference = 41.5 mW x 28.2 us, 216.9 TOPS/W
+    # (Table X). Binary weights (8-bit input layer); 16 input time steps, 4 after its
+    # temporal-pooling layer, so no single energy per step.
+    {"name": "Sun et al.", "publication": "TCAS-I'25", "date": (2025, 8), "node": 28,
+     "technology": "28nm (post-layout)", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "precision": "Binary", "cell": "1-bit",
+     "impl": "Digital",
+     "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
+                             "latency": 28.2, "power": 41.5, "tops_per_w": 216.9}}},
     {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
      "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "TTFS", "in_bits": "1-bit",
      "precision": "8-bit", "cell": "1-bit",
