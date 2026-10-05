@@ -58,6 +58,8 @@ class PublishTableTests(unittest.TestCase):
         self.assertIn(r"\multicolumn{2}{c}{\makecell{96.80\%", table)  # one accuracy cell
         self.assertIn(r"\textbf{Energy / step}", table)                # energy per time step
         self.assertIn(r"\textbf{Bit-cell}", table)                    # cell type row
+        self.assertIn(r"\textbf{Energy / inference}", table)          # per inference, not sample
+        self.assertNotIn("post-layout", table)
         self.assertIn(r"\multicolumn{2}{c}{2T1R}", table)              # ours, merged
         self.assertIn(r"$^{e}$", table)
         self.assertNotIn(r"\dagger", table)                            # no input footnotes

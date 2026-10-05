@@ -41,9 +41,9 @@ OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34
               "gesture16": r"$16\times16$", "gesture": r"$128\times128$",
               "cifar10_thermo": r"$32\times32$"}
 # The metric rows, in order: (key, row label, better: +1 higher, -1 lower).
-METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
+METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / inference", -1),
            ("energy_per_step", "Energy / step", -1),
-           ("latency", "Latency / sample", -1),
+           ("latency", "Latency / inference", -1),
            ("tops_per_w", "TOPS/W", +1))
 # Our time steps per model (the "Energy / step" row: energy per sample / steps).
 OUR_STEPS = {"nmnist17": 10, "nmnist": 300, "gesture16": 80, "cifar10_thermo": 8}
@@ -124,7 +124,7 @@ WORKS = [
     # (Table X). Binary weights (8-bit input layer); 16 input time steps, 4 after its
     # temporal-pooling layer, so no single energy per step.
     {"name": "Sun et al.", "publication": "TCAS-I'25", "date": (2025, 8), "node": 28,
-     "technology": "28nm (post-layout)", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
+     "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "Binary", "cell": "1-bit",
      "impl": "Digital",
      "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
@@ -174,12 +174,12 @@ FOOTNOTES = [
     "accuracy as reported.",
     r"$^{a}$ Computed from the reported energy and power: latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
-    r"operations) divided by the reported energy per sample.",
+    r"operations) divided by the reported energy per inference.",
     r"$^{c}$ TOPS/W $\times$ input bits $\times$ weight bits, for reported TOPS/W "
     r"(Han et al.: 6-bit inputs, its 5-bit cell as the weight; this work: 1-bit spikes, 6-bit weights).",
-    r"$^{d}$ Computed from the reported energy per step $\times$ average steps per sample "
+    r"$^{d}$ Computed from the reported energy per step $\times$ average steps per inference "
     r"(ReckOn: 35\,nJ $\times$ 1318 steps).",
-    r"$^{e}$ Computed as energy per sample / time steps (Liu et al.: 4 for N-MNIST, 16 for "
+    r"$^{e}$ Computed as energy per inference / time steps (Liu et al.: 4 for N-MNIST, 16 for "
     r"Gesture; Han et al.: 1, one single-spike pass; this work: 10, 80 and 8).",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
 ]
