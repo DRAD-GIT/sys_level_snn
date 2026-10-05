@@ -1,5 +1,5 @@
 """Comparison with other neuromorphic designs, in the style of DS-CIM's Table III
-(Fu et al., TCAS-I 2024): one column per work, rows for its publication,
+(Fu et al., TCAS-I 2024): one column per work (cited in its name), rows for its
 technology and implementation, the datasets it evaluated, its input and each
 metric. Every dataset cell has a line per dataset in a fixed order (N-MNIST,
 IBM DVS Gesture, CIFAR-10), so a dataset's numbers sit at the same height in
@@ -52,7 +52,7 @@ OUR_STEPS = {"nmnist17": 10, "nmnist": 300, "gesture16": 80, "cifar10_thermo": 8
 OUR_BITS = (1, 6)
 # Rows where our columns share one cell when their values are the same (one
 # recorded network, same inputs).
-MERGED_ROWS = ("Publication", "Technology", "Synaptic memory", "Bit-cell", "Input bits", "Input encoding",
+MERGED_ROWS = ("Technology", "Synaptic memory", "Bit-cell", "Input bits", "Input encoding",
                "Cell precision", "Weight precision", "Datasets", "Input shape", "Accuracy")
 
 # Technology scaling (DeepScaleTool: Sarangi and Baas, ISCAS 2021,
@@ -176,7 +176,9 @@ SET_ASIDE = [
 ]
 
 # Our columns: run.py architecture name -> column heading.
-OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
+OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "This work"}
+# Our columns that are published works: architecture -> key in the paper's references.bib.
+OUR_CITES = {"c3cim_xbar": "biyani_c3cim_2025"}
 OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40nm", "memory": "RRAM",
              "bitcell": "2T1R",
              "encoding": "Rate", "in_bits": "1-bit", "precision": "6-bit", "cell": "1-bit", "impl": "Mixed signal"}
@@ -273,6 +275,7 @@ def our_columns(runs, architectures, warn=print):
                      f"{latex_table.FULL_TEST_SET[model]} test samples")
             results[key] = our_values(best, model)
         columns.append({"name": OUR_NAMES.get(name, name.replace("_", r"\_")), **OUR_SPECS,
+                        **({"cite": OUR_CITES[name]} if name in OUR_CITES else {}),
                         "date": (9999, 0), "results": results, "ours": True})
     return columns
 
@@ -330,7 +333,6 @@ def build_table(columns):
 
     row("Name", [f"\\textbf{{{c['name']}}}" + (f"~\\cite{{{c['cite']}}}" if c.get("cite") else "")
                  for c in columns])
-    row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
                        ("bitcell", "Bit-cell"), ("cell", "Cell precision")):
