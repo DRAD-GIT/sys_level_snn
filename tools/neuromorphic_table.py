@@ -129,12 +129,6 @@ WORKS = [
      "impl": "Digital",
      "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
                              "latency": 28.2, "power": 41.5, "tops_per_w": 216.9}}},
-    {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "TTFS", "in_bits": "1-bit",
-     "precision": "8-bit", "cell": "1-bit",
-     "impl": r"Digital",
-     "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"93.8\%",
-                            "energy": 665}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
     # energy per step = energy per sample (e).
@@ -152,6 +146,12 @@ WORKS = [
 # Works kept out of the table for now (same format as WORKS): move one into
 # WORKS to show it.
 SET_ASIDE = [
+    {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
+     "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "TTFS", "in_bits": "1-bit",
+     "precision": "8-bit", "cell": "1-bit",
+     "impl": r"Digital",
+     "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"93.8\%",
+                            "energy": 665}}},
     # Fig. 6: 35 nJ per step (inference, 0.5 V, 13 MHz), 1318 steps per Gesture
     # sample on average -> 46.1 uJ per sample (d); at 77 uW -> latency (a).
     {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
