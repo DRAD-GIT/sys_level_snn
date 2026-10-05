@@ -44,7 +44,7 @@ OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34
 METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / inference", -1),
            ("energy_per_step", "Energy / step", -1),
            ("latency", "Latency / inference", -1),
-           ("tops_per_w", "TOPS/W", +1))
+           ("tops_per_w", r"\makecell[l]{System energy efficiency \\ (TOPS/W)}", +1))
 # Our time steps per model (the "Energy / step" row: energy per sample / steps).
 OUR_STEPS = {"nmnist17": 10, "nmnist": 300, "gesture16": 80, "cifar10_thermo": 8}
 # Bits per operation (input, weight) for the normalised TOPS/W (TOPS/W x input

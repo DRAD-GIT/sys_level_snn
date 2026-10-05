@@ -59,6 +59,7 @@ class PublishTableTests(unittest.TestCase):
         self.assertIn(r"\textbf{Energy / step}", table)                # energy per time step
         self.assertIn(r"\textbf{Bit-cell}", table)                    # cell type row
         self.assertNotIn(r"\textbf{Publication}", table)               # no publication row
+        self.assertIn(r"{System energy efficiency \\ (TOPS/W)}", table)  # renamed TOPS/W row
         self.assertIn(r"\textbf{C3CIM}~\cite{biyani_c3cim_2025} & \textbf{This work}", table)
         self.assertIn(r"\textbf{DS-CIM}~\cite{fu_ds-cim_2024}", table)  # works cited
         self.assertIn(r"\textbf{Energy / inference}", table)          # per inference, not sample
