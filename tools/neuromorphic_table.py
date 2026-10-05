@@ -42,8 +42,11 @@ OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34
               "cifar10_thermo": r"$32\times32$"}
 # The metric rows, in order: (key, row label, better: +1 higher, -1 lower).
 METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
+           ("energy_per_step", "Energy / step", -1),
            ("latency", "Latency / sample", -1),
            ("tops_per_w", "TOPS/W", +1), ("norm_tops_per_w", r"Norm. TOPS/W$^{c}$", +1))
+# Our time steps per model (the "Energy / step" row: energy per sample / steps).
+OUR_STEPS = {"nmnist17": 10, "nmnist": 300, "gesture16": 80, "cifar10_thermo": 8}
 # Bits per operation (input, weight) for the normalised TOPS/W (TOPS/W x input
 # bits x weight bits), only where a work reports its own TOPS/W.
 OUR_BITS = (1, 6)
@@ -99,36 +102,55 @@ WORKS = [
      "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"61.74\%", "energy": 181000,
                              "latency": 100 * 50.0, "power": 181000 / (100 * 50.0),
                              "marks": {"power": "a"}}}},
+    # ISSCC'24 30.2, Fig. 30.2.7 summary: inference energy 25.9 uJ (Gesture), 3.8 uJ
+    # (N-MNIST); running power 524 uW (N-MNIST) and 834 uW (Gesture, JSSC'26 Table I)
+    # -> latency = energy / power. 4 time steps (N-MNIST), 16 (Gesture, Fig. 30.2.5
+    # and the JSSC version) -> energy per step. Accuracy evaluated in software with
+    # the measured IMC linearity.
+    {"name": "Liu et al.", "publication": "ISSCC'24", "date": (2024, 2), "node": 22,
+     "technology": "22nm", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "precision": "4/8-bit", "cell": "1-bit",
+     "impl": "Digital IMC",
+     "results": {"nmnist": {"input": "--", "accuracy": r"97\%", "energy": 3800,
+                            "power": 0.524, "latency": 3800 / 0.524,
+                            "energy_per_step": 3800 / 4,
+                            "marks": {"latency": "a", "energy_per_step": "e"}},
+                 "gesture": {"input": "--", "accuracy": r"94\%", "energy": 25900,
+                             "power": 0.834, "latency": 25900 / 0.834,
+                             "energy_per_step": 25900 / 16,
+                             "marks": {"latency": "a", "energy_per_step": "e"}}}},
     {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
      "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "TTFS", "in_bits": "1-bit",
      "precision": "8-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"93.8\%",
                             "energy": 665}}},
-    # 46.1 uJ per Gesture sample at 77 uW (inference, 0.5 V, 13 MHz) ->
-    # latency 46.1 uJ / 77 uW.
+    # Fig. 6: 35 nJ per step (inference, 0.5 V, 13 MHz), 1318 steps per Gesture
+    # sample on average -> 46.1 uJ per sample (d); at 77 uW -> latency (a).
     {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
      "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
      "precision": "8-bit", "cell": "1-bit",
      "impl": r"Digital",
-     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 46100,
-                             "power": 0.077, "latency": 46100 / 0.077, "marks": {"latency": "a"}}}},
-]
-
-# Works kept out of the table for now (same format as WORKS): move one into
-# WORKS to show it.
-SET_ASIDE = [
+     "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 35 * 1318,
+                             "energy_per_step": 35, "power": 0.077, "latency": 35 * 1318 / 0.077,
+                             "marks": {"energy": "d", "latency": "a"}}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
-    # image (c), power 21.74 uJ over it.
+    # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
+    # energy per step = energy per sample (e).
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
      "technology": "65nm", "memory": "RRAM", "encoding": "Temporal (delay)", "in_bits": "6-bit",
      "precision": "--", "cell": "5-bit (32 levels)",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"88\%", "energy": 21740,
+                             "energy_per_step": 21740,
                              "latency": 11 * 0.073, "power": 21740 / (11 * 0.073),
                              "tops_per_w": 14.12, "bits": (6, 5),
-                             "marks": {"power": "a"}}}},
+                             "marks": {"power": "a", "energy_per_step": "e"}}}},
 ]
+
+# Works kept out of the table for now (same format as WORKS): move one into
+# WORKS to show it.
+SET_ASIDE = []
 
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
@@ -141,9 +163,13 @@ FOOTNOTES = [
     r"$^{a}$ Computed from the reported energy and power: latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
     r"operations) divided by the reported energy per sample.",
-    r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
     r"$^{c}$ TOPS/W $\times$ input bits $\times$ weight bits, for reported TOPS/W "
     r"(Han et al.: 6-bit inputs, its 5-bit cell as the weight; this work: 1-bit spikes, 6-bit weights).",
+    r"$^{d}$ Computed from the reported energy per step $\times$ average steps per sample "
+    r"(ReckOn: 35\,nJ $\times$ 1318 steps).",
+    r"$^{e}$ Computed as energy per sample / time steps (Liu et al.: 4 for N-MNIST, 16 for "
+    r"Gesture; Han et al.: 1, one single-spike pass; this work: 10, 80 and 8).",
+    r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
 LABEL = "table:neuromorphic"
@@ -155,7 +181,7 @@ def scale(metric, value, node, target=SCALE_TO_NM):
     if node not in DEEPSCALE or target not in DEEPSCALE:
         return None
     energy, delay, power = (DEEPSCALE[node][i] / DEEPSCALE[target][i] for i in range(3))
-    factor = {"energy": energy, "latency": delay, "power": power, "tops_per_w": 1 / energy,
+    factor = {"energy": energy, "latency": delay, "power": power, "energy_per_step": energy, "tops_per_w": 1 / energy,
               "norm_tops_per_w": 1 / energy}[metric]
     return value / factor
 
@@ -169,6 +195,7 @@ def _unit(value, units):
 
 
 FORMATS = {"energy": lambda v: _unit(v, [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
+           "energy_per_step": lambda v: _unit(v, [("nJ", 1e3), (r"$\mu$J", 1e3), ("mJ", 1e3)]),
            "latency": lambda v: _unit(v, [(r"$\mu$s", 1e3), ("ms", 1e3), ("s", 1)]),
            "power": lambda v: _unit(v, [(r"$\mu$W", 1e3), ("mW", 1e3), ("W", 1)]),
            "tops_per_w": lambda v: f"{v:#.3g}".rstrip("."),
@@ -200,7 +227,8 @@ def our_values(row, model):
     """A comparison_summary.csv row -> {metric: value} (energy nJ, latency us, power mW)."""
     return {"input": OUR_INPUTS.get(model, model), "accuracy": f"{float(row['accuracy']):.2f}\\%",
             **{m: float(row[m]) for m in ("energy", "latency", "power", "tops_per_w")},
-            "norm_tops_per_w": float(row["tops_per_w"]) * OUR_BITS[0] * OUR_BITS[1]}
+            "norm_tops_per_w": float(row["tops_per_w"]) * OUR_BITS[0] * OUR_BITS[1],
+            **({"energy_per_step": float(row["energy"]) / OUR_STEPS[model]} if model in OUR_STEPS else {})}
 
 
 def our_columns(runs, architectures, warn=print):
