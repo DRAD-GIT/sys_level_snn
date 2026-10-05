@@ -126,7 +126,7 @@ WORKS = [
     # (Genus) + gate-level simulation, not fabricated: N-MNIST 98.0%, 119.8 nJ per inference =
     # estimated energy of the first two layers (hidden layer simulated, first layer from its
     # SOPs x pJ/SOP; output layer not included). Network 1156-256-256-10, INT4 weights.
-    {"name": "LOKI", "cite": "luiken_loki_2025", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
+    {"name": "LOKI", "cite": "luiken_loki_2026", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
      "technology": "22nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4-bit", "cell": "1-bit",
      "impl": "Digital",
