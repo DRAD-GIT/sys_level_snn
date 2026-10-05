@@ -62,7 +62,8 @@ class PublishTableTests(unittest.TestCase):
         self.assertNotIn("post-layout", table)
         self.assertIn(r"\textbf{Input shape}", table)
         self.assertIn(r"\multicolumn{2}{c}{2T1R}", table)              # ours, merged
-        self.assertIn(r"$^{e}$", table)
+        self.assertIn(r"$^{c}$ Computed as energy per inference", table)
+        self.assertNotIn(r"$^{f}$", table)
         self.assertNotIn(r"\dagger", table)                            # no input footnotes
         self.assertIn(r"39.0\,\textmu J", table)                          # our CIFAR-10 energy
         self.assertNotIn(r"\textbf{Power}", table)                     # no power row

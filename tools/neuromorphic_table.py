@@ -116,24 +116,23 @@ WORKS = [
      "results": {"nmnist": {"input": "--", "accuracy": r"97\%", "energy": 3800,
                             "power": 0.524, "latency": 3800 / 0.524,
                             "energy_per_step": 3800 / 4,
-                            "marks": {"latency": "a", "energy_per_step": "e"}},
+                            "marks": {"latency": "a", "energy_per_step": "c"}},
                  "gesture": {"input": "--", "accuracy": r"94\%", "energy": 25900,
                              "power": 0.834, "latency": 25900 / 0.834,
                              "energy_per_step": 25900 / 16,
-                             "marks": {"latency": "a", "energy_per_step": "e"}}}},
+                             "marks": {"latency": "a", "energy_per_step": "c"}}}},
     # LOKI (Luiken et al., ASP-DAC'26, arXiv 2511.11205), 22nm digital FC SNN, synthesis
     # (Genus) + gate-level simulation, not fabricated: N-MNIST 98.0%, 119.8 nJ per inference =
     # estimated energy of the first two layers (hidden layer simulated, first layer from its
-    # SOPs x pJ/SOP; output layer not included) (f). Network 1156-256-256-10, INT4 weights.
+    # SOPs x pJ/SOP; output layer not included). Network 1156-256-256-10, INT4 weights.
     {"name": "LOKI", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
      "technology": "22nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4-bit", "cell": "1-bit",
      "impl": "Digital",
-     "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"98.0\%", "energy": 119.8,
-                            "marks": {"energy": "f"}}}},
+     "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"98.0\%", "energy": 119.8}}},
     # VGG-11 (Table III): 21.74 uJ, 73 ns per layer -> 11 layers x 73 ns per
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
-    # energy per step = energy per sample (e).
+    # energy per step = energy per sample (c).
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
      "technology": "65nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Temporal (delay)", "in_bits": "6-bit",
      "precision": "--", "cell": "5-bit (32 levels)",
@@ -142,7 +141,7 @@ WORKS = [
                              "energy_per_step": 21740,
                              "latency": 11 * 0.073, "power": 21740 / (11 * 0.073),
                              "tops_per_w": 14.12, "bits": (6, 5),
-                             "marks": {"power": "a", "energy_per_step": "e"}}}},
+                             "marks": {"power": "a", "energy_per_step": "c"}}}},
 ]
 
 # Works kept out of the table for now (same format as WORKS): move one into
@@ -187,13 +186,10 @@ FOOTNOTES = [
     r"$^{a}$ Computed from the reported energy and power: latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
     r"operations) divided by the reported energy per inference.",
-    r"$^{c}$ TOPS/W $\times$ input bits $\times$ weight bits, for reported TOPS/W "
-    r"(Han et al.: 6-bit inputs, its 5-bit cell as the weight; this work: 1-bit spikes, 6-bit weights).",
     r"$^{d}$ Computed from the reported energy per step $\times$ average steps per inference "
     r"(ReckOn: 35\,nJ $\times$ 1318 steps).",
-    r"$^{e}$ Computed as energy per inference / time steps (Liu et al.: 4 for N-MNIST, 16 for "
+    r"$^{c}$ Computed as energy per inference / time steps (Liu et al.: 4 for N-MNIST, 16 for "
     r"Gesture; Han et al.: 1, one single-spike pass; this work: 10, 80 and 8).",
-    r"$^{f}$ Synthesis estimate of the first two layers, as reported (LOKI).",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
