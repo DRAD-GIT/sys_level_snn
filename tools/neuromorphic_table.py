@@ -36,7 +36,7 @@ import latex_table  # noqa: E402
 DATASETS = (("nmnist", ("nmnist17", "nmnist"), "N-MNIST"),
             ("gesture", ("gesture16", "gesture"), "IBM DVS Gesture"),
             ("cifar10", ("cifar10_thermo",), "CIFAR-10"))
-# Our input per model (the "Input" rows).
+# Our input per model (the "Input shape" row).
 OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34$",
               "gesture16": r"$16\times16$", "gesture": r"$128\times128$",
               "cifar10_thermo": r"$32\times32$"}
@@ -53,7 +53,7 @@ OUR_BITS = (1, 6)
 # Rows where our columns share one cell when their values are the same (one
 # recorded network, same inputs).
 MERGED_ROWS = ("Publication", "Technology", "Synaptic memory", "Bit-cell", "Input bits", "Input encoding",
-               "Cell precision", "Weight precision", "Datasets", "Input", "Accuracy")
+               "Cell precision", "Weight precision", "Datasets", "Input shape", "Accuracy")
 
 # Technology scaling (DeepScaleTool: Sarangi and Baas, ISCAS 2021,
 # https://sourceforge.net/projects/deepscaletool/, DeepScaleTool.xlsm of
@@ -331,8 +331,7 @@ def build_table(columns):
     lines.append(r"\midrule")
     row("Datasets", [_lines([d if key in c["results"] else "" for key, _, d in DATASETS])
                      for c in columns])
-    lines.append(r"\midrule")
-    row("Input", [_lines([c["results"][key]["input"] if key in c["results"] else ""
+    row("Input shape", [_lines([c["results"][key]["input"] if key in c["results"] else ""
                           for key, _, _ in DATASETS]) for c in columns])
     for metric, label, better in METRICS:
         if not any(metric in r for c in columns if not c.get("ours") for r in c["results"].values()):
