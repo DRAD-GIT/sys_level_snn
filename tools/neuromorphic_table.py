@@ -52,7 +52,7 @@ OUR_STEPS = {"nmnist17": 10, "nmnist": 300, "gesture16": 80, "cifar10_thermo": 8
 OUR_BITS = (1, 6)
 # Rows where our columns share one cell when their values are the same (one
 # recorded network, same inputs).
-MERGED_ROWS = ("Publication", "Technology", "Synaptic memory", "Input bits", "Input encoding",
+MERGED_ROWS = ("Publication", "Technology", "Synaptic memory", "Bit-cell", "Input bits", "Input encoding",
                "Cell precision", "Weight precision", "Datasets", "Input", "Accuracy")
 
 # Technology scaling (DeepScaleTool: Sarangi and Baas, ISCAS 2021,
@@ -79,7 +79,7 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 # columns. Footnote marks refer to FOOTNOTES.
 WORKS = [
     {"name": "ANP-I", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "8/10-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times17\times17$", "accuracy": r"96.0\%",
@@ -87,7 +87,7 @@ WORKS = [
                  "gesture": {"input": r"$14\times14$", "accuracy": r"92.0\%", "energy": 3900}}},
     # DS-CIM Table II: 40.46 us per Gesture sample -> power 735.35 nJ / 40.46 us.
     {"name": "DS-CIM", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
-     "technology": "40nm", "memory": "SOT-MRAM", "encoding": "Dual-spike", "in_bits": "--",
+     "technology": "40nm", "memory": "SOT-MRAM", "bitcell": "1T1MTJ", "encoding": "Dual-spike", "in_bits": "--",
      "precision": "Signed 4-bit", "cell": "1-bit",
      "impl": "Mixed signal",
      "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"90.00\%", "energy": 735.35,
@@ -96,7 +96,7 @@ WORKS = [
     # 181 uJ per inference; 100 time steps of 50 us, pipelined -> 5 ms per
     # inference, power 181 uJ / 5 ms.
     {"name": "Dorzhigulov et al.", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
-     "technology": "130nm", "memory": "RRAM", "encoding": "Rate", "in_bits": "--",
+     "technology": "130nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Rate", "in_bits": "--",
      "precision": "2-bit", "cell": "--",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"61.74\%", "energy": 181000,
@@ -108,7 +108,7 @@ WORKS = [
     # and the JSSC version) -> energy per step. Accuracy evaluated in software with
     # the measured IMC linearity.
     {"name": "Liu et al.", "publication": "ISSCC'24", "date": (2024, 2), "node": 22,
-     "technology": "22nm", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "technology": "22nm", "memory": "SRAM", "bitcell": "6T + IMC cell", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4/8-bit", "cell": "1-bit",
      "impl": "Digital IMC",
      "results": {"nmnist": {"input": "--", "accuracy": r"97\%", "energy": 3800,
@@ -124,7 +124,7 @@ WORKS = [
     # (Table X). Binary weights (8-bit input layer); 16 input time steps, 4 after its
     # temporal-pooling layer, so no single energy per step.
     {"name": "Sun et al.", "publication": "TCAS-I'25", "date": (2025, 8), "node": 28,
-     "technology": "28nm (post-layout)", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "technology": "28nm (post-layout)", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "Binary", "cell": "1-bit",
      "impl": "Digital",
      "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
@@ -133,7 +133,7 @@ WORKS = [
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
     # energy per step = energy per sample (e).
     {"name": "Han et al.", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
-     "technology": "65nm", "memory": "RRAM", "encoding": "Temporal (delay)", "in_bits": "6-bit",
+     "technology": "65nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Temporal (delay)", "in_bits": "6-bit",
      "precision": "--", "cell": "5-bit (32 levels)",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"88\%", "energy": 21740,
@@ -147,7 +147,7 @@ WORKS = [
 # WORKS to show it.
 SET_ASIDE = [
     {"name": "SPOON", "publication": "ISCAS'20", "date": (2020, 10), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "TTFS", "in_bits": "1-bit",
+     "technology": "28nm FDSOI", "memory": "SRAM", "bitcell": "--", "encoding": "TTFS", "in_bits": "1-bit",
      "precision": "8-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"93.8\%",
@@ -155,7 +155,7 @@ SET_ASIDE = [
     # Fig. 6: 35 nJ per step (inference, 0.5 V, 13 MHz), 1318 steps per Gesture
     # sample on average -> 46.1 uJ per sample (d); at 77 uW -> latency (a).
     {"name": "ReckOn", "publication": "ISSCC'22", "date": (2022, 2), "node": 28,
-     "technology": "28nm FDSOI", "memory": "SRAM", "encoding": "Events", "in_bits": "1-bit",
+     "technology": "28nm FDSOI", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "8-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"gesture": {"input": r"$16\times16$", "accuracy": r"87.3\%", "energy": 35 * 1318,
@@ -166,6 +166,7 @@ SET_ASIDE = [
 # Our columns: run.py architecture name -> column heading.
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "C3CIM-OP"}
 OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40nm", "memory": "RRAM",
+             "bitcell": "2T1R",
              "encoding": "Rate", "in_bits": "1-bit", "precision": "6-bit", "cell": "1-bit", "impl": "Mixed signal"}
 
 FOOTNOTES = [
@@ -321,9 +322,12 @@ def build_table(columns):
     row("Publication", [c["publication"] for c in columns])
     lines.append(r"\midrule")
     for key, label in (("technology", "Technology"), ("memory", "Synaptic memory"),
-                       ("in_bits", "Input bits"), ("encoding", "Input encoding"),
-                       ("cell", "Cell precision"), ("precision", "Weight precision")):
-        row(label, [c[key] for c in columns])
+                       ("bitcell", "Bit-cell"), ("cell", "Cell precision")):
+        row(label, [c.get(key, "--") for c in columns])
+    lines.append(r"\midrule")
+    for key, label in (("in_bits", "Input bits"), ("encoding", "Input encoding"),
+                       ("precision", "Weight precision")):
+        row(label, [c.get(key, "--") for c in columns])
     lines.append(r"\midrule")
     row("Datasets", [_lines([d if key in c["results"] else "" for key, _, d in DATASETS])
                      for c in columns])

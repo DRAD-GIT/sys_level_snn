@@ -57,6 +57,8 @@ class PublishTableTests(unittest.TestCase):
         self.assertNotIn("Norm. TOPS/W", table)                        # no normalised TOPS/W row
         self.assertIn(r"\multicolumn{2}{c}{\makecell{96.80\%", table)  # one accuracy cell
         self.assertIn(r"\textbf{Energy / step}", table)                # energy per time step
+        self.assertIn(r"\textbf{Bit-cell}", table)                    # cell type row
+        self.assertIn(r"\multicolumn{2}{c}{2T1R}", table)              # ours, merged
         self.assertIn(r"$^{e}$", table)
         self.assertNotIn(r"\dagger", table)                            # no input footnotes
         self.assertIn(r"39.0\,\textmu J", table)                          # our CIFAR-10 energy
