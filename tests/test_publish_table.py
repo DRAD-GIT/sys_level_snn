@@ -52,7 +52,9 @@ class PublishTableTests(unittest.TestCase):
         pushed = git(self.remote, "show", "main:Chapters/neuromorphic_table.tex")
         self.assertEqual(pushed, table)
         self.assertIn(r"\makecell{N-MNIST \\ \phantom{0} \\ CIFAR-10}", table)   # aligned lines
-        self.assertIn(r"\textbf{88.28\%}", table)                      # our CIFAR-10 accuracy wins
+        self.assertNotIn(r"\textbf{88.28\%}", table)                   # accuracy never bold
+        self.assertIn(r"\textbf{\boldmath ", table)                    # wins bold, units too
+        self.assertNotIn("Norm. TOPS/W", table)                        # no normalised TOPS/W row
         self.assertIn(r"\multicolumn{2}{c}{\makecell{96.80\%", table)  # one accuracy cell
         self.assertIn(r"\textbf{Energy / step}", table)                # energy per time step
         self.assertIn(r"$^{e}$", table)

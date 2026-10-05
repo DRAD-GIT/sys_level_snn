@@ -44,7 +44,7 @@ OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34
 METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / sample", -1),
            ("energy_per_step", "Energy / step", -1),
            ("latency", "Latency / sample", -1),
-           ("tops_per_w", "TOPS/W", +1), ("norm_tops_per_w", r"Norm. TOPS/W$^{c}$", +1))
+           ("tops_per_w", "TOPS/W", +1))
 # Our time steps per model (the "Energy / step" row: energy per sample / steps).
 OUR_STEPS = {"nmnist17": 10, "nmnist": 300, "gesture16": 80, "cifar10_thermo": 8}
 # Bits per operation (input, weight) for the normalised TOPS/W (TOPS/W x input
@@ -338,8 +338,9 @@ def build_table(columns):
                 others = [scaled(metric, o["results"][key][metric], o["node"]) for o in columns
                           if not o.get("ours") and key in o["results"] and metric in o["results"][key]]
                 value = scaled(metric, r[metric], c["node"])
-                if c.get("ours") and others and all(better * (value - o) > 0 for o in others):
-                    text = f"\\textbf{{{text}}}"
+                if c.get("ours") and metric != "accuracy" and others and \
+                        all(better * (value - o) > 0 for o in others):
+                    text = f"\\textbf{{\\boldmath {text}}}"      # \boldmath: the units in math are bold too
                 values.append(text)
             cells.append(_lines(values))
         row(label, cells)
