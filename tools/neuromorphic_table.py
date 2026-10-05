@@ -38,8 +38,8 @@ DATASETS = (("nmnist", ("nmnist17", "nmnist"), "N-MNIST"),
             ("cifar10", ("cifar10_thermo",), "CIFAR-10"))
 # Our input per model (the "Input shape" row).
 OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34$",
-              "gesture16": r"$16\times16$", "gesture": r"$128\times128$",
-              "cifar10_thermo": r"$32\times32$"}
+              "gesture16": r"$2\times16\times16$", "gesture": r"$2\times128\times128$",
+              "cifar10_thermo": r"$3\times32\times32$"}
 # The metric rows, in order: (key, row label, better: +1 higher, -1 lower).
 METRICS = (("accuracy", "Accuracy", +1), ("energy", "Energy / inference", -1),
            ("energy_per_step", "Energy / step", -1),
@@ -99,7 +99,7 @@ WORKS = [
      "technology": "130nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Rate", "in_bits": "--",
      "precision": "2-bit", "cell": "--",
      "impl": "Mixed signal",
-     "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"61.74\%", "energy": 181000,
+     "results": {"cifar10": {"input": r"$3\times32\times32$", "accuracy": r"61.74\%", "energy": 181000,
                              "latency": 100 * 50.0, "power": 181000 / (100 * 50.0),
                              "marks": {"power": "a"}}}},
     # ISSCC'24 30.2, Fig. 30.2.7 summary: inference energy 25.9 uJ (Gesture), 3.8 uJ
@@ -136,7 +136,7 @@ WORKS = [
      "technology": "65nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Temporal (delay)", "in_bits": "6-bit",
      "precision": "--", "cell": "5-bit (32 levels)",
      "impl": "Mixed signal",
-     "results": {"cifar10": {"input": r"$32\times32$", "accuracy": r"88\%", "energy": 21740,
+     "results": {"cifar10": {"input": r"$3\times32\times32$", "accuracy": r"88\%", "energy": 21740,
                              "energy_per_step": 21740,
                              "latency": 11 * 0.073, "power": 21740 / (11 * 0.073),
                              "tops_per_w": 14.12, "bits": (6, 5),
