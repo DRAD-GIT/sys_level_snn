@@ -2,7 +2,7 @@
 (Fu et al., TCAS-I 2024): one column per work (cited in its name), rows for its
 technology and implementation, the datasets it evaluated, its input and each
 metric. Every dataset cell has a line per dataset in a fixed order (N-MNIST,
-IBM DVS Gesture, CIFAR-10), so a dataset's numbers sit at the same height in
+DVS-Gesture, CIFAR-10), so a dataset's numbers sit at the same height in
 every column (blank line: not evaluated; "--": not reported).
 
     python tools/neuromorphic_table.py               # -> logs/neuromorphic_table.tex
@@ -34,7 +34,7 @@ import latex_table  # noqa: E402
 
 # The datasets: (key, run.py models of ours, first with results used; row label).
 DATASETS = (("nmnist", ("nmnist17", "nmnist"), "N-MNIST"),
-            ("gesture", ("gesture16", "gesture"), "IBM DVS Gesture"),
+            ("gesture", ("gesture16", "gesture"), "DVS-Gesture"),
             ("cifar10", ("cifar10_thermo",), "CIFAR-10"))
 # Our input per model (the "Input shape" row).
 OUR_INPUTS = {"nmnist17": r"$2\times17\times17$", "nmnist": r"$2\times34\times34$",
@@ -80,7 +80,7 @@ DEEPSCALE = {             # node: (energy, delay, power), relative to 65 nm
 # Footnote marks refer to FOOTNOTES.
 WORKS = [
     {"name": "ANP-I", "cite": "zhang_anp-i_2024", "publication": "JSSC'24", "date": (2024, 8), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
+     "technology": r"28\,nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "8/10-bit", "cell": "1-bit",
      "impl": r"Digital",
      "results": {"nmnist": {"input": r"$2\times17\times17$", "accuracy": r"96.0\%",
@@ -90,7 +90,7 @@ WORKS = [
     # 512x512 array (512 inputs = 2 polarities x 16 x 16).
     # DS-CIM Table II: 40.46 us per Gesture sample -> power 735.35 nJ / 40.46 us.
     {"name": "DS-CIM", "cite": "fu_ds-cim_2024", "publication": "TCAS-I'24", "date": (2024, 4), "node": 40,
-     "technology": "40nm", "memory": "SOT-MRAM", "bitcell": "1T1MTJ", "encoding": "Dual-spike", "in_bits": "--",
+     "technology": r"40\,nm", "memory": "SOT-MRAM", "bitcell": "1T1MTJ", "encoding": "Dual-spike", "in_bits": "--",
      "precision": "Signed 4-bit", "cell": "1-bit",
      "impl": "Mixed signal",
      "results": {"gesture": {"input": r"$2\times16\times16$", "accuracy": r"90.00\%", "energy": 735.35,
@@ -99,7 +99,7 @@ WORKS = [
     # 181 uJ per inference; 100 time steps of 50 us, pipelined -> 5 ms per
     # inference, power 181 uJ / 5 ms.
     {"name": "Dorzhigulov et al.", "cite": "dorzhigulov_spiking_2023", "publication": "Front. Neurosci.'23", "date": (2023, 7), "node": 130,
-     "technology": "130nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Rate", "in_bits": "--",
+     "technology": r"130\,nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Rate", "in_bits": "--",
      "precision": "2-bit", "cell": "--",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$3\times32\times32$", "accuracy": r"61.74\%", "energy": 181000,
@@ -111,7 +111,7 @@ WORKS = [
     # and the JSSC version) -> energy per step. Accuracy evaluated in software with
     # the measured IMC linearity.
     {"name": "Liu et al.", "cite": "liu_302_2024", "publication": "ISSCC'24", "date": (2024, 2), "node": 22,
-     "technology": "22nm", "memory": "SRAM", "bitcell": "6T + IMC cell", "encoding": "Events", "in_bits": "1-bit",
+     "technology": r"22\,nm", "memory": "SRAM", "bitcell": "6T + IMC cell", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4/8-bit", "cell": "1-bit",
      "impl": "Digital IMC",
      "results": {"nmnist": {"input": "--", "accuracy": r"97\%", "energy": 3800,
@@ -127,7 +127,7 @@ WORKS = [
     # estimated energy of the first two layers (hidden layer simulated, first layer from its
     # SOPs x pJ/SOP; output layer not included). Network 1156-256-256-10, INT4 weights.
     {"name": "LOKI", "cite": "luiken_loki_2026", "publication": "ASP-DAC'26", "date": (2026, 1), "node": 22,
-     "technology": "22nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
+     "technology": r"22\,nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "4-bit", "cell": "1-bit",
      "impl": "Digital",
      "results": {"nmnist": {"input": r"$2\times34\times34$", "accuracy": r"98.0\%", "energy": 119.8}}},
@@ -135,7 +135,7 @@ WORKS = [
     # image, power 21.74 uJ over it. One pass (single-spike temporal coding):
     # energy per step = energy per sample (c).
     {"name": "Han et al.", "cite": "han_efficient_2022", "publication": "TCAS-I'22", "date": (2022, 11), "node": 65,
-     "technology": "65nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Temporal (delay)", "in_bits": "6-bit",
+     "technology": r"65\,nm", "memory": "RRAM", "bitcell": "1T1R", "encoding": "Temporal (delay)", "in_bits": "6-bit",
      "precision": "--", "cell": "5-bit (32 levels)",
      "impl": "Mixed signal",
      "results": {"cifar10": {"input": r"$3\times32\times32$", "accuracy": r"88\%", "energy": 21740,
@@ -153,7 +153,7 @@ SET_ASIDE = [
     # (Table X). Binary weights (8-bit input layer); 16 input time steps, 4 after its
     # temporal-pooling layer, so no single energy per step.
     {"name": "Sun et al.", "publication": "TCAS-I'25", "date": (2025, 8), "node": 28,
-     "technology": "28nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
+     "technology": r"28\,nm", "memory": "SRAM", "bitcell": "--", "encoding": "Events", "in_bits": "1-bit",
      "precision": "Binary", "cell": "1-bit",
      "impl": "Digital",
      "results": {"gesture": {"input": r"$2\times32\times32$", "accuracy": r"95.49\%", "energy": 1100,
@@ -179,12 +179,12 @@ SET_ASIDE = [
 OUR_NAMES = {"c3cim_xbar": "C3CIM", "c3cim_op_xbar": "This work"}
 # Our columns that are published works: architecture -> key in the paper's references.bib.
 OUR_CITES = {"c3cim_xbar": "biyani_c3cim_2025"}
-OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": "40nm", "memory": "RRAM",
+OUR_SPECS = {"publication": r"\textbf{This work}", "node": 40, "technology": r"40\,nm", "memory": "RRAM",
              "bitcell": "2T1R",
              "encoding": "Rate", "in_bits": "1-bit", "precision": "6-bit", "cell": "1-bit", "impl": "Mixed signal"}
 
 FOOTNOTES = [
-    f"Energy, latency and TOPS/W scaled to {SCALE_TO_NM}nm with DeepScaleTool; "
+    f"Energy, latency and TOPS/W scaled to {SCALE_TO_NM}\\,nm with DeepScaleTool; "
     "accuracy as reported.",
     r"$^{a}$ Computed from the reported energy and power: latency = energy / power.",
     r"$^{b}$ Computed as this work's operations on that dataset (its network, all synaptic "
@@ -192,7 +192,7 @@ FOOTNOTES = [
     r"$^{d}$ Computed from the reported energy per step $\times$ average steps per inference "
     r"(ReckOn: 35\,nJ $\times$ 1318 steps).",
     r"$^{c}$ Computed as energy per inference / time steps (Liu et al.: 4 for N-MNIST, 16 for "
-    r"Gesture; Han et al.: 1, one single-spike pass; this work: 10, 80 and 8).",
+    r"DVS-Gesture; Han et al.: 1, one single-spike pass; this work: 10, 80 and 8).",
     r"$^{\P}$ Outside DeepScaleTool's range (130--7nm): as reported, not scaled.",
 ]
 CAPTION = "Comparison with other neuromorphic designs"
